@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Upcoming_Launches</fullName>
+    <booleanFilter>1 OR 2 OR 3</booleanFilter>
+    <columns>NAME</columns>
+    <columns>LDGCRM_Launch_Level__c</columns>
+    <columns>LDGCRM_Current_Go_Live_Date__c</columns>
+    <columns>LDGCRM_Launch_Checklist_Completion__c</columns>
+    <columns>LDGCRM_Opportunity_Stage__c</columns>
+    <columns>LDGCRM_Opportunity_Lead__c</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>LDGCRM_Status__c</field>
+        <operation>equals</operation>
+        <value>Pending Launch</value>
+    </filters>
+    <filters>
+        <field>LDGCRM_Status__c</field>
+        <operation>equals</operation>
+        <value>Pending Agreement</value>
+    </filters>
+    <filters>
+        <field>LDGCRM_Status__c</field>
+        <operation>equals</operation>
+        <value>Move to Production Request</value>
+    </filters>
+    <label>Upcoming Launches</label>
+</ListView>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_Scoped_Amt_Must_Be_Greater_Than_Zero</fullName>
+    <active>false</active>
+    <description>To select &quot;Scoped&quot; stage, the opportunity amount cannot be blank and has to be greater than $0.</description>
+    <errorConditionFormula>AND(
+RecordType.Name =&apos;TTS OTCRM Opportunity&apos;,
+ISPICKVAL(StageName, &apos;Scoped&apos;),
+OR(ISBLANK(Amount) || Amount &lt;= 0)
+)</errorConditionFormula>
+    <errorDisplayField>StageName</errorDisplayField>
+    <errorMessage>To select the &quot;Scoped&quot; stage, the opportunity amount cannot be blank and has to be greater than zero.</errorMessage>
+</ValidationRule>

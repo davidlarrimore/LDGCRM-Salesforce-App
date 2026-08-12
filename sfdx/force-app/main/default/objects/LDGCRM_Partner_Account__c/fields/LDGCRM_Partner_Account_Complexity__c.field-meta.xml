@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Partner_Account_Complexity__c</fullName>
+    <description>5 - Largest and/or most complicated agencies in Government
+4 - Large account that has high visibility, complex stakeholders.
+3 - Medium sized account, not high maintenance, key contributor
+2 - Medium sized account, not high maintenance, significant opportunities for growth</description>
+    <inlineHelpText>5 - Largest and/or most complicated agencies in Government
+4 - Large account that has high visibility, complex stakeholders.
+3 - Medium sized account, not high maintenance, key contributor
+2 - Medium sized account, not high maintenance, significant opportunities for growth</inlineHelpText>
+    <label>Partner Account Complexity</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Very High Complexity</fullName>
+                <default>false</default>
+                <label>Very High Complexity</label>
+            </value>
+            <value>
+                <fullName>High Complexity</fullName>
+                <default>false</default>
+                <label>High Complexity</label>
+            </value>
+            <value>
+                <fullName>Medium Complexity</fullName>
+                <default>false</default>
+                <label>Medium Complexity</label>
+            </value>
+            <value>
+                <fullName>Low Complexity</fullName>
+                <default>false</default>
+                <label>Low Complexity</label>
+            </value>
+            <value>
+                <fullName>Very Low Complexity</fullName>
+                <default>false</default>
+                <label>Very Low Complexity</label>
+            </value>
+            <value>
+                <fullName>Small - Low Touch</fullName>
+                <default>false</default>
+                <label>Small - Low Touch</label>
+            </value>
+            <value>
+                <fullName>Medium - Key Contributor</fullName>
+                <default>false</default>
+                <label>Medium - Key Contributor</label>
+            </value>
+            <value>
+                <fullName>Medium - High Growth</fullName>
+                <default>false</default>
+                <label>Medium - High Growth</label>
+            </value>
+            <value>
+                <fullName>Largest - Most Complex</fullName>
+                <default>false</default>
+                <label>Largest - Most Complex</label>
+            </value>
+            <value>
+                <fullName>Large - High Visibility</fullName>
+                <default>false</default>
+                <label>Large - High Visibility</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

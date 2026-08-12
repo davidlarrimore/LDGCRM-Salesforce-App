@@ -7,13 +7,17 @@
             sf project retrieve start -x manifest/package.xml --target-org gsa-peo
 
         Add members/types as the app grows (new custom objects, flows,
-        permission sets, etc.). Wildcard ("*") members retrieve everything
-        of that type and are safe even when nothing exists yet.
+        permission sets, etc.). Members are listed explicitly rather than
+        with wildcards ("*") because this sandbox hosts several unrelated
+        apps (e.g. FCIC) that share these metadata types - a wildcard here
+        would pull in components with no relation to the LDGCRM app.
     -->
     <types>
         <members>Account</members>
+        <members>Activity</members>
         <members>Contact</members>
         <members>Opportunity</members>
+        <members>OpportunityContactRole</members>
         <members>LDGCRM_Partner_account__c</members>
         <members>LDGCRM_Application__c</members>
         <members>LDGCRM_Application_Contact__c</members>
@@ -27,20 +31,109 @@
         <name>CustomApplication</name>
     </types>
     <types>
-        <members>*</members>
+        <members>LDGCRM_Application_Record_Page</members>
+        <members>LDGCRM_Federal_Account_Record_Page</members>
+        <members>LDGCRM_Federal_Contact_Record_Page</members>
+        <members>LDGCRM_Home_Page</members>
+        <members>LDGCRM_Impediment_Record_Page</members>
+        <members>LDGCRM_Market_Segment_Record_Page</members>
+        <members>LDGCRM_Opportunity_Page</members>
+        <members>LDGCRM_Partner_Account_Record_Page</members>
         <name>FlexiPage</name>
     </types>
     <types>
-        <members>*</members>
+        <members>LDGCRM_Partnership_Team_Member_CRE</members>
+        <members>LDGCRM_Partnership_Viewer_R</members>
+        <members>LDGCRM_Production_Support_CRED</members>
         <name>PermissionSet</name>
     </types>
     <types>
-        <members>*</members>
+        <members>LDGCRM_G_Partnership_Team_Member_CRE</members>
+        <members>LDGCRM_G_Partnership_Viewer_R</members>
+        <members>LDGCRM_G_Production_Support_CRED</members>
+        <name>PermissionSetGroup</name>
+    </types>
+    <types>
+        <members>Account-Federal</members>
+        <members>Contact-Federal Contact Layout</members>
+        <members>Contact-LDGCRM Federal Contact Layout</members>
+        <members>LDGCRM_Application_Contact__c-Application Contact Layout</members>
+        <members>LDGCRM_Impediment__c-Impediments Layout</members>
+        <members>LDGCRM_Market_Segment__c-Market Segment Layout</members>
+        <members>LDGCRM_Opportunity_Impediment__c-Opportunity Impediment Layout</members>
+        <members>LDGCRM_Partner_Account__c-Partner Account Layout</members>
+        <members>LDGCRM_application__c-Application Layout</members>
+        <members>Opportunity-Login%2Egov CRM</members>
         <name>Layout</name>
     </types>
     <types>
-        <members>*</members>
+        <members>LDGCRM_ApplicationContact_BeforeSave_NewRecordDuplicateCheck</members>
+        <members>LDGCRM_Application_Before_Save_Assign_Market_Segment</members>
+        <members>LDGCRM_Opportunity_Before_Save_Assign_Account_and_Market_Segment</members>
+        <members>LDGCRM_Opportunity_Impediment_Before_Save_New_Record_Duplicate_Check</members>
+        <members>LDGCRM_Partner_Account_After_Save_Update_Re_Parent_Cascade</members>
+        <members>LDGCRM_Partner_Account_Before_Save_Create_Update_Market_Segment</members>
+        <members>LDGCRM_Screen_Flow_Developer_Data_Delete_Flow</members>
+        <members>LGDCRM_Opportunity_After_Save_Update_Opportunity_Impediments</members>
+        <members>LGDCRM_Opportunity_Before_Save_Update_Current_Status_Summary_DateTime</members>
+        <members>LGDCRM_Opportunity_Impediment_Before_Save_Update_Blocked_Revenue</members>
         <name>Flow</name>
+    </types>
+    <types>
+        <members>LDGCRM_Impediment__c</members>
+        <members>LDGCRM_Market_Segment__c</members>
+        <members>LDGCRM_Partner_Account__c</members>
+        <members>LDGCRM_application__c</members>
+        <name>CustomTab</name>
+    </types>
+    <types>
+        <members>login2</members>
+        <name>ContentAsset</name>
+    </types>
+    <types>
+        <members>LDGCRM_Login_Gov_Dashboards</members>
+        <name>DashboardFolder</name>
+    </types>
+    <types>
+        <members>LDGCRM_Reports</members>
+        <name>ReportFolder</name>
+    </types>
+    <types>
+        <members>LDGCRM_Login_gov_Applications_with_Activities</members>
+        <members>LDGCRM_Login_gov_Applications_with_Application_Contacts</members>
+        <members>LDGCRM_Login_gov_Applications_with_Partner_Portal_Issuer_Strings</members>
+        <members>LDGCRM_Login_gov_Market_Segments_with_Accounts</members>
+        <members>LDGCRM_Login_gov_Market_Segments_with_Accounts_with_Opportunities</members>
+        <members>LDGCRM_Login_gov_Market_Segments_with_Accounts_with_Partner_Accounts</members>
+        <members>LDGCRM_Login_gov_Market_Segments_with_Partner_Accounts_with_Applications</members>
+        <members>LDGCRM_Login_gov_Market_Segments_with_Partner_Accounts_with_Opportunities</members>
+        <members>LDGCRM_Login_gov_Opportunities_with_Activity</members>
+        <members>LDGCRM_Login_gov_Opportunities_with_Impediments</members>
+        <members>LDGCRM_Market_Segments</members>
+        <members>LGDCRM_Partner_Accounts</members>
+        <name>ReportType</name>
+    </types>
+    <types>
+        <members>Account</members>
+        <members>Contact</members>
+        <members>Opportunity</members>
+        <members>LDGCRM_Application_Contact__c</members>
+        <members>LDGCRM_Market_Segment__c</members>
+        <members>LDGCRM_application__c</members>
+        <name>SharingRules</name>
+    </types>
+    <types>
+        <members>Demographic_Served</members>
+        <name>GlobalValueSet</name>
+    </types>
+    <types>
+        <members>LDGCRM_Team_Members</members>
+        <members>LDGCRM_Viewers</members>
+        <name>Group</name>
+    </types>
+    <types>
+        <members>Login_gov_Opportunity_Path</members>
+        <name>PathAssistant</name>
     </types>
     <version>64.0</version>
 </Package>

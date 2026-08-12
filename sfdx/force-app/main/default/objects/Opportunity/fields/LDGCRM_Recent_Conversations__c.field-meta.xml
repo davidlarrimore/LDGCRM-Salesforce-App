@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Recent_Conversations__c</fullName>
+    <description>Recap of the last communication to a lead (who, rough agenda, next steps). Start entries with MM/DD/YY.</description>
+    <inlineHelpText>Recap of the last communication to a lead (who, rough agenda, next steps). Start entries with MM/DD/YY.</inlineHelpText>
+    <label>Recent Conversations</label>
+    <length>32768</length>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Html</type>
+    <visibleLines>25</visibleLines>
+</CustomField>

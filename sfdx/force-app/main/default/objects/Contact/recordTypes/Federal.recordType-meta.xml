@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Federal</fullName>
+    <active>true</active>
+    <compactLayoutAssignment>LDGCRM_Federal_Compact_Layout</compactLayoutAssignment>
+    <description>Use this record type for creating federal agency contacts. For example, jane.smith@state.gov for Department of State contact.</description>
+    <label>Federal</label>
+    <picklistValues>
+        <picklist>LDGCRM_Subscription_Type__c</picklist>
+        <values>
+            <fullName>Newsletter Recipient</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Technical POC</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LeadSource</picklist>
+        <values>
+            <fullName>Advertisement</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Employee Referral</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>External Referral</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Partner</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Public Relations</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Seminar - Internal</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Seminar - Partner</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Trade Show</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Web</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Word of mouth</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Name</picklist>
+        <values>
+            <fullName>Dr%2E</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Mr%2E</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Mrs%2E</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Ms%2E</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Prof%2E</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Source_Detail_Inquiry__c</picklist>
+        <values>
+            <fullName>Email</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Phone</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Source__c</picklist>
+        <values>
+            <fullName>Event</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>In-Progress%2FCompleted Work</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Inquiry</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Newsletter</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Outbound</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Website</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>TTS_Office_s__c</picklist>
+        <values>
+            <fullName>10x</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>18F</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Centers of Excellence</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Challenge%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>CitizenScience%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Cloud%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Code%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Contractor Performance Assessment Reporting System %28CPARS%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Data%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Digital Analytics Program %28DAP%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Digital%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Electronic Subcontracting Reporting System %28eSRS%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FedRAMP</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Federal Audit Clearinghouse %28FAC%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Federal Funding Accountability and Transparency Act Subaward Reporting System %28FSRS%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Federal Procurement Data System %28FPDS%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Interagency Collaboration</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Interagency Suspension and Debarment Committee %28ISDC%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Login%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Made in America %28MiA%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Office of Acquisition %28OA%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Open Gvt Secretariat</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Presidential Innovation Fellows</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Public Benefits Studio</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Search%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Site Scanning</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>System for Award Management %28SAM%2Egov%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>System of Record Notices %28SORN%29 Dashboard</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Touchpoints</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>U%2ES%2E Digital Corps</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>U%2ES%2E Web Design System %28USWDS%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>USAgov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Vote%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>api%2Edata%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>eRulemaking Program %28eR%29</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+</RecordType>

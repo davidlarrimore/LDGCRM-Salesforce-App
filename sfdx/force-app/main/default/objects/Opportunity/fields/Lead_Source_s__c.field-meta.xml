@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Lead_Source_s__c</fullName>
+    <description>RITM1169366: Change Lead Source field &quot;Picklist&quot; to &quot;Picklist (Multi-Select)&quot;</description>
+    <label>Lead Source(s)</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>MultiselectPicklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>18F Blog</fullName>
+                <default>false</default>
+                <label>18F Blog</label>
+            </value>
+            <value>
+                <fullName>Acquisition Gateway</fullName>
+                <default>false</default>
+                <label>Acquisition Gateway</label>
+            </value>
+            <value>
+                <fullName>Advertisement</fullName>
+                <default>false</default>
+                <label>Advertisement</label>
+            </value>
+            <value>
+                <fullName>Agency Partnerships Outreach</fullName>
+                <default>false</default>
+                <label>Agency Partnerships Outreach</label>
+            </value>
+            <value>
+                <fullName>Conference</fullName>
+                <default>false</default>
+                <label>Conference</label>
+            </value>
+            <value>
+                <fullName>Digital Content</fullName>
+                <default>false</default>
+                <label>Digital Content</label>
+            </value>
+            <value>
+                <fullName>Direct Customer Inquiry</fullName>
+                <default>false</default>
+                <label>Direct Customer Inquiry</label>
+            </value>
+            <value>
+                <fullName>Employee Referral</fullName>
+                <default>false</default>
+                <label>Employee Referral</label>
+            </value>
+            <value>
+                <fullName>Event</fullName>
+                <default>false</default>
+                <label>Event</label>
+            </value>
+            <value>
+                <fullName>External Referral</fullName>
+                <default>false</default>
+                <label>External Referral</label>
+            </value>
+            <value>
+                <fullName>Intake email</fullName>
+                <default>false</default>
+                <label>Intake email</label>
+            </value>
+            <value>
+                <fullName>Marketing email</fullName>
+                <default>false</default>
+                <label>Marketing email</label>
+            </value>
+            <value>
+                <fullName>Other</fullName>
+                <default>false</default>
+                <label>Other</label>
+            </value>
+            <value>
+                <fullName>Partner</fullName>
+                <default>false</default>
+                <label>Partner</label>
+            </value>
+            <value>
+                <fullName>Phase 0</fullName>
+                <default>false</default>
+                <label>Phase 0</label>
+            </value>
+            <value>
+                <fullName>Product inquiry</fullName>
+                <default>false</default>
+                <label>Product inquiry</label>
+            </value>
+            <value>
+                <fullName>Public Relations</fullName>
+                <default>false</default>
+                <label>Public Relations</label>
+            </value>
+            <value>
+                <fullName>Referral</fullName>
+                <default>false</default>
+                <label>Referral</label>
+            </value>
+            <value>
+                <fullName>Referral from 18F</fullName>
+                <default>false</default>
+                <label>Referral from 18F</label>
+            </value>
+            <value>
+                <fullName>Referral from Centers of Excellence</fullName>
+                <default>false</default>
+                <label>Referral from Centers of Excellence</label>
+            </value>
+            <value>
+                <fullName>Referral from Login.gov</fullName>
+                <default>false</default>
+                <label>Referral from Login.gov</label>
+            </value>
+            <value>
+                <fullName>Referral from Cloud.gov</fullName>
+                <default>false</default>
+                <label>Referral from Cloud.gov</label>
+            </value>
+            <value>
+                <fullName>Referral from Presidential Innovation Fellows</fullName>
+                <default>false</default>
+                <label>Referral from Presidential Innovation Fellows</label>
+            </value>
+            <value>
+                <fullName>Referral from U.S. Digital Corps</fullName>
+                <default>false</default>
+                <label>Referral from U.S. Digital Corps</label>
+            </value>
+            <value>
+                <fullName>Renewal</fullName>
+                <default>false</default>
+                <label>Renewal</label>
+            </value>
+            <value>
+                <fullName>Seminar - Internal</fullName>
+                <default>false</default>
+                <label>Seminar - Internal</label>
+            </value>
+            <value>
+                <fullName>Seminar - Partner</fullName>
+                <default>false</default>
+                <label>Seminar - Partner</label>
+            </value>
+            <value>
+                <fullName>Trade Show</fullName>
+                <default>false</default>
+                <label>Trade Show</label>
+            </value>
+            <value>
+                <fullName>TTS/18F website</fullName>
+                <default>false</default>
+                <label>TTS/18F website</label>
+            </value>
+            <value>
+                <fullName>TTS Market Intelligence and Analysis</fullName>
+                <default>false</default>
+                <label>TTS Market Development and Partnerships</label>
+            </value>
+            <value>
+                <fullName>Unknown</fullName>
+                <default>false</default>
+                <label>Unknown</label>
+            </value>
+            <value>
+                <fullName>Web</fullName>
+                <default>false</default>
+                <label>Web</label>
+            </value>
+            <value>
+                <fullName>Word of mouth</fullName>
+                <default>false</default>
+                <label>Word of mouth</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+    <visibleLines>4</visibleLines>
+</CustomField>

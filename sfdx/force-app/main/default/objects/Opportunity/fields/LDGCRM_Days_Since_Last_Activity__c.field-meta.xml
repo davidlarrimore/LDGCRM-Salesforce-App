@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Days_Since_Last_Activity__c</fullName>
+    <description>Calculates the number of days since this Opportunity was last touched (any Call, Task, or Event logged against it), using Salesforce&apos;s native Last Activity Date. Returns 9999 if no activity has ever been logged. Used to flag stale opportunities, higher numbers mean longer since anyone engaged with this deal. Feeds the &quot;Stale Opportunities, 30+ Days No Activity&quot; report and subscription. Built to replace Airtable&apos;s manual Recent Conversations tracking with an automatic, activity-based signal.</description>
+    <externalId>false</externalId>
+    <formula>IF(ISBLANK(LastActivityDate), 9999, TODAY() - LastActivityDate)</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <label>Days Since Last Activity</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

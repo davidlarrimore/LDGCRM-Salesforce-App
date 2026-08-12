@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Market_Segment__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Related Market Segment</description>
+    <inlineHelpText>This is automatically populated from the related Partner Account</inlineHelpText>
+    <label>Market Segment</label>
+    <referenceTo>LDGCRM_Market_Segment__c</referenceTo>
+    <relationshipLabel>Opportunities</relationshipLabel>
+    <relationshipName>Opportunities</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

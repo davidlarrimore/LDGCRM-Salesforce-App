@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Ramp_Up_Approach__c</fullName>
+    <description>What we expect from the application usage curve</description>
+    <inlineHelpText>What we expect from the application usage curve</inlineHelpText>
+    <label>Ramp Up Approach</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Immediate</fullName>
+                <default>false</default>
+                <label>Immediate</label>
+            </value>
+            <value>
+                <fullName>Gradual</fullName>
+                <default>false</default>
+                <label>Gradual</label>
+            </value>
+            <value>
+                <fullName>Spikes</fullName>
+                <default>false</default>
+                <label>Spikes</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

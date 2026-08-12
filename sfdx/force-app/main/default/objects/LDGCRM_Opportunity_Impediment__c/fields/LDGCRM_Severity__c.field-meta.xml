@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Severity__c</fullName>
+    <description>Is this impediment a &quot;blocker&quot;?</description>
+    <inlineHelpText>Is this impediment a &quot;blocker&quot;?</inlineHelpText>
+    <label>Severity</label>
+    <required>true</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Impediment</fullName>
+                <default>false</default>
+                <label>Impediment</label>
+            </value>
+            <value>
+                <fullName>Blocker</fullName>
+                <default>false</default>
+                <label>Blocker</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

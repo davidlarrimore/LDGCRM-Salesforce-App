@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Launch_Activities_Confirmed__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Confirmed if Agency expects Login.gov participation in any agency-led pre-launch or launch day activities.</description>
+    <inlineHelpText>Confirmed if Agency expects Login.gov participation in any agency-led pre-launch or launch day activities.</inlineHelpText>
+    <label>Confirmed Launch Activities</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

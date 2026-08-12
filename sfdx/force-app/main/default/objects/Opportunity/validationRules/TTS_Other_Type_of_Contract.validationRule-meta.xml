@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_Other_Type_of_Contract</fullName>
+    <active>true</active>
+    <description>If the picklist value &quot;Other&quot; is selected for the field &quot;Type of Contract&quot; on the TTS Opportunity page, the &quot;Other Type of Contract&quot; field is required.</description>
+    <errorConditionFormula>OR(
+ AND(
+RecordType.Name =&apos;TTS OTCRM Opportunity&apos;,
+ISBLANK( Other_Type_of_Contract__c ),
+ISPICKVAL( Type_of_Contract__c , &apos;Other&apos;) 
+),
+AND(
+RecordType.Name =&apos;TTS OTCRM Opportunity&apos;,
+NOT (ISBLANK( Other_Type_of_Contract__c )),
+NOT (ISPICKVAL( Type_of_Contract__c , &apos;Other&apos;))
+)
+)</errorConditionFormula>
+    <errorDisplayField>Other_Type_of_Contract__c</errorDisplayField>
+    <errorMessage>Fill out &quot; Other Type of Contract&quot; only if &quot;Other&quot; was chosen as Type of Contract field. If you did not choose &quot;Other&quot;, leave it blank</errorMessage>
+</ValidationRule>

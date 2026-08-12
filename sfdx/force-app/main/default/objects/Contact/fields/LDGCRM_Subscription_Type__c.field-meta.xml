@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Subscription_Type__c</fullName>
+    <description>What kind of emails the contact should receive</description>
+    <inlineHelpText>If the partner contact should receive the monthly newsletter, technical emails, or both</inlineHelpText>
+    <label>Subscription Type</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <type>MultiselectPicklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Newsletter Recipient</fullName>
+                <default>false</default>
+                <label>Newsletter Recipient</label>
+            </value>
+            <value>
+                <fullName>Technical POC</fullName>
+                <default>false</default>
+                <label>Technical POC</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+    <visibleLines>4</visibleLines>
+</CustomField>

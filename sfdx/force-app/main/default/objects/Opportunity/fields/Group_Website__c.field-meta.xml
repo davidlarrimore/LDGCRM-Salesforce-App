@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Group_Website__c</fullName>
+    <description>Website of the requesting office.</description>
+    <inlineHelpText>Enter website URL of government sub-agency or office requesting the opportunity</inlineHelpText>
+    <label>Group Website</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Url</type>
+</CustomField>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Est_First_Year_Revenue__c</fullName>
+    <description>What we can expect in the first year based on “Est. Annual Revenue (fully ramped)” x “First Year Ramp %”</description>
+    <formula>MAX(
+    IF(
+        ISPICKVAL(LDGCRM_Opportunity_Type__c, &quot;OM - New Agreement&quot;),
+        30000,
+        0
+    ),
+    (
+        LDGCRM_Est_Annual_Revenue_fully_ramped__c *
+        LDGCRM_Est_First_Year_Ramp__c
+    )
+)</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <inlineHelpText>What we can expect in the first year based on “Est. Annual Revenue (fully ramped)” x “First Year Ramp %”</inlineHelpText>
+    <label>Est. First Year Revenue</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

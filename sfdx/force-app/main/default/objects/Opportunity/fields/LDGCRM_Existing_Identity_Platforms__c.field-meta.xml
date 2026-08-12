@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Existing_Identity_Platforms__c</fullName>
+    <description>Which service providers the lead is currently using.</description>
+    <inlineHelpText>Which service providers the lead is currently using.</inlineHelpText>
+    <label>Existing Identity Platforms</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>MultiselectPicklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>None</fullName>
+                <default>false</default>
+                <label>None</label>
+            </value>
+            <value>
+                <fullName>Homegrown (placeholder)</fullName>
+                <default>false</default>
+                <label>Homegrown (placeholder)</label>
+            </value>
+            <value>
+                <fullName>AWS</fullName>
+                <default>false</default>
+                <label>AWS</label>
+            </value>
+            <value>
+                <fullName>Socure</fullName>
+                <default>false</default>
+                <label>Socure</label>
+            </value>
+            <value>
+                <fullName>Google CiviForm</fullName>
+                <default>false</default>
+                <label>Google CiviForm</label>
+            </value>
+            <value>
+                <fullName>ManTech</fullName>
+                <default>false</default>
+                <label>ManTech</label>
+            </value>
+            <value>
+                <fullName>Granicus</fullName>
+                <default>false</default>
+                <label>Granicus</label>
+            </value>
+            <value>
+                <fullName>Okta</fullName>
+                <default>false</default>
+                <label>Okta</label>
+            </value>
+            <value>
+                <fullName>Azure</fullName>
+                <default>false</default>
+                <label>Azure</label>
+            </value>
+            <value>
+                <fullName>Oracle AM</fullName>
+                <default>false</default>
+                <label>Oracle AM</label>
+            </value>
+            <value>
+                <fullName>Ping/Foregerock</fullName>
+                <default>false</default>
+                <label>Ping/Foregerock</label>
+            </value>
+            <value>
+                <fullName>Shibboleth</fullName>
+                <default>false</default>
+                <label>Shibboleth</label>
+            </value>
+            <value>
+                <fullName>Keycloak</fullName>
+                <default>false</default>
+                <label>Keycloak</label>
+            </value>
+            <value>
+                <fullName>LexisNexis</fullName>
+                <default>false</default>
+                <label>LexisNexis</label>
+            </value>
+            <value>
+                <fullName>1Kosmos</fullName>
+                <default>false</default>
+                <label>1Kosmos</label>
+            </value>
+            <value>
+                <fullName>ID.me</fullName>
+                <default>false</default>
+                <label>ID.me</label>
+            </value>
+            <value>
+                <fullName>Exostar</fullName>
+                <default>false</default>
+                <label>Exostar</label>
+            </value>
+            <value>
+                <fullName>Jakobsen Id</fullName>
+                <default>false</default>
+                <label>Jakobsen Id</label>
+            </value>
+            <value>
+                <fullName>Mattr</fullName>
+                <default>false</default>
+                <label>Mattr</label>
+            </value>
+            <value>
+                <fullName>Idemia</fullName>
+                <default>false</default>
+                <label>Idemia</label>
+            </value>
+            <value>
+                <fullName>Microsoft Power Pages</fullName>
+                <default>false</default>
+                <label>Microsoft Power Pages</label>
+            </value>
+            <value>
+                <fullName>Salesforce</fullName>
+                <default>false</default>
+                <label>Salesforce</label>
+            </value>
+            <value>
+                <fullName>Experian</fullName>
+                <default>false</default>
+                <label>Experian</label>
+            </value>
+            <value>
+                <fullName>Sign-In with Google</fullName>
+                <default>false</default>
+                <label>Sign-In with Google</label>
+            </value>
+            <value>
+                <fullName>Max.gov</fullName>
+                <default>false</default>
+                <label>Max.gov</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+    <visibleLines>8</visibleLines>
+</CustomField>

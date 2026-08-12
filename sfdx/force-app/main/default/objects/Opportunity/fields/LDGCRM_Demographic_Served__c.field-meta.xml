@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Demographic_Served__c</fullName>
+    <description>Demographic of end users served by the application.</description>
+    <inlineHelpText>Demographic of end users served by the application.</inlineHelpText>
+    <label>Demographic Served</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>MultiselectPicklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Federal Employees</fullName>
+                <default>false</default>
+                <label>Federal Employees</label>
+            </value>
+            <value>
+                <fullName>Government Employees (Military)</fullName>
+                <default>false</default>
+                <label>Government Employees (Military)</label>
+            </value>
+            <value>
+                <fullName>General Population</fullName>
+                <default>false</default>
+                <label>General Population</label>
+            </value>
+            <value>
+                <fullName>Veterans</fullName>
+                <default>false</default>
+                <label>Veterans</label>
+            </value>
+            <value>
+                <fullName>Non-USC</fullName>
+                <default>false</default>
+                <label>Non-USC</label>
+            </value>
+            <value>
+                <fullName>Gov&apos;t Employees</fullName>
+                <default>false</default>
+                <label>Gov&apos;t Employees</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+    <visibleLines>6</visibleLines>
+</CustomField>

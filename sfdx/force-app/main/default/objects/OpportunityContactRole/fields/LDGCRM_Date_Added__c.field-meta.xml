@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Date_Added__c</fullName>
+    <description>Date contact was added to Salesforce</description>
+    <inlineHelpText>Date contact was added to Salesforce</inlineHelpText>
+    <label>Date Added</label>
+    <required>false</required>
+    <type>Date</type>
+</CustomField>

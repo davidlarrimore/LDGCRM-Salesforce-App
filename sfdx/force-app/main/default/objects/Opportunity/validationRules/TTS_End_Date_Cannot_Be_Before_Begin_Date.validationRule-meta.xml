@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_End_Date_Cannot_Be_Before_Begin_Date</fullName>
+    <active>true</active>
+    <description>Requiring &quot;Period of Performance End&quot; date to be after &quot;Period of Performance Start&quot; date</description>
+    <errorConditionFormula>AND (RecordType.Name =&apos;TTS OTCRM Opportunity&apos;, Period_of_Performance_Start__c  &gt;  Period_of_Performance_End__c)</errorConditionFormula>
+    <errorMessage>Period Performance End Date cannot be before Period Performance Begin Date.</errorMessage>
+</ValidationRule>

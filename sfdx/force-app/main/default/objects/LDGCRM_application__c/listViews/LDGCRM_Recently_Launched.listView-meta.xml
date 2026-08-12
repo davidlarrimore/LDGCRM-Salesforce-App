@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Recently_Launched</fullName>
+    <columns>NAME</columns>
+    <columns>LDGCRM_Partner_Account__c</columns>
+    <columns>LDGCRM_Launch_Checklist_Completion__c</columns>
+    <columns>LDGCRM_Status__c</columns>
+    <columns>LDGCRM_Current_Go_Live_Date__c</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>LDGCRM_Status__c</field>
+        <operation>equals</operation>
+        <value>Active</value>
+    </filters>
+    <filters>
+        <field>LDGCRM_Current_Go_Live_Date__c</field>
+        <operation>lessThan</operation>
+        <value>TODAY</value>
+    </filters>
+    <label>Recently Launched</label>
+</ListView>

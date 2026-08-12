@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Talking_Point__c</fullName>
+    <description>Ways to talk about the impediment to partners</description>
+    <inlineHelpText>Ways to talk about the impediment to partners</inlineHelpText>
+    <label>Talking Point</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>TextArea</type>
+</CustomField>

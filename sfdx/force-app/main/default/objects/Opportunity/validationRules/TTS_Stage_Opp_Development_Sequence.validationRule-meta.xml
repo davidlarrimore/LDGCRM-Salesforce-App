@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_Stage_Opp_Development_Sequence</fullName>
+    <active>true</active>
+    <description>Opportunity cannot go to Opportunity Development from Lead Generation</description>
+    <errorConditionFormula>RecordType.DeveloperName = &quot;TTS_OTCRM_Opportunity&quot; &amp;&amp;
+ISCHANGED(StageName) &amp;&amp;
+ISPICKVAL(StageName, &quot;Opportunity Development&quot;) &amp;&amp; 
+ISPICKVAL(PRIORVALUE(StageName),&quot;Lead Generation&quot;)</errorConditionFormula>
+    <errorDisplayField>StageName</errorDisplayField>
+    <errorMessage>Opportunity cannot go to Opportunity Development from Lead Generation</errorMessage>
+</ValidationRule>

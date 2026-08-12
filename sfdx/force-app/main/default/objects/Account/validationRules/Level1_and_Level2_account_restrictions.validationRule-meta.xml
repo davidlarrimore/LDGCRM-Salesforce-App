@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Level1_and_Level2_account_restrictions</fullName>
+    <active>false</active>
+    <description>Restricts the creating and editing of Level 1 and Level 2 accounts to only SAdmins  SFPEO -1037 and SFPEO -1038</description>
+    <errorConditionFormula>FALSE</errorConditionFormula>
+    <errorMessage>Only System Admins can create or edit level 1 or level 2 accounts</errorMessage>
+</ValidationRule>

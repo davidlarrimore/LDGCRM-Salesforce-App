@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Administration_Priorities__c</fullName>
+    <inlineHelpText>Select one or more priorities</inlineHelpText>
+    <label>Administration Priorities</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>MultiselectPicklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>American Rescue Plan</fullName>
+                <default>false</default>
+                <label>American Rescue Plan</label>
+            </value>
+            <value>
+                <fullName>COVID-19</fullName>
+                <default>false</default>
+                <label>COVID-19</label>
+            </value>
+            <value>
+                <fullName>Climate change</fullName>
+                <default>false</default>
+                <label>Climate change</label>
+            </value>
+            <value>
+                <fullName>Diversity, equity, accessibility, and inclusion</fullName>
+                <default>false</default>
+                <label>Diversity, equity, accessibility, and inclusion</label>
+            </value>
+            <value>
+                <fullName>HISP</fullName>
+                <default>false</default>
+                <label>HISP</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+    <visibleLines>4</visibleLines>
+</CustomField>

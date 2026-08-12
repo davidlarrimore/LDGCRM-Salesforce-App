@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Parent_Account_Required_for_Level_3_Acct</fullName>
+    <active>true</active>
+    <description>Parent Account is Required for Level 3 or below Accounts.</description>
+    <errorConditionFormula>AND(
+RecordType.Name=&apos;Federal&apos;,
+ISPICKVAL(Account_Level__c , &apos;Level 3 or below&apos;),
+ISBLANK(ParentId)
+)</errorConditionFormula>
+    <errorDisplayField>ParentId</errorDisplayField>
+    <errorMessage>Parent Account is Required for Level 3 or below Accounts.</errorMessage>
+</ValidationRule>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Level_1_cannot_have_Parent_Account</fullName>
+    <active>false</active>
+    <description>Level 1 Account requires a null value in &apos;Parent Account&apos; field</description>
+    <errorConditionFormula>RecordType.DeveloperName = &quot;Federal&quot; &amp;&amp;
+(
+(ISPICKVAL( Account_Level__c, &apos;Level 1&apos;) &amp;&amp; !ISBLANK(ParentId))
+)</errorConditionFormula>
+    <errorDisplayField>Account_Level__c</errorDisplayField>
+    <errorMessage>In order to save this record as a &apos;Level 1&apos;  Account you must clear the value in &apos;Parent Account&apos; field</errorMessage>
+</ValidationRule>

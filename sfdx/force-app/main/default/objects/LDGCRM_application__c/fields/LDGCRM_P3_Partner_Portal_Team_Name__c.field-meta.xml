@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_P3_Partner_Portal_Team_Name__c</fullName>
+    <caseSensitive>false</caseSensitive>
+    <description>Name from the partner portal that was copied over. The name can be modified, so trust the Team UUID.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Name from the partner portal that was copied over. The name can be modified, so trust the Team UUID.</inlineHelpText>
+    <label>Partner Portal Team Name</label>
+    <length>50</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>true</unique>
+</CustomField>

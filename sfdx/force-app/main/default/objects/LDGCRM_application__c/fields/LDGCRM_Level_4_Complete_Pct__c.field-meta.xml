@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Level_4_Complete_Pct__c</fullName>
+    <formula>(
+    IF(LDGCRM_Marketing_Strategy__c, 1, 0) +
+    IF(LDGCRM_Requested_CC_Reporting__c, 1, 0) +
+    IF(NOT(ISBLANK(LDGCRM_Completed_Security_Survey_URL__c)), 1, 0) +
+    IF(
+        OR(
+            LDGCRM_Security_Meeting__c,
+            LDGCRM_No_Security_Meeting__c
+        ),
+        1,
+        0
+    )
+) / 4</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <label>Level 4+ Complete %</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Percent</type>
+</CustomField>

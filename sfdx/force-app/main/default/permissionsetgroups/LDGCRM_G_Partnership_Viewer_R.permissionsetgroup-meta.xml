@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSetGroup xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Login.gov Partnership Viewer &amp; Orgwide Hide Salesforce Classic</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>LDGCRM - G - Partnership Viewer - R</label>
+    <permissionSets>LDGCRM_Partnership_Viewer_R</permissionSets>
+    <permissionSets>OrgWide_Hide_Salesforce_Classic_System</permissionSets>
+    <status>Updated</status>
+</PermissionSetGroup>

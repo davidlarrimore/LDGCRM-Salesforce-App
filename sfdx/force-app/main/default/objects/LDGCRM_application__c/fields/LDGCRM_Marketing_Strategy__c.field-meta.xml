@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Marketing_Strategy__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Confirm if agency expects Login.gov participation in pre-launch or launch day activities.</description>
+    <inlineHelpText>Confirm if agency expects Login.gov participation in pre-launch or launch day activities.</inlineHelpText>
+    <label>Marketing/Comms Strategy</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

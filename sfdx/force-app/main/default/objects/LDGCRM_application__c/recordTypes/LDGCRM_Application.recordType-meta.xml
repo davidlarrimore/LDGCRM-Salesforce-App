@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Application</fullName>
+    <active>true</active>
+    <description>Master Login.gov Record Type</description>
+    <label>Login.gov Application</label>
+    <picklistValues>
+        <picklist>LDGCRM_Demographic_Served__c</picklist>
+        <values>
+            <fullName>Federal Employees</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>General Population</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Gov%27t Employees %28Contractors%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Government Employees %28Military%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Non-USC</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Veterans</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Launch_Level__c</picklist>
+        <values>
+            <fullName>1 - Very Low Impact</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>2 - Low Impact</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>3 - Moderate Impact</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>4 - High Impact</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>5 - Very High Impact</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Ramp_Up_Approach__c</picklist>
+        <values>
+            <fullName>Gradual</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Immediate</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Spikes</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Service_Level__c</picklist>
+        <values>
+            <fullName>Authentication Only</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Basic IdV</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Enhanced IdV %28IAL2%29</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Status__c</picklist>
+        <values>
+            <fullName>Active</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Decommissioned</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Move to Production Request</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Not Active</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Partner Pause</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Pending Agreement</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Pending Launch</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Pending Partner Decommission</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Service Level Change Scheduled</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Volume Increase Scheduled</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+</RecordType>

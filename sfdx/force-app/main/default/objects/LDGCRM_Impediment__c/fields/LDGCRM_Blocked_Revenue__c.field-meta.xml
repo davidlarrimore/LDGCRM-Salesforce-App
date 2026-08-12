@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Blocked_Revenue__c</fullName>
+    <description>Sum of blocked revenue from Opportunity Impediments</description>
+    <inlineHelpText>Sum of blocked revenue from Opportunity Impediments</inlineHelpText>
+    <label>Blocked Revenue</label>
+    <summarizedField>LDGCRM_Opportunity_Impediment__c.LDGCRM_Blocked_Revenue__c</summarizedField>
+    <summaryForeignKey>LDGCRM_Opportunity_Impediment__c.LDGCRM_Impediment__c</summaryForeignKey>
+    <summaryOperation>sum</summaryOperation>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Summary</type>
+</CustomField>

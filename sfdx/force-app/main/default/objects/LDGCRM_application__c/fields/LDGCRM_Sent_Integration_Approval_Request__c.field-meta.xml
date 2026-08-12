@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Sent_Integration_Approval_Request__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>OE has confirmed the service level for the integration request matches AirTable.</description>
+    <inlineHelpText>OE has confirmed the service level for the integration request matches AirTable.</inlineHelpText>
+    <label>Integration Request Approval Sent</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

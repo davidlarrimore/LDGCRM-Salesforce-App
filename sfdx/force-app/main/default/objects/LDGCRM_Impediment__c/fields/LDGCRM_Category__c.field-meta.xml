@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Category__c</fullName>
+    <description>Type of impediment</description>
+    <inlineHelpText>Type of impediment</inlineHelpText>
+    <label>Category</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Product / Feature request</fullName>
+                <default>false</default>
+                <label>Product / Feature request</label>
+            </value>
+            <value>
+                <fullName>Relationship issue</fullName>
+                <default>false</default>
+                <label>Relationship issue</label>
+            </value>
+            <value>
+                <fullName>Issue on partner end</fullName>
+                <default>false</default>
+                <label>Issue on partner end</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

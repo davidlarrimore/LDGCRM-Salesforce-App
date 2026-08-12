@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DashboardFolder xmlns="http://soap.sforce.com/2006/04/metadata">
+    <folderShares>
+        <accessLevel>Manage</accessLevel>
+        <sharedTo>LDGCRM_Team_Members</sharedTo>
+        <sharedToType>Group</sharedToType>
+    </folderShares>
+    <folderShares>
+        <accessLevel>View</accessLevel>
+        <sharedTo>LDGCRM_Viewers</sharedTo>
+        <sharedToType>Group</sharedToType>
+    </folderShares>
+    <name>Login.gov CRM Dashboards</name>
+</DashboardFolder>

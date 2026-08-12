@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>deprecated_TLDGCRM_Technical_Readiness__c</fullName>
+    <description>How ready is this opportunity to move forward technically.</description>
+    <label>deprecated_Technical Readiness</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Login.gov is integrated, but not used fully</fullName>
+                <default>false</default>
+                <label>Login.gov is integrated, but not used fully</label>
+            </value>
+            <value>
+                <fullName>Has a broker app, with ability to add multiple vendors</fullName>
+                <default>false</default>
+                <label>Has a broker app, with ability to add multiple vendors</label>
+            </value>
+            <value>
+                <fullName>Uses a vendor sign-in solution</fullName>
+                <default>false</default>
+                <label>Uses a vendor sign-in solution</label>
+            </value>
+            <value>
+                <fullName>Uses a home-grown sign-in solution</fullName>
+                <default>false</default>
+                <label>Uses a home-grown sign-in solution</label>
+            </value>
+            <value>
+                <fullName>Has a website w/o a sign-in solution</fullName>
+                <default>false</default>
+                <label>Has a website w/o a sign-in solution</label>
+            </value>
+            <value>
+                <fullName>Does not have a website</fullName>
+                <default>false</default>
+                <label>Does not have a website</label>
+            </value>
+            <value>
+                <fullName>Login.gov is integrated, fully</fullName>
+                <default>false</default>
+                <label>Login.gov is integrated, fully</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

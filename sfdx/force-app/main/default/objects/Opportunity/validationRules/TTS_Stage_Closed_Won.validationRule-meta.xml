@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_Stage_Closed_Won</fullName>
+    <active>true</active>
+    <description>Please enter the Closed Date for the Opportunity to enter Closed Won</description>
+    <errorConditionFormula>RecordType.DeveloperName = &quot;TTS_OTCRM_Opportunity&quot;&amp;&amp;
+ISPICKVAL( StageName, &quot;Closed Won&quot; )&amp;&amp;
+ISBLANK( CloseDate )</errorConditionFormula>
+    <errorDisplayField>CloseDate</errorDisplayField>
+    <errorMessage>Please enter the Closed Date for the Opportunity to enter Closed Won</errorMessage>
+</ValidationRule>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Source_Detail_Referral__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <label>Source Detail (Referral)</label>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Contacts (Source Detail (Referral))</relationshipLabel>
+    <relationshipName>Contact_Referral</relationshipName>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <type>Lookup</type>
+</CustomField>

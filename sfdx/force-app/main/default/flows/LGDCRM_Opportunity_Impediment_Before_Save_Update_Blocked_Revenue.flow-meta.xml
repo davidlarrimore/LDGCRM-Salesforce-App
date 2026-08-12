@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <areMetricsLoggedToDataCloud>false</areMetricsLoggedToDataCloud>
+    <decisions>
+        <description>Checks to see if 1) severity is &quot;blocker&quot; and 2) the Opportunity is closed/won (We don&apos;t count closed/won opportunities)</description>
+        <name>LGDCRM_Opportunity_Impediment_Before_Save_UBR_Decision_If_Blocker</name>
+        <label>LGDCRM - Opportunity Impediment - Before Save - UBR - Decision - If Blocker</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <defaultConnector>
+            <targetReference>LGDCRM_Opportunity_Impediment_Before_Save_UBR_Not_Blocked_Update</targetReference>
+        </defaultConnector>
+        <defaultConnectorLabel>Not a Blocker</defaultConnectorLabel>
+        <rules>
+            <name>If_Blocker</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.LDGCRM_Severity__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <stringValue>Blocker</stringValue>
+                </rightValue>
+            </conditions>
+            <conditions>
+                <leftValueReference>$Record.LDGCRM_Opportunity__r.StageName</leftValueReference>
+                <operator>NotEqualTo</operator>
+                <rightValue>
+                    <stringValue>Closed Won</stringValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>LGDCRM_Opportunity_Impediment_Before_Save_UBR_Is_Blocked_Update</targetReference>
+            </connector>
+            <label>This is a Blocker</label>
+        </rules>
+    </decisions>
+    <description>On creation/Update, calculates/recalculates the Blocked Amount</description>
+    <environments>Default</environments>
+    <interviewLabel>LGDCRM : Opportunity Impediment : Before Save : Update Blocked Revenue {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>LGDCRM : Opportunity Impediment : Before Save : Update Blocked Revenue</label>
+    <processMetadataValues>
+        <name>BuilderType</name>
+        <value>
+            <stringValue>LightningFlowBuilder</stringValue>
+        </value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>CanvasMode</name>
+        <value>
+            <stringValue>AUTO_LAYOUT_CANVAS</stringValue>
+        </value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>OriginBuilderType</name>
+        <value>
+            <stringValue>LightningFlowBuilder</stringValue>
+        </value>
+    </processMetadataValues>
+    <processType>AutoLaunchedFlow</processType>
+    <recordUpdates>
+        <description>We have a blocked value we need to enter</description>
+        <name>LGDCRM_Opportunity_Impediment_Before_Save_UBR_Is_Blocked_Update</name>
+        <label>LGDCRM - Opportunity Impediment - Before Save - UBR - Is Blocked - Update</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <inputAssignments>
+            <field>LDGCRM_Blocked_Revenue__c</field>
+            <value>
+                <elementReference>$Record.LDGCRM_Opportunity__r.LDGCRM_Est_Annual_Revenue_fully_ramped__c</elementReference>
+            </value>
+        </inputAssignments>
+        <inputReference>$Record</inputReference>
+    </recordUpdates>
+    <recordUpdates>
+        <description>Update Opportunity Impediment if NOT Blocked</description>
+        <name>LGDCRM_Opportunity_Impediment_Before_Save_UBR_Not_Blocked_Update</name>
+        <label>LGDCRM - Opportunity Impediment - Before Save - UBR - Not Blocked - Update</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <inputAssignments>
+            <field>LDGCRM_Blocked_Revenue__c</field>
+            <value>
+                <numberValue>0.0</numberValue>
+            </value>
+        </inputAssignments>
+        <inputReference>$Record</inputReference>
+    </recordUpdates>
+    <start>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>LGDCRM_Opportunity_Impediment_Before_Save_UBR_Decision_If_Blocker</targetReference>
+        </connector>
+        <object>LDGCRM_Opportunity_Impediment__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

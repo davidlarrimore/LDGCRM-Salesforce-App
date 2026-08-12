@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Agreement_Finalization_Email_Sent__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Once the IAA/IGCA is finalized, reach out to the partner to communicate next steps to deployment.</description>
+    <inlineHelpText>Once the IAA/IGCA is finalized, reach out to the partner to communicate next steps to deployment.</inlineHelpText>
+    <label>Agreement Finalization Email Sent</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

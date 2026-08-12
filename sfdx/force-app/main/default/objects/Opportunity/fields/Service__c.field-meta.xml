@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Service__c</fullName>
+    <description>Originally created for TTS OTCRM - Login.gov Opportunities</description>
+    <label>Service</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>IdV</fullName>
+                <default>false</default>
+                <label>IdV</label>
+            </value>
+            <value>
+                <fullName>Authentication Only</fullName>
+                <default>false</default>
+                <label>Authentication Only</label>
+            </value>
+            <value>
+                <fullName>IAL1</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>IAL1</label>
+            </value>
+            <value>
+                <fullName>IAL2</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>IAL2</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

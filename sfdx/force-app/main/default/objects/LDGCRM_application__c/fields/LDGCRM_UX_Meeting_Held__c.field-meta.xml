@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_UX_Meeting_Held__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Led by a Solutions Architect to discuss user flow scenarios and proofing fallback.</description>
+    <inlineHelpText>Led by a Solutions Architect to discuss user flow scenarios and proofing fallback.</inlineHelpText>
+    <label>UX Meeting</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

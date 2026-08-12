@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Estimate_Rationale__c</fullName>
+    <inlineHelpText>Rough explanation of the math of how we got to the estimated annual auth-only and and IdV users, as well as First Year Ramp %. If it’s research and not partner provided, consider:</inlineHelpText>
+    <label>Estimate rationale</label>
+    <length>32768</length>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Html</type>
+    <visibleLines>25</visibleLines>
+</CustomField>

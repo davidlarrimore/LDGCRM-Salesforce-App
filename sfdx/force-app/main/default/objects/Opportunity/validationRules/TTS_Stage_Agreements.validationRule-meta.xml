@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_Stage_Agreements</fullName>
+    <active>true</active>
+    <description>Please enter the required fields for the Opportunity to enter Agreements</description>
+    <errorConditionFormula>RecordType.DeveloperName = &quot;TTS_OTCRM_Opportunity&quot;&amp;&amp;
+ISPICKVAL( StageName, &quot;Agreements&quot; )&amp;&amp;
+ISBLANK(  Proposal__c  )</errorConditionFormula>
+    <errorDisplayField>Proposal__c</errorDisplayField>
+    <errorMessage>Please enter the Proposal for the Opportunity to enter Agreements</errorMessage>
+</ValidationRule>

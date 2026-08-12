@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_contact__c</fullName>
+    <deleteConstraint>Restrict</deleteConstraint>
+    <description>Contact</description>
+    <inlineHelpText>Select Related Contact</inlineHelpText>
+    <label>Contact</label>
+    <referenceTo>Contact</referenceTo>
+    <relationshipLabel>Application Contacts</relationshipLabel>
+    <relationshipName>Application_Contacts</relationshipName>
+    <required>true</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

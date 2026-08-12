@@ -43,6 +43,11 @@ sf org display --target-org gsa-peo
 
 # Install sfdx/ tooling (lint, prettier, jest, husky pre-commit hook)
 cd sfdx && npm install
+
+# If retrieving metadata into sfdx/force-app fails with "Filename too long",
+# this machine's disk mount adds a long path prefix that trips Windows' 260-char
+# limit on deeply nested Salesforce metadata paths. Fix once per clone:
+git config core.longpaths true
 ```
 
 ## Common tasks

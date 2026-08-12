@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Opportunity_Type__c</fullName>
+    <description>Please select the type of Opportunity.</description>
+    <inlineHelpText>Select opportunity type</inlineHelpText>
+    <label>Opportunity Type</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>New Business</fullName>
+                <default>false</default>
+                <label>New Business</label>
+            </value>
+            <value>
+                <fullName>Add-on/Mod</fullName>
+                <default>false</default>
+                <label>Add-on/Mod</label>
+            </value>
+            <value>
+                <fullName>Renewal</fullName>
+                <default>false</default>
+                <label>Renewal</label>
+            </value>
+            <value>
+                <fullName>Follow-on</fullName>
+                <default>false</default>
+                <label>Follow-on</label>
+            </value>
+            <value>
+                <fullName>Winback</fullName>
+                <default>false</default>
+                <label>Winback</label>
+            </value>
+            <value>
+                <fullName>AM - Account Growth</fullName>
+                <default>false</default>
+                <label>AM - Account Growth</label>
+            </value>
+            <value>
+                <fullName>AM - Renewal</fullName>
+                <default>false</default>
+                <label>AM - Renewal</label>
+            </value>
+            <value>
+                <fullName>OM - New Agreement</fullName>
+                <default>false</default>
+                <label>OM - New Agreement</label>
+            </value>
+            <value>
+                <fullName>Copied PIF opportunity</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>Copied PIF opportunity</label>
+            </value>
+            <value>
+                <fullName>Follow-on work</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>Follow-on work</label>
+            </value>
+            <value>
+                <fullName>Modification</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>Modification</label>
+            </value>
+            <value>
+                <fullName>New</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>New</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

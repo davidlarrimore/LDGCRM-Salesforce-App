@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_Stage_Lead_Generation</fullName>
+    <active>true</active>
+    <description>Please enter the required fields for the Opportunity to enter Lead Generation Stage</description>
+    <errorConditionFormula>RecordType.DeveloperName = &quot;TTS_OTCRM_Opportunity&quot; &amp;&amp;
+ISPICKVAL(StageName, &quot;Lead Generation&quot;)&amp;&amp;
+(
+ISBLANK(Name)||
+ISPICKVAL(Source__c, &quot;&quot;)||
+ISBLANK(Sourced_By__c)||
+ISBLANK(AccountId)||
+ISPICKVAL( LDGCRM_Opportunity_Type__c , &quot;&quot;)||
+ISPICKVAL(LDGCRM_Status__c, &quot;&quot;) 
+)</errorConditionFormula>
+    <errorMessage>Please enter the required fields for the Opportunity to enter Lead Generation Stage.
+Name,
+Source,
+Sourced By,
+Account,
+Opportunity Type,
+Status</errorMessage>
+</ValidationRule>

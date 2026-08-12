@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>OTCRM_Federal_Parent_Account_Level_Check</fullName>
+    <active>true</active>
+    <description>The selected Parent Account must be one hierarchical level above the current Account being added or edited. For example, if the current Account is at Level 2, its Parent Account must be at Level 1, ensuring the proper hierarchy structure.</description>
+    <errorConditionFormula>RecordType.DeveloperName = &quot;Federal&quot; &amp;&amp;
+(
+(ISPICKVAL( Account_Level__c, &apos;Level 2&apos;) &amp;&amp;  !ISPICKVAL( Parent.Account_Level__c , &apos;Level 1&apos;))
+ || 
+(ISPICKVAL( Account_Level__c, &apos;Level 3&apos;) &amp;&amp;  !ISPICKVAL( Parent.Account_Level__c , &apos;Level 2&apos;))
+||
+(ISPICKVAL( Account_Level__c, &apos;Level 4+&apos;) &amp;&amp;  !ISPICKVAL( Parent.Account_Level__c , &apos;Level 3&apos;))
+)</errorConditionFormula>
+    <errorDisplayField>ParentId</errorDisplayField>
+    <errorMessage>The selected Parent Account must be one hierarchical level above the current Account being added or edited. For example, if the current Account is at Level 2, its Parent Account must be at Level 1, ensuring the proper hierarchy structure.</errorMessage>
+</ValidationRule>

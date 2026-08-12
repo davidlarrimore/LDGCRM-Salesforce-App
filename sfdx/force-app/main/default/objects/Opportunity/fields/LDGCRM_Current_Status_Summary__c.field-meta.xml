@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Current_Status_Summary__c</fullName>
+    <description>Brief big-picture overview on who we are talking to and what they are saying/blocked on. Start entries with MM/DD/YY.</description>
+    <inlineHelpText>Brief big-picture overview on who we are talking to and what they are saying/blocked on. Start entries with MM/DD/YY.</inlineHelpText>
+    <label>Current Status Summary</label>
+    <length>32768</length>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Html</type>
+    <visibleLines>25</visibleLines>
+</CustomField>

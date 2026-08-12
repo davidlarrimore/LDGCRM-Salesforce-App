@@ -42,6 +42,21 @@ cd sfdx
 sf project retrieve start --metadata "<Type>:<Name>" --target-org gsa-peo
 ```
 
+**Retrieving an Outbound Change Set's exact contents:** Change Sets have no direct Metadata/Tooling
+API or `sf` support for listing/querying their component list, and a Setup UI Change Set detail page
+can't be fetched (it's behind an authenticated browser session). But a change set's **Name** (the
+label, not the Setup URL's ID) works as an unmanaged package name for retrieval:
+
+```bash
+cd sfdx
+sf project retrieve start --package-name "<Change Set Name>" --target-org gsa-peo
+```
+
+This retrieves into a **new folder named after the package** (e.g. `sfdx/<Change Set Name>/main/default/`),
+not into `force-app/`. Merge it in (`robocopy <src>\main\default force-app\main\default /E` handles
+this repo's long paths better than `Copy-Item -Recurse`), delete the now-empty source folder, and
+regenerate/hand-check `manifest/package.xml` against the merged result before committing.
+
 ## After retrieving
 
 Review what actually came down before treating it as clean:
@@ -53,6 +68,19 @@ git diff sfdx/force-app
 
 A retrieve can pull in metadata nobody intended to check in (someone else's WIP directly in the
 sandbox, unrelated config drift). Don't blindly commit everything a retrieve touches.
+
+**Wildcard retrieves (`CustomApplication:*`, `Layout:*`, etc.) pull the entire org**, not just this
+app — every standard Salesforce app and every unrelated custom app/layout/flow comes down too. Prefer
+the manifest or a change-set/package-name retrieve instead. If a wildcard retrieve does bring in
+out-of-scope noise, it'll show up as untracked (`??`) entries in `git status` — confirm nothing tracked
+changed, then `git clean -fd -- sfdx/force-app` to drop the untracked noise before merging in the parts
+you actually want.
+
+**Long paths:** this environment's disk mount adds a long internal prefix to every path, so retrieved
+metadata (deeply nested object/field files, verbose flow/layout names) can exceed Windows' 260-character
+path limit. If `git` reports `Filename too long` on `sfdx/force-app`, run
+`git config core.longpaths true` and retry; for plain file deletion (not through git), use
+`robocopy <empty-dir> <target> /MIR` instead of `Remove-Item -Recurse`.
 
 ## Deploying local changes
 

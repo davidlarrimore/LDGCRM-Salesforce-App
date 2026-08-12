@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Level_3_Complete_Pct__c</fullName>
+    <formula>(
+    IF(LDGCRM_Launch_Coordinators_Kickoff_Call__c, 1, 0) +
+
+    IF(ISBLANK(LDGCRM_Launch_Deck_URL__c), 0, 1) +
+
+    IF(
+        OR(
+            LDGCRM_Launch_Kickoff_Meeting_Held__c,
+            LDGCRM_No_Launch_Kickoff_Meeting__c
+        ),
+        1,
+        0
+    ) +
+
+    IF(ISBLANK(LDGCRM_Completed_Fraud_Survey__c), 0, 1) +
+
+    IF(
+        OR(
+            LDGCRM_Fraud_Meeting_Held__c,
+            LDGCRM_No_Fraud_Meeting__c
+        ),
+        1,
+        0
+    ) +
+
+    IF(
+        OR(
+            LDGCRM_UX_Meeting_Held__c,
+            LDGCRM_No_UX_Meeting__c
+        ),
+        1,
+        0
+    ) +
+
+    IF(
+        OR(
+            LDGCRM_Customer_Support_Meeting__c,
+            LDGCRM_No_Customer_Support_Meeting__c
+        ),
+        1,
+        0
+    )
+) / 7</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <label>Level 3+ Complete %</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Percent</type>
+</CustomField>

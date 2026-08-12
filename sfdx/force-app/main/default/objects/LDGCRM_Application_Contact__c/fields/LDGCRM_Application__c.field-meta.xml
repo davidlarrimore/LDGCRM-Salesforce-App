@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Application__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <label>Application</label>
+    <referenceTo>LDGCRM_application__c</referenceTo>
+    <relationshipLabel>Application Contacts</relationshipLabel>
+    <relationshipName>Application_Contacts</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

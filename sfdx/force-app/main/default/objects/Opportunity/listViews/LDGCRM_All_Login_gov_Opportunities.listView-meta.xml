@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_All_Login_gov_Opportunities</fullName>
+    <columns>OPPORTUNITY.NAME</columns>
+    <columns>ACCOUNT.NAME</columns>
+    <columns>OPPORTUNITY.STAGE_NAME</columns>
+    <columns>LDGCRM_Est_Annual_Revenue_fully_ramped__c</columns>
+    <columns>CORE.USERS.FULL_NAME</columns>
+    <columns>LDGCRM_Estimated_Go_Live_Date__c</columns>
+    <columns>LDGCRM_Likely_Service_Level_Needed__c</columns>
+    <columns>LDGCRM_Focus_Level__c</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>OPPORTUNITY.RECORDTYPE</field>
+        <operation>equals</operation>
+        <value>Opportunity.Login_gov</value>
+    </filters>
+    <label>All Login.gov Opportunities</label>
+    <sharedTo>
+        <group>LDGCRM_Team_Members</group>
+    </sharedTo>
+</ListView>

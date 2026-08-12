@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <areMetricsLoggedToDataCloud>false</areMetricsLoggedToDataCloud>
+    <assignments>
+        <description>Assigns Value</description>
+        <name>LGDCRM_Opportunity_After_Save_UOI_Loop_Blocked_Assign</name>
+        <label>Assigned Blocked Revenue</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <assignmentItems>
+            <assignToReference>LGDCRM_Opportunity_After_Save_UOI_OI_Loop.LDGCRM_Blocked_Revenue__c</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <elementReference>$Record.LDGCRM_Est_Annual_Revenue_fully_ramped__c</elementReference>
+            </value>
+        </assignmentItems>
+        <connector>
+            <targetReference>LGDCRM_Opportunity_After_Save_UOI_OI_Loop</targetReference>
+        </connector>
+    </assignments>
+    <assignments>
+        <description>Assigns Value</description>
+        <name>LGDCRM_Opportunity_After_Save_UOI_Loop_Not_Blocked_Assign</name>
+        <label>Clear Blocked Revenue</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <assignmentItems>
+            <assignToReference>LGDCRM_Opportunity_After_Save_UOI_OI_Loop.LDGCRM_Blocked_Revenue__c</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <numberValue>0.0</numberValue>
+            </value>
+        </assignmentItems>
+        <connector>
+            <targetReference>LGDCRM_Opportunity_After_Save_UOI_OI_Loop</targetReference>
+        </connector>
+    </assignments>
+    <decisions>
+        <description>did we find Opportunity Impediments?</description>
+        <name>LGDCRM_Opportunity_After_Save_UOI_Decision_Found_Oppty_Impediments</name>
+        <label>Decision - Did we find Opportunity Impediments</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <defaultConnectorLabel>No Impediments Found</defaultConnectorLabel>
+        <rules>
+            <name>LGDCRM_Opportunity_After_Save_UOI_Decision_Found_Oppty_Impediments_Yes</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>LGDCRM_Opportunity_After_Save_UOI_Get_Oppty_Impediemnts</leftValueReference>
+                <operator>IsNull</operator>
+                <rightValue>
+                    <booleanValue>false</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>LGDCRM_Opportunity_After_Save_UOI_OI_Loop</targetReference>
+            </connector>
+            <label>Found Impediments</label>
+        </rules>
+    </decisions>
+    <decisions>
+        <description>checks to see if Opportunity Impediment is blocked</description>
+        <name>LGDCRM_Opportunity_After_Save_UOI_Loop_If_Blocked</name>
+        <label>Decision - Checked if Impediment is &quot;Blocked&quot;</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <defaultConnector>
+            <targetReference>LGDCRM_Opportunity_After_Save_UOI_Loop_Not_Blocked_Assign</targetReference>
+        </defaultConnector>
+        <defaultConnectorLabel>Is Not Blocked</defaultConnectorLabel>
+        <rules>
+            <name>Outcome_1_of_LGDCRM_Opportunity_After_Save_UOI_Loop_If_Blocked</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.StageName</leftValueReference>
+                <operator>NotEqualTo</operator>
+                <rightValue>
+                    <stringValue>Closed Won</stringValue>
+                </rightValue>
+            </conditions>
+            <conditions>
+                <leftValueReference>LGDCRM_Opportunity_After_Save_UOI_OI_Loop.LDGCRM_Severity__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <stringValue>Blocker</stringValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>LGDCRM_Opportunity_After_Save_UOI_Loop_Blocked_Assign</targetReference>
+            </connector>
+            <label>Is Blocked</label>
+        </rules>
+    </decisions>
+    <description>Updates Opportunity Impediments Blocked Amount (If conditions apply)</description>
+    <environments>Default</environments>
+    <interviewLabel>LGDCRM : Opportunity : After Save : Update Opportunity Impediments {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>LGDCRM : Opportunity : After Save : Update Opportunity Impediments</label>
+    <loops>
+        <description>Loop through Opportunity Impediments</description>
+        <name>LGDCRM_Opportunity_After_Save_UOI_OI_Loop</name>
+        <label>Opportunity Impediment Loop</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <collectionReference>LGDCRM_Opportunity_AfterSave_UOI_Updated_Opportunity_Impediments</collectionReference>
+        <iterationOrder>Asc</iterationOrder>
+        <nextValueConnector>
+            <targetReference>LGDCRM_Opportunity_After_Save_UOI_Loop_If_Blocked</targetReference>
+        </nextValueConnector>
+        <noMoreValuesConnector>
+            <targetReference>LGDCRM_Opportunity_After_Save_UOI_Update_Opportunity_Impediments</targetReference>
+        </noMoreValuesConnector>
+    </loops>
+    <processMetadataValues>
+        <name>BuilderType</name>
+        <value>
+            <stringValue>LightningFlowBuilder</stringValue>
+        </value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>CanvasMode</name>
+        <value>
+            <stringValue>AUTO_LAYOUT_CANVAS</stringValue>
+        </value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>OriginBuilderType</name>
+        <value>
+            <stringValue>LightningFlowBuilder</stringValue>
+        </value>
+    </processMetadataValues>
+    <processType>AutoLaunchedFlow</processType>
+    <recordLookups>
+        <description>Retrieve Related Opportunity Impediments</description>
+        <name>LGDCRM_Opportunity_After_Save_UOI_Get_Oppty_Impediemnts</name>
+        <label>Get Opportunity Impediements</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <assignNullValuesIfNoRecordsFound>true</assignNullValuesIfNoRecordsFound>
+        <connector>
+            <targetReference>LGDCRM_Opportunity_After_Save_UOI_Decision_Found_Oppty_Impediments</targetReference>
+        </connector>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>LDGCRM_Opportunity__c</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>$Record.Id</elementReference>
+            </value>
+        </filters>
+        <object>LDGCRM_Opportunity_Impediment__c</object>
+        <outputReference>LGDCRM_Opportunity_AfterSave_UOI_Updated_Opportunity_Impediments</outputReference>
+        <queriedFields>Id</queriedFields>
+        <queriedFields>LDGCRM_Severity__c</queriedFields>
+        <queriedFields>LDGCRM_Blocked_Revenue__c</queriedFields>
+    </recordLookups>
+    <recordUpdates>
+        <description>Updates Opportunity Impediments</description>
+        <name>LGDCRM_Opportunity_After_Save_UOI_Update_Opportunity_Impediments</name>
+        <label>Update Opportunity Impediments</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <inputReference>LGDCRM_Opportunity_AfterSave_UOI_Updated_Opportunity_Impediments</inputReference>
+    </recordUpdates>
+    <start>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>LGDCRM_Opportunity_After_Save_UOI_Get_Oppty_Impediemnts</targetReference>
+        </connector>
+        <filterLogic>or</filterLogic>
+        <filters>
+            <field>LDGCRM_Est_Auth_Only_Avg_Active_Months__c</field>
+            <operator>IsChanged</operator>
+            <value>
+                <booleanValue>true</booleanValue>
+            </value>
+        </filters>
+        <filters>
+            <field>StageName</field>
+            <operator>IsChanged</operator>
+            <value>
+                <booleanValue>true</booleanValue>
+            </value>
+        </filters>
+        <filters>
+            <field>LDGCRM_Est_Annual_Idv_Users__c</field>
+            <operator>IsChanged</operator>
+            <value>
+                <booleanValue>true</booleanValue>
+            </value>
+        </filters>
+        <filters>
+            <field>LDGCRM_Est_Annual_Auth_Only_Users__c</field>
+            <operator>IsChanged</operator>
+            <value>
+                <booleanValue>true</booleanValue>
+            </value>
+        </filters>
+        <filters>
+            <field>Type</field>
+            <operator>IsChanged</operator>
+            <value>
+                <booleanValue>true</booleanValue>
+            </value>
+        </filters>
+        <object>Opportunity</object>
+        <recordTriggerType>Update</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+    <variables>
+        <description>Updated Opportunity Impediments Collection</description>
+        <name>LGDCRM_Opportunity_AfterSave_UOI_Updated_Opportunity_Impediments</name>
+        <dataType>SObject</dataType>
+        <isCollection>true</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+        <objectType>LDGCRM_Opportunity_Impediment__c</objectType>
+    </variables>
+</Flow>

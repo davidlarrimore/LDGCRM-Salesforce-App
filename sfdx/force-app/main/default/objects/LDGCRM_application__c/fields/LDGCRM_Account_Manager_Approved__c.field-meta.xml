@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Account_Manager_Approved__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>AM has verified all launch details are accurate and we are ready for launch after the partner submits a move to production request.</description>
+    <inlineHelpText>AM has verified all launch details are accurate and we are ready for launch after the partner submits a move to production request.</inlineHelpText>
+    <label>Account Manager Approved</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

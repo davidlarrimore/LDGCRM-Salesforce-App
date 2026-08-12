@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSetGroup xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Login.gov Production Support &amp; Orgwide Hide Classic Permission Sets</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>LDGCRM - G - Production Support - CRED</label>
+    <permissionSets>LDGCRM_Production_Support_CRED</permissionSets>
+    <permissionSets>OrgWide_Hide_Salesforce_Classic_System</permissionSets>
+    <status>Updated</status>
+</PermissionSetGroup>

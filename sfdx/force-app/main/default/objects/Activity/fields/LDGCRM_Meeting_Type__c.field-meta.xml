@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Meeting_Type__c</fullName>
+    <description>Category or purpose of the meeting.</description>
+    <inlineHelpText>Category or purpose of the meeting.</inlineHelpText>
+    <label>Meeting Type</label>
+    <required>false</required>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Intro Call</fullName>
+                <default>false</default>
+                <label>Intro Call</label>
+            </value>
+            <value>
+                <fullName>Technical Consultation</fullName>
+                <default>false</default>
+                <label>Technical Consultation</label>
+            </value>
+            <value>
+                <fullName>BD Ad-hoc Follow Up</fullName>
+                <default>false</default>
+                <label>BD Ad-hoc Follow Up</label>
+            </value>
+            <value>
+                <fullName>AM Ad-hoc Follow Up</fullName>
+                <default>false</default>
+                <label>AM Ad-hoc Follow Up</label>
+            </value>
+            <value>
+                <fullName>Exec Leadership</fullName>
+                <default>false</default>
+                <label>Exec Leadership</label>
+            </value>
+            <value>
+                <fullName>Networking</fullName>
+                <default>false</default>
+                <label>Networking</label>
+            </value>
+            <value>
+                <fullName>Demo</fullName>
+                <default>false</default>
+                <label>Demo</label>
+            </value>
+            <value>
+                <fullName>Quarterly Business Review</fullName>
+                <default>false</default>
+                <label>Quarterly Business Review</label>
+            </value>
+            <value>
+                <fullName>AM - Regular Sync</fullName>
+                <default>false</default>
+                <label>AM - Regular Sync</label>
+            </value>
+            <value>
+                <fullName>Launch Meeting</fullName>
+                <default>false</default>
+                <label>Launch Meeting</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_Stage_Closed_Lost_and_Disqualified</fullName>
+    <active>true</active>
+    <description>Opportunity CANNOT go back to any Stage from Closed Lost or Disqualified</description>
+    <errorConditionFormula>RecordType.DeveloperName = &quot;TTS_OTCRM_Opportunity&quot; &amp;&amp;
+ISCHANGED(StageName) &amp;&amp;
+ (
+  ISPICKVAL(PRIORVALUE(StageName),&quot;Closed Lost&quot;) ||
+  ISPICKVAL(PRIORVALUE(StageName),&quot;Disqualified&quot;)
+ ) &amp;&amp;
+ (
+  !ISPICKVAL(StageName, &quot;Closed Lost&quot;) ||
+  !ISPICKVAL(StageName, &quot;Disqualified&quot;)
+ )</errorConditionFormula>
+    <errorDisplayField>StageName</errorDisplayField>
+    <errorMessage>Opportunity CANNOT go back to any Stage from Closed Lost or Disqualified</errorMessage>
+</ValidationRule>

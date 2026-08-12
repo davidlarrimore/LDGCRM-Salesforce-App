@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_Office_s__c</fullName>
+    <label>TTS Office(s)</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <type>MultiselectPicklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>18F</fullName>
+                <default>false</default>
+                <label>18F</label>
+            </value>
+            <value>
+                <fullName>Centers of Excellence</fullName>
+                <default>false</default>
+                <label>Centers of Excellence</label>
+            </value>
+            <value>
+                <fullName>Cloud.gov</fullName>
+                <default>false</default>
+                <label>Cloud.gov</label>
+            </value>
+            <value>
+                <fullName>Login.gov</fullName>
+                <default>false</default>
+                <label>Login.gov</label>
+            </value>
+            <value>
+                <fullName>Presidential Innovation Fellows</fullName>
+                <default>false</default>
+                <label>Presidential Innovation Fellows</label>
+            </value>
+            <value>
+                <fullName>U.S. Digital Corps</fullName>
+                <default>false</default>
+                <label>U.S. Digital Corps</label>
+            </value>
+            <value>
+                <fullName>USAgov</fullName>
+                <default>false</default>
+                <label>USAgov</label>
+            </value>
+            <value>
+                <fullName>Other</fullName>
+                <default>false</default>
+                <label>Other</label>
+            </value>
+            <value>
+                <fullName>10x</fullName>
+                <default>false</default>
+                <label>10x</label>
+            </value>
+            <value>
+                <fullName>api.data.gov</fullName>
+                <default>false</default>
+                <label>api.data.gov</label>
+            </value>
+            <value>
+                <fullName>Challenge.gov</fullName>
+                <default>false</default>
+                <label>Challenge.gov</label>
+            </value>
+            <value>
+                <fullName>CitizenScience.gov</fullName>
+                <default>false</default>
+                <label>CitizenScience.gov</label>
+            </value>
+            <value>
+                <fullName>Code.gov</fullName>
+                <default>false</default>
+                <label>Code.gov</label>
+            </value>
+            <value>
+                <fullName>Contractor Performance Assessment Reporting System (CPARS)</fullName>
+                <default>false</default>
+                <label>Contractor Performance Assessment Reporting System (CPARS)</label>
+            </value>
+            <value>
+                <fullName>Data.gov</fullName>
+                <default>false</default>
+                <label>Data.gov</label>
+            </value>
+            <value>
+                <fullName>Digital Analytics Program (DAP)</fullName>
+                <default>false</default>
+                <label>Digital Analytics Program (DAP)</label>
+            </value>
+            <value>
+                <fullName>Digital.gov</fullName>
+                <default>false</default>
+                <label>Digital.gov</label>
+            </value>
+            <value>
+                <fullName>eRulemaking Program (eR)</fullName>
+                <default>false</default>
+                <label>eRulemaking Program (eR)</label>
+            </value>
+            <value>
+                <fullName>Electronic Subcontracting Reporting System (eSRS)</fullName>
+                <default>false</default>
+                <label>Electronic Subcontracting Reporting System (eSRS)</label>
+            </value>
+            <value>
+                <fullName>Federal Audit Clearinghouse (FAC)</fullName>
+                <default>false</default>
+                <label>Federal Audit Clearinghouse (FAC)</label>
+            </value>
+            <value>
+                <fullName>FedRAMP</fullName>
+                <default>false</default>
+                <label>FedRAMP</label>
+            </value>
+            <value>
+                <fullName>Federal Procurement Data System (FPDS)</fullName>
+                <default>false</default>
+                <label>Federal Procurement Data System (FPDS)</label>
+            </value>
+            <value>
+                <fullName>Federal Funding Accountability and Transparency Act Subaward Reporting System (FSRS)</fullName>
+                <default>false</default>
+                <label>Federal Funding Accountability and Transparency Act Subaward Reporting System (FSRS)</label>
+            </value>
+            <value>
+                <fullName>Interagency Collaboration</fullName>
+                <default>false</default>
+                <label>Interagency Collaboration</label>
+            </value>
+            <value>
+                <fullName>Interagency Suspension and Debarment Committee (ISDC)</fullName>
+                <default>false</default>
+                <label>Interagency Suspension and Debarment Committee (ISDC)</label>
+            </value>
+            <value>
+                <fullName>Made in America (MiA)</fullName>
+                <default>false</default>
+                <label>Made in America (MiA)</label>
+            </value>
+            <value>
+                <fullName>Office of Acquisition (OA)</fullName>
+                <default>false</default>
+                <label>Office of Acquisition (OA)</label>
+            </value>
+            <value>
+                <fullName>Open Gvt Secretariat</fullName>
+                <default>false</default>
+                <label>Open Gvt Secretariat</label>
+            </value>
+            <value>
+                <fullName>Public Benefits Studio</fullName>
+                <default>false</default>
+                <label>Public Benefits Studio</label>
+            </value>
+            <value>
+                <fullName>System for Award Management (SAM.gov)</fullName>
+                <default>false</default>
+                <label>System for Award Management (SAM.gov)</label>
+            </value>
+            <value>
+                <fullName>Search.gov</fullName>
+                <default>false</default>
+                <label>Search.gov</label>
+            </value>
+            <value>
+                <fullName>Site Scanning</fullName>
+                <default>false</default>
+                <label>Site Scanning</label>
+            </value>
+            <value>
+                <fullName>System of Record Notices (SORN) Dashboard</fullName>
+                <default>false</default>
+                <label>System of Record Notices (SORN) Dashboard</label>
+            </value>
+            <value>
+                <fullName>Touchpoints</fullName>
+                <default>false</default>
+                <label>Touchpoints</label>
+            </value>
+            <value>
+                <fullName>Vote.gov</fullName>
+                <default>false</default>
+                <label>Vote.gov</label>
+            </value>
+            <value>
+                <fullName>U.S. Web Design System (USWDS)</fullName>
+                <default>false</default>
+                <label>U.S. Web Design System (USWDS)</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+    <visibleLines>4</visibleLines>
+</CustomField>

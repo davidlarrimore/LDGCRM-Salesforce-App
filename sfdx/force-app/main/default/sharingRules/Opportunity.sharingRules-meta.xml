@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <sharingCriteriaRules>
+        <fullName>LDGCRM_Opportunity_Federal_R</fullName>
+        <accessLevel>Read</accessLevel>
+        <description>Read only Sharing of Opportunities for Login.gov Viewers</description>
+        <label>LDGCRM - Opportunity - Federal - R</label>
+        <sharedTo>
+            <group>LDGCRM_Viewers</group>
+        </sharedTo>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Login.gov</value>
+        </criteriaItems>
+        <includeRecordsOwnedByAll>true</includeRecordsOwnedByAll>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>LDGCRM_Opportunity_Federal_R_W</fullName>
+        <accessLevel>Edit</accessLevel>
+        <description>LDGCRM Opportunity Sharing Rule</description>
+        <label>LDGCRM - Opportunity - Federal - R/W</label>
+        <sharedTo>
+            <group>LDGCRM_Team_Members</group>
+        </sharedTo>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Login.gov</value>
+        </criteriaItems>
+        <includeRecordsOwnedByAll>true</includeRecordsOwnedByAll>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>TTS_OTCRM_Opportunities</fullName>
+        <accessLevel>Edit</accessLevel>
+        <description>TTS OTCRM Opportunities</description>
+        <label>TTS OTCRM Opportunities</label>
+        <sharedTo>
+            <group>TTS_OTCRM_Users</group>
+        </sharedTo>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>TTS OTCRM Opportunity</value>
+        </criteriaItems>
+        <includeRecordsOwnedByAll>false</includeRecordsOwnedByAll>
+    </sharingCriteriaRules>
+</SharingRules>

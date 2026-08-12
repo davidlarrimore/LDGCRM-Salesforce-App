@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_MD_P_Facilitated_Opportunities</fullName>
+    <columns>OPPORTUNITY.NAME</columns>
+    <columns>OPPORTUNITY.AMOUNT</columns>
+    <columns>ACCOUNT.NAME</columns>
+    <columns>OPPORTUNITY.STAGE_NAME</columns>
+    <columns>CORE.USERS.ALIAS</columns>
+    <columns>OPPORTUNITY.CREATED_DATE</columns>
+    <columns>TTS_Office__c</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>Lead_Source_s__c</field>
+        <operation>equals</operation>
+        <value>TTS Market Intelligence and Analysis</value>
+    </filters>
+    <filters>
+        <field>Mark_for_deletion__c</field>
+        <operation>equals</operation>
+        <value>0</value>
+    </filters>
+    <filters>
+        <field>OPPORTUNITY.CREATED_DATE</field>
+        <operation>greaterOrEqual</operation>
+        <value>10/1/2022 12:00 AM</value>
+    </filters>
+    <filters>
+        <field>OPPORTUNITY.CREATED_DATE</field>
+        <operation>lessOrEqual</operation>
+        <value>9/30/2023 12:00 AM</value>
+    </filters>
+    <label>FY23 MD&amp;P Facilitated Opportunities</label>
+</ListView>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Blocked_Revenue__c</fullName>
+    <description>If the Severity is &quot;Blocker&quot;, we consider it blocked revenue and use the Estimated Annual Revenue (Fully Ramped) from the Opportunity</description>
+    <inlineHelpText>DO NOT POPULATE THIS FIELD. AUTOMATICALLY POPULATED WITH FLOW</inlineHelpText>
+    <label>Blocked Revenue</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

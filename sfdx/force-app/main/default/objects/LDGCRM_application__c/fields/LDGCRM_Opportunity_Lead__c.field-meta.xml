@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Opportunity_Lead__c</fullName>
+    <description>Returns first name, last name and email of the opportunity lead.</description>
+    <externalId>false</externalId>
+    <formula>HYPERLINK(
+    &quot;/&quot; &amp; LDGCRM_Opportunity__r.OwnerId,
+    LDGCRM_Opportunity__r.Owner.FirstName &amp;
+    &quot; &quot; &amp;
+    LDGCRM_Opportunity__r.Owner.LastName,
+    &quot;_blank&quot;
+)</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <inlineHelpText>Returns first name, last name and email of the opportunity lead.</inlineHelpText>
+    <label>Opportunity Lead</label>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

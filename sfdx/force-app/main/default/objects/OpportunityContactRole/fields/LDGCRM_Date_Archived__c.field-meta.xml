@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Date_Archived__c</fullName>
+    <description>Date contact was archived -- contact is no longer active in this role</description>
+    <inlineHelpText>Date contact was archived -- contact is no longer active in this role</inlineHelpText>
+    <label>Date Archived</label>
+    <required>false</required>
+    <type>Date</type>
+</CustomField>

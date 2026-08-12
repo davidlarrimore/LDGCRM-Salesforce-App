@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_Stage_Negotiation</fullName>
+    <active>true</active>
+    <description>Amount must be greater than 0 and the Start Date cannot be blank for the Opportunity to enter Negotiation</description>
+    <errorConditionFormula>RecordType.DeveloperName = &quot;TTS_OTCRM_Opportunity&quot;&amp;&amp;
+ISPICKVAL( StageName, &quot;Negotiation&quot; )&amp;&amp;
+(
+Amount &lt;= 0 ||
+ISBLANK ( Amount ) ||
+ISBLANK( Start_Date__c )
+)</errorConditionFormula>
+    <errorMessage>Amount must be greater than 0 and the Start Date cannot be blank for the Opportunity to enter Negotiation</errorMessage>
+</ValidationRule>

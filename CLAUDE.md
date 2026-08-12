@@ -18,8 +18,10 @@ commands). This file focuses on conventions and architecture for working in the 
 
 ## Repository layout
 
-- `sfdx/` — the Salesforce DX project (`sf` CLI). `force-app/main/default/` holds retrieved metadata.
-  `manifest/package.xml` is a starter manifest for `sf project retrieve start -x manifest/package.xml`.
+- `sfdx/` — the Salesforce DX project (`sf` CLI). `force-app/main/default/` holds retrieved metadata,
+  synced from an authoritative Salesforce Outbound Change Set (`LDGCRM_Sprint_1_12`) rather than
+  hand-picked components. `manifest/package.xml` mirrors that scope for repeat syncs via
+  `sf project retrieve start -x manifest/package.xml`.
 - `scripts/` — PowerShell automation, organized by purpose (`metadata/`, `cleanup/`, `data-migration/`,
   `common/`). See "Scripts" below.
 - `logs/` — **gitignored** (except `.gitkeep`/`README.md`). Run output: PowerShell transcripts and CSV
@@ -33,23 +35,35 @@ without a specific reason.
 
 ## Data model
 
-Custom objects use the `LDGCRM_` prefix. Confirmed API names (from `logs/cleanup/*/cleanup-summary.csv`):
-`LDGCRM_Application_Contact__c`, `LDGCRM_Opportunity_Impediment__c`, `LDGCRM_Application__c`,
-`LDGCRM_Impediment__c`, `LDGCRM_Partner_account__c`, `LDGCRM_Market_Segment__c`.
+`sfdx/force-app/main/default/objects/` is now the source of truth (synced from the `LDGCRM_Sprint_1_12`
+change set) — read it directly for exact fields/relationships. Custom objects use the `LDGCRM_` prefix:
+`LDGCRM_Application__c`, `LDGCRM_Application_Contact__c`, `LDGCRM_Partner_Account__c`,
+`LDGCRM_Impediment__c`, `LDGCRM_Opportunity_Impediment__c`, `LDGCRM_Market_Segment__c`. Standard
+objects carrying custom fields: Account, Contact, Opportunity, `OpportunityContactRole`, Activity
+(Task/Event).
 
-- **Contact** (standard) is the central hub, linked to Opportunity via the standard **Opportunity
-  Contact Role** junction, and to `LDGCRM_Application__c` via `LDGCRM_Application_Contact__c` (junction).
-- **Opportunity** (standard) has an Owner (User) and an Account reference; parents related Activities
+- **Contact** is the central hub, linked to Opportunity via the standard **OpportunityContactRole**
+  junction, and to `LDGCRM_Application__c` via `LDGCRM_Application_Contact__c` (junction).
+- **Opportunity** has an Owner (User) and an Account reference; parents related Activities
   (Task/Event, labeled "Meeting") and Impediments.
-- **`LDGCRM_Application__c`** is a Master-Detail child of **`LDGCRM_Partner_account__c`**, and carries
-  a "Partner Portal Admin (Yes/No)" flag. `LDGCRM_Partner_account__c` also relates to Opportunity.
-- **Account** (standard) has an Owner (User), a parent Account lookup, and a lookup to
-  **`LDGCRM_Market_Segment__c`**.
+- **`LDGCRM_Application__c`** is a Master-Detail child of **`LDGCRM_Partner_Account__c`**, and carries
+  a "Partner Portal Admin" flag on its `LDGCRM_Application_Contact__c` junction rows.
+  `LDGCRM_Partner_Account__c` also relates to Opportunity.
+- **Account** has an Owner (User), a parent Account lookup, and a lookup to `LDGCRM_Market_Segment__c`.
 - **`LDGCRM_Impediment__c`** relates to Opportunity via **`LDGCRM_Opportunity_Impediment__c`** (junction).
 - **Activity** (Task/Event) references both an Account and an Opportunity.
 
-Re-derive/verify field-level detail with `scripts/metadata/Get-LDGCRMDataDictionary.ps1` rather than
-trusting this summary for anything precise — it's oriented at object relationships, not field lists.
+Nine record-triggered **Flows** (`force-app/main/default/flows/`) implement the automation layer:
+duplicate-record checks on the two junction objects, Market Segment assignment on Application/Opportunity
+save, Partner Account re-parent cascades, and status/blocked-revenue rollups. Sharing is managed via
+explicit **SharingRules** (owner + criteria based) on Account, Contact, Opportunity, and the three
+`LDGCRM_` objects with org-wide-default-restricted sharing, plus three **PermissionSets**
+(`LDGCRM_Partnership_Team_Member_CRE`, `LDGCRM_Partnership_Viewer_R`, `LDGCRM_Production_Support_CRED`)
+grouped into matching **PermissionSetGroups** and assigned via the **Group**s `LDGCRM_Team_Members` /
+`LDGCRM_Viewers`.
+
+Prefer reading `force-app/main/default/objects/` for field-level detail; use
+`scripts/metadata/Get-LDGCRMDataDictionary.ps1` when you want it flattened to CSV instead of XML.
 
 ## Scripts
 
@@ -91,6 +105,30 @@ Run from inside `sfdx/`:
 - `npm run prettier` / `npm run prettier:verify` — formats `.cls,.cmp,.component,.css,.html,.js,.json,.md,.page,.trigger,.xml,.yaml,.yml`.
 - Husky's `pre-commit` hook runs `lint-staged` (Prettier on all matched files, ESLint on `aura`/`lwc`
   JS, `sfdx-lwc-jest --bail --findRelatedTests --passWithNoTests` on `lwc` changes).
+
+## Operational gotchas
+
+- **`sf project retrieve start` requires running from inside `sfdx/`** (or passing paths relative to
+  it) — it needs `sfdx-project.json` in the working directory. Running it from the repo root fails
+  with `InvalidProjectWorkspaceError`.
+- **Retrieving a Salesforce Outbound Change Set's contents:** Change Sets have no direct Metadata/
+  Tooling API or `sf` support for listing/querying them, but a change set's **Name** (not its Setup
+  URL ID) works as an unmanaged package name for retrieval: `sf project retrieve start --package-name
+  "<Change Set Name>" --target-org gsa-peo`. This is how `force-app/` was synced from `LDGCRM_Sprint_1_12`.
+  It retrieves into a new folder named after the package (not into `force-app/`) — merge it in and
+  regenerate/hand-check `manifest/package.xml` afterward rather than leaving a second package directory.
+- **Broad wildcard retrieves (e.g. `CustomApplication:*`) pull the entire org**, not just this app —
+  every standard Salesforce app and every unrelated custom app comes down too. Prefer the manifest or
+  a change-set/package-name retrieve; if you do run a wildcard retrieve, review `git status
+  sfdx/force-app` before committing and discard anything outside this app's scope
+  (`git clean -fd -- sfdx/force-app` for untracked noise, since nothing here should ever be force-pushed
+  over tracked content without review).
+- **Long paths on this machine:** the local disk mount used by this Windows environment adds a long
+  internal prefix to every path, so retrieved Salesforce metadata (deeply nested object/field files,
+  verbose flow/layout names) can exceed the Windows 260-character path limit. If `git` operations on
+  `sfdx/force-app` fail with `Filename too long`, run `git config core.longpaths true` (already set in
+  this repo's local git config) and retry; for non-git file deletion, use `robocopy <empty-dir> <target>
+  /MIR` rather than `Remove-Item -Recurse`, which does not reliably handle the same long paths.
 
 ## Skills
 

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Est_Annual_Idv_Users__c</fullName>
+    <externalId>false</externalId>
+    <inlineHelpText>Estimate of the number of annual IdV users, which would each cost $1 under the new pricing model (fully ramped up).</inlineHelpText>
+    <label>Est. Annual IdV Users</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

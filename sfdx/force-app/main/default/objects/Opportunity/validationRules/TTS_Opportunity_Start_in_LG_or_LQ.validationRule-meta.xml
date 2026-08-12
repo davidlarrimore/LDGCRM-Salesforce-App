@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_Opportunity_Start_in_LG_or_LQ</fullName>
+    <active>true</active>
+    <description>An opportunity must start in either Lead Generation or Lead Qualification</description>
+    <errorConditionFormula>ISNEW() &amp;&amp;
+ RecordType.DeveloperName = &quot;TTS_OTCRM_Opportunity&quot; &amp;&amp;
+ (
+  !(ISPICKVAL(StageName, &quot;Lead Generation&quot;) ||
+  ISPICKVAL( StageName, &quot;Lead Qualification&quot; ))
+ )</errorConditionFormula>
+    <errorDisplayField>StageName</errorDisplayField>
+    <errorMessage>An opportunity must start in either Lead Generation or Lead Qualification</errorMessage>
+</ValidationRule>

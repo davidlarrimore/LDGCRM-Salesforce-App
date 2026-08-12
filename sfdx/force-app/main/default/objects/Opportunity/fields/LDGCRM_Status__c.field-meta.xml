@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Status__c</fullName>
+    <description>The status of the opportunity as it moves through the pipeline.</description>
+    <inlineHelpText>The status of the opportunity as it moves through the pipeline.</inlineHelpText>
+    <label>Status</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <controllingField>StageName</controllingField>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Not contacted</fullName>
+                <default>false</default>
+                <label>Not contacted</label>
+            </value>
+            <value>
+                <fullName>Contacted</fullName>
+                <default>false</default>
+                <label>Contacted</label>
+            </value>
+            <value>
+                <fullName>Set initial meeting</fullName>
+                <default>false</default>
+                <label>Set initial meeting</label>
+            </value>
+            <value>
+                <fullName>Initial meeting set</fullName>
+                <default>false</default>
+                <label>Initial meeting set</label>
+            </value>
+            <value>
+                <fullName>Set meeting</fullName>
+                <default>false</default>
+                <label>Set meeting</label>
+            </value>
+            <value>
+                <fullName>Meeting set</fullName>
+                <default>false</default>
+                <label>Meeting set</label>
+            </value>
+            <value>
+                <fullName>Follow up with contact</fullName>
+                <default>false</default>
+                <label>Follow up with contact</label>
+            </value>
+            <value>
+                <fullName>Assessing org-level qual</fullName>
+                <default>false</default>
+                <label>Assessing org-level qual</label>
+            </value>
+            <value>
+                <fullName>Assessing opp-level qual</fullName>
+                <default>false</default>
+                <label>Assessing opp-level qual</label>
+            </value>
+            <value>
+                <fullName>Assessing contact-level qual</fullName>
+                <default>false</default>
+                <label>Assessing contact-level qual</label>
+            </value>
+            <value>
+                <fullName>Assessing</fullName>
+                <default>false</default>
+                <label>Assessing</label>
+            </value>
+            <value>
+                <fullName>Draft proposal</fullName>
+                <default>false</default>
+                <label>Draft proposal</label>
+            </value>
+            <value>
+                <fullName>Proposal drafted</fullName>
+                <default>false</default>
+                <label>Proposal drafted</label>
+            </value>
+            <value>
+                <fullName>Finalize proposal</fullName>
+                <default>false</default>
+                <label>Finalize proposal</label>
+            </value>
+            <value>
+                <fullName>Proposal finalized</fullName>
+                <default>false</default>
+                <label>Proposal finalized</label>
+            </value>
+            <value>
+                <fullName>Proposal sent</fullName>
+                <default>false</default>
+                <label>Proposal sent</label>
+            </value>
+            <value>
+                <fullName>Proposal approved</fullName>
+                <default>false</default>
+                <label>Proposal approved</label>
+            </value>
+            <value>
+                <fullName>Forms sent</fullName>
+                <default>false</default>
+                <label>Forms sent</label>
+            </value>
+            <value>
+                <fullName>Forms received</fullName>
+                <default>false</default>
+                <label>Forms received</label>
+            </value>
+            <value>
+                <fullName>Agency signatures in progress</fullName>
+                <default>false</default>
+                <label>Agency signatures in progress</label>
+            </value>
+            <value>
+                <fullName>GSA signatures in progress</fullName>
+                <default>false</default>
+                <label>GSA signatures in progress</label>
+            </value>
+            <value>
+                <fullName>Executed</fullName>
+                <default>false</default>
+                <label>Executed</label>
+            </value>
+            <value>
+                <fullName>Agreements</fullName>
+                <default>false</default>
+                <label>Agreements</label>
+            </value>
+            <value>
+                <fullName>Closed Lost</fullName>
+                <default>false</default>
+                <label>Closed Lost</label>
+            </value>
+            <value>
+                <fullName>Closed Won</fullName>
+                <default>false</default>
+                <label>Closed Won</label>
+            </value>
+            <value>
+                <fullName>Prospecting</fullName>
+                <default>false</default>
+                <label>Prospecting</label>
+            </value>
+            <value>
+                <fullName>Qualified</fullName>
+                <default>false</default>
+                <label>Qualified</label>
+            </value>
+            <value>
+                <fullName>Scoped</fullName>
+                <default>false</default>
+                <label>Scoped</label>
+            </value>
+        </valueSetDefinition>
+        <valueSettings>
+            <controllingFieldValue>Agreements</controllingFieldValue>
+            <controllingFieldValue>Lead Qualification</controllingFieldValue>
+            <controllingFieldValue>Opportunity Development</controllingFieldValue>
+            <controllingFieldValue>Negotiation</controllingFieldValue>
+            <valueName>Follow up with contact</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Agreements</controllingFieldValue>
+            <valueName>Forms sent</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Agreements</controllingFieldValue>
+            <valueName>Forms received</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Agreements</controllingFieldValue>
+            <valueName>Agency signatures in progress</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Agreements</controllingFieldValue>
+            <valueName>GSA signatures in progress</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Agreements</controllingFieldValue>
+            <valueName>Executed</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Lead Generation</controllingFieldValue>
+            <valueName>Not contacted</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Lead Generation</controllingFieldValue>
+            <valueName>Contacted</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Lead Qualification</controllingFieldValue>
+            <valueName>Set initial meeting</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Lead Qualification</controllingFieldValue>
+            <valueName>Initial meeting set</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Lead Qualification</controllingFieldValue>
+            <controllingFieldValue>Opportunity Development</controllingFieldValue>
+            <controllingFieldValue>Negotiation</controllingFieldValue>
+            <valueName>Set meeting</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Lead Qualification</controllingFieldValue>
+            <controllingFieldValue>Opportunity Development</controllingFieldValue>
+            <controllingFieldValue>Negotiation</controllingFieldValue>
+            <valueName>Meeting set</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Lead Qualification</controllingFieldValue>
+            <valueName>Assessing org-level qual</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Lead Qualification</controllingFieldValue>
+            <valueName>Assessing opp-level qual</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Lead Qualification</controllingFieldValue>
+            <valueName>Assessing contact-level qual</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Opportunity Development</controllingFieldValue>
+            <controllingFieldValue>Negotiation</controllingFieldValue>
+            <valueName>Assessing</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Negotiation</controllingFieldValue>
+            <valueName>Draft proposal</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Negotiation</controllingFieldValue>
+            <valueName>Proposal drafted</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Negotiation</controllingFieldValue>
+            <valueName>Finalize proposal</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Negotiation</controllingFieldValue>
+            <valueName>Proposal finalized</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Negotiation</controllingFieldValue>
+            <valueName>Proposal sent</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Negotiation</controllingFieldValue>
+            <valueName>Proposal approved</valueName>
+        </valueSettings>
+    </valueSet>
+</CustomField>

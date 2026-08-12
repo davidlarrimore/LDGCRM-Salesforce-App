@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Launch_Checklist_Completion__c</fullName>
+    <description>Overall launch checklist competed</description>
+    <formula>CASE(
+    TEXT(LDGCRM_Launch_Level__c),
+    &quot;1 - Very Low Impact&quot;, LDGCRM_Level_1_Complete_Pct__c,
+    &quot;2 - Low Impact&quot;, LDGCRM_Level_1_Complete_Pct__c,
+    &quot;3 - Moderate Impact&quot;,
+        (
+            ((LDGCRM_Level_1_Complete_Pct__c)*9) +
+            ((LDGCRM_Level_3_Complete_Pct__c)*7)
+        ) / 16,
+
+    &quot;4 - High Impact&quot;,
+        (
+            ((LDGCRM_Level_1_Complete_Pct__c)*9) +
+            ((LDGCRM_Level_3_Complete_Pct__c)*7) +
+            ((LDGCRM_Level_4_Complete_Pct__c)*4)
+        ) / 20,
+
+    &quot;5 - Very High Impact&quot;,
+          (  
+((LDGCRM_Level_1_Complete_Pct__c)*9) +
+            ((LDGCRM_Level_3_Complete_Pct__c)*7) +
+            ((LDGCRM_Level_4_Complete_Pct__c)*4)
+        ) / 20,
+
+    1
+)</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <inlineHelpText>Overall launch checklist competed</inlineHelpText>
+    <label>Launch Checklist Completion %</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Percent</type>
+</CustomField>

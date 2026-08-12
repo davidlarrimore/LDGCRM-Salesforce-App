@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>MyProgram__c</fullName>
+    <formula>IF(ISBLANK(TEXT($User.TTS_OTCRM_Program__c)),FALSE,CONTAINS(OpportunityProgramCopy__c,TEXT($User.TTS_OTCRM_Program__c)))</formula>
+    <label>My Program?</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

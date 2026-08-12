@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTSOffering__c</fullName>
+    <label>TTS Offering</label>
+    <required>false</required>
+    <trackFeedHistory>false</trackFeedHistory>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <controllingField>TTS_Office__c</controllingField>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>18F Path Analysis</fullName>
+                <default>false</default>
+                <label>18F Path Analysis</label>
+            </value>
+            <value>
+                <fullName>18F E&amp;I only</fullName>
+                <default>false</default>
+                <label>18F E&amp;I only</label>
+            </value>
+            <value>
+                <fullName>18F PA+EI bundle</fullName>
+                <default>false</default>
+                <label>18F PA+EI bundle</label>
+            </value>
+            <value>
+                <fullName>18F Acq Consulting</fullName>
+                <default>false</default>
+                <label>18F Acq Consulting</label>
+            </value>
+            <value>
+                <fullName>18F Assisted Acq</fullName>
+                <default>false</default>
+                <label>18F Assisted Acq</label>
+            </value>
+            <value>
+                <fullName>COE</fullName>
+                <default>false</default>
+                <label>COE</label>
+            </value>
+            <value>
+                <fullName>PIF Fellow (1st-2nd year)</fullName>
+                <default>false</default>
+                <label>PIF Fellow (1st-2nd year)</label>
+            </value>
+            <value>
+                <fullName>PIF EIR (3-4th year)</fullName>
+                <default>false</default>
+                <label>PIF EIR (3-4th year)</label>
+            </value>
+            <value>
+                <fullName>Cloud.gov</fullName>
+                <default>false</default>
+                <label>Cloud.gov</label>
+            </value>
+            <value>
+                <fullName>Cloud.gov Pages</fullName>
+                <default>false</default>
+                <label>Cloud.gov Pages</label>
+            </value>
+            <value>
+                <fullName>Cloud.gov Max</fullName>
+                <default>false</default>
+                <label>Cloud.gov Max</label>
+            </value>
+            <value>
+                <fullName>Login.gov Authentication</fullName>
+                <default>false</default>
+                <label>Login.gov Authentication</label>
+            </value>
+            <value>
+                <fullName>Login.gov Authentication and Identity Verification</fullName>
+                <default>false</default>
+                <label>Login.gov Authentication and Identity Verification</label>
+            </value>
+            <value>
+                <fullName>U.S. Digital Corps Fellow</fullName>
+                <default>false</default>
+                <label>U.S. Digital Corps Fellow</label>
+            </value>
+            <value>
+                <fullName>Other</fullName>
+                <default>false</default>
+                <label>Other</label>
+            </value>
+        </valueSetDefinition>
+        <valueSettings>
+            <controllingFieldValue>Other</controllingFieldValue>
+            <controllingFieldValue>18F</controllingFieldValue>
+            <controllingFieldValue>Centers of Excellence</controllingFieldValue>
+            <controllingFieldValue>Cloud.gov</controllingFieldValue>
+            <controllingFieldValue>Login.gov</controllingFieldValue>
+            <controllingFieldValue>Presidential Innovation Fellows</controllingFieldValue>
+            <controllingFieldValue>U.S. Digital Corps</controllingFieldValue>
+            <valueName>Other</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>18F</controllingFieldValue>
+            <valueName>18F Path Analysis</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>18F</controllingFieldValue>
+            <valueName>18F E&amp;I only</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>18F</controllingFieldValue>
+            <valueName>18F PA+EI bundle</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>18F</controllingFieldValue>
+            <valueName>18F Acq Consulting</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>18F</controllingFieldValue>
+            <valueName>18F Assisted Acq</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Centers of Excellence</controllingFieldValue>
+            <valueName>COE</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Cloud.gov</controllingFieldValue>
+            <valueName>Cloud.gov</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Cloud.gov</controllingFieldValue>
+            <valueName>Cloud.gov Pages</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Cloud.gov</controllingFieldValue>
+            <valueName>Cloud.gov Max</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Login.gov</controllingFieldValue>
+            <valueName>Login.gov Authentication</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Login.gov</controllingFieldValue>
+            <valueName>Login.gov Authentication and Identity Verification</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Presidential Innovation Fellows</controllingFieldValue>
+            <valueName>PIF Fellow (1st-2nd year)</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>Presidential Innovation Fellows</controllingFieldValue>
+            <valueName>PIF EIR (3-4th year)</valueName>
+        </valueSettings>
+        <valueSettings>
+            <controllingFieldValue>U.S. Digital Corps</controllingFieldValue>
+            <valueName>U.S. Digital Corps Fellow</valueName>
+        </valueSettings>
+    </valueSet>
+</CustomField>

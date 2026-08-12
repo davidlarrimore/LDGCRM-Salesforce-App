@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>CircularReferenceCheck__c</fullName>
+    <formula>IF(OR(Id = Parent.Parent.Id ,Id = Parent.Parent.Parent.Id,Id = Parent.Parent.Parent.Id),TRUE,FALSE)</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <label>CircularReferenceCheck</label>
+    <trackHistory>false</trackHistory>
+    <type>Checkbox</type>
+</CustomField>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Est_Annual_Revenue_fully_ramped__c</fullName>
+    <description>What we estimate the opportunity to be worth when usage is fully ramped up. (“Est. Annual IdV Users” x $1 + (“Est. Annual Auth-only Users” x “Est. Auth-only User Active Months” x $0.025.)</description>
+    <formula>MAX(
+    IF(
+        ISPICKVAL(LDGCRM_Opportunity_Type__c, &quot;OM - New Agreement&quot;),
+        30000,
+        0
+    ),
+    (
+        LDGCRM_Est_Annual_Idv_Users__c +
+        (
+            LDGCRM_Est_Annual_Auth_Only_Users__c *
+            LDGCRM_Est_Auth_Only_Avg_Active_Months__c *
+            0.025
+        )
+    )
+)</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <inlineHelpText>What we estimate the opportunity to be worth when usage is fully ramped up. (“Est. Annual IdV Users” x $1 + (“Est. Annual Auth-only Users” x “Est. Auth-only User Active Months” x $0.025.)</inlineHelpText>
+    <label>Est. Annual Revenue (Fully Ramped)</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

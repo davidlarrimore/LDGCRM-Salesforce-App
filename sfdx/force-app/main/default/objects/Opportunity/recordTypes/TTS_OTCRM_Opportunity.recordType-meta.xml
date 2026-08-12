@@ -1,0 +1,1444 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_OTCRM_Opportunity</fullName>
+    <active>true</active>
+    <businessProcess>TTS OTCRM</businessProcess>
+    <compactLayoutAssignment>TTS_OTCRM_Opportunity_Compact_Layout</compactLayoutAssignment>
+    <description>Technology Transformation Services (TTS) Opportunity Tracker CRM (OTCRM)</description>
+    <label>TTS OTCRM Opportunity</label>
+    <picklistValues>
+        <picklist>Administration_Priorities__c</picklist>
+        <values>
+            <fullName>American Rescue Plan</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>COVID-19</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Climate change</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Diversity%2C equity%2C accessibility%2C and inclusion</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>HISP</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Closed_Lost_reason__c</picklist>
+        <values>
+            <fullName>Communication Concerns</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Competitor</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Pricing Objections</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Reputation Concerns</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Scope Objections</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Timeline Objections</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Demographic_Served__c</picklist>
+        <values>
+            <fullName>Foreign Nationals</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>General Population</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Gov%E2%80%99t Employees</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Non-USC</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Veterans</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Disqualified_reason__c</picklist>
+        <values>
+            <fullName>Doesn%27t fit customer profile</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Insufficient Decision-making Authority</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Insufficient Interest</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Insufficient Needs</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Insufficient Resources</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Insufficient timeline</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Unresponsive</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Fiscal_Year__c</picklist>
+        <values>
+            <fullName>FY14</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FY15</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FY16</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FY17</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FY18</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FY19</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FY20</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FY21</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FY22</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FY23</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FY24</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FY25</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>ForecastCategoryName</picklist>
+        <values>
+            <fullName>Best Case</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Closed</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Commit</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Omitted</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Pipeline</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Funding_authority_cited_on_IAA__c</picklist>
+        <values>
+            <fullName>ARP Funded %28American Rescue Plan%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Federal Citizen Services Fund</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other Agency Specific Fund noted in Required info form</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Group_State__c</picklist>
+        <values>
+            <fullName>Alabama</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Alaska</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Arizona</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Arkansas</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>California</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Colorado</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Connecticut</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Delaware</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>District of Columbia</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Florida</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Georgia</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Hawaii</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Idaho</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Illinois</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Indiana</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Iowa</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Kansas</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Kentucky</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Louisiana</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Maine</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Maryland</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Massachusetts</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Michigan</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Minnesota</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Mississippi</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Missouri</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Montana</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Nebraska</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Nevada</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>New Hampshire</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>New Jersey</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>New Mexico</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>New York</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>North Carolina</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>North Dakota</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Ohio</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Oklahoma</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Oregon</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Pennsylvania</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Rhode Island</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>South Carolina</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>South Dakota</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Tennessee</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Texas</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Utah</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Vermont</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Virginia</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Washington</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>West Virginia</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Wisconsin</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Wyoming</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Alternative_Identity_Platforms__c</picklist>
+        <values>
+            <fullName>1Kosmos</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>AWS</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Azure</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Exostar</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Experian</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Google CiviForm</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Granicus</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Homegrown %28placeholder%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>ID%2Eme</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Idemia</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Jakobsen Id</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Keycloak</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>LexisNexis</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>ManTech</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Mattr</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Max%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Microsoft Power Pages</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>None</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Okta</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Oracle AM</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Ping%2FForegerock</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Salesforce</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Shibboleth</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Sign-In with Google</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Socure</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Demographic_Served__c</picklist>
+        <values>
+            <fullName>Federal Employees</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>General Population</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Gov%27t Employees</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Government Employees %28Military%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Non-USC</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Veterans</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Estimate_Source__c</picklist>
+        <values>
+            <fullName>OM-researched</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Partner-provided</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Existing_Identity_Platforms__c</picklist>
+        <values>
+            <fullName>1Kosmos</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>AWS</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Azure</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Exostar</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Experian</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Google CiviForm</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Granicus</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Homegrown %28placeholder%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>ID%2Eme</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Idemia</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Jakobsen Id</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Keycloak</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>LexisNexis</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>ManTech</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Mattr</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Max%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Microsoft Power Pages</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>None</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Okta</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Oracle AM</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Ping%2FForegerock</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Salesforce</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Shibboleth</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Sign-In with Google</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Socure</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Focus_Level__c</picklist>
+        <values>
+            <fullName>High</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Level_of_Priority__c</picklist>
+        <values>
+            <fullName>High</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Low</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Medium</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Likely_Service_Level_Needed__c</picklist>
+        <values>
+            <fullName>IdV%2C Auth-only</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Opportunity_Type__c</picklist>
+        <values>
+            <fullName>Add-on%2FMod</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Follow-on</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>New Business</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Renewal</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Winback</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Status__c</picklist>
+        <values>
+            <fullName>Agency signatures in progress</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Assessing</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Assessing contact-level qual</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Assessing opp-level qual</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Assessing org-level qual</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Contacted</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Draft proposal</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Executed</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Finalize proposal</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Follow up with contact</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Forms received</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Forms sent</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>GSA signatures in progress</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Initial meeting set</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Meeting set</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Not contacted</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Proposal approved</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Proposal drafted</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Proposal finalized</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Proposal sent</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Set initial meeting</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Set meeting</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LDGCRM_Technical_Readiness__c</picklist>
+        <values>
+            <fullName>Does not have a website</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Has a broker app%2C with ability to add multiple vendors</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Has a website w%2Fo a sign-in solution</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Login%2Egov is integrated%2C but not used fully</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Login%2Egov is integrated%2C fully</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Uses a home-grown sign-in solution</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Uses a vendor sign-in solution</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>LeadSource</picklist>
+        <values>
+            <fullName>Acquisition Gateway</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Digital Content</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Direct Customer Inquiry</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Event</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Marketing email</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral from 18F</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral from Centers of Excellence</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral from Cloud%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral from Login%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral from Presidential Innovation Fellows</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral from U%2ES%2E Digital Corps</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Lead_Source_s__c</picklist>
+        <values>
+            <fullName>18F Blog</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Acquisition Gateway</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Advertisement</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Agency Partnerships Outreach</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Conference</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Digital Content</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Direct Customer Inquiry</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Employee Referral</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Event</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>External Referral</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Intake email</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Marketing email</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Partner</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Phase 0</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Product inquiry</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Public Relations</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral from 18F</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral from Centers of Excellence</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral from Cloud%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral from Login%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral from Presidential Innovation Fellows</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral from U%2ES%2E Digital Corps</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Renewal</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Seminar - Internal</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Seminar - Partner</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>TTS Market Intelligence and Analysis</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>TTS%2F18F website</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Trade Show</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Unknown</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Web</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Word of mouth</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Level_of_Security_Clearance_Required__c</picklist>
+        <values>
+            <fullName>Confidential</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Public Trust</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Secret</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>TS%2FSCI</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Top Secret</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Unknown</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Pricing_Model__c</picklist>
+        <values>
+            <fullName>Enterprise</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Transactional</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Service__c</picklist>
+        <values>
+            <fullName>Authentication Only</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>IdV</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Set_of_Capabilities__c</picklist>
+        <values>
+            <fullName>Artificial Intelligence %2F RPA</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Cloud</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Contact Center</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Customer Experience</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Cybersecurity</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Data %26 Analytics</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Design</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Identity</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Infrastructure Optimization</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Product Management</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Software Engineering</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Source_Detail_Inquiry__c</picklist>
+        <values>
+            <fullName>Email</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Phone</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Source__c</picklist>
+        <values>
+            <fullName>Event</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>In-Progress%2FCompleted Work</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Inquiry</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Newsletter</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Outbound</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Referral</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Website</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>TTSOffering__c</picklist>
+        <values>
+            <fullName>18F Acq Consulting</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>18F Assisted Acq</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>18F E%26I only</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>18F PA%2BEI bundle</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>18F Path Analysis</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>COE</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Cloud%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Cloud%2Egov Max</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Cloud%2Egov Pages</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Login%2Egov Authentication</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Login%2Egov Authentication and Identity Verification</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>PIF EIR %283-4th year%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>PIF Fellow %281st-2nd year%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>U%2ES%2E Digital Corps Fellow</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>TTS_Office__c</picklist>
+        <values>
+            <fullName>10x</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>18F</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Centers of Excellence</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Challenge%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>CitizenScience%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Cloud%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Code%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Contractor Performance Assessment Reporting System %28CPARS%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Data%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Digital Analytics Program %28DAP%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Digital%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Electronic Subcontracting Reporting System %28eSRS%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>FedRAMP</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Federal Audit Clearinghouse %28FAC%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Federal Funding Accountability and Transparency Act Subaward Reporting System %28FSRS%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Federal Procurement Data System %28FPDS%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Interagency Collaboration</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Interagency Suspension and Debarment Committee %28ISDC%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Login%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Made in America %28MiA%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Office of Acquisition %28OA%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Open Gvt Secretariat</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Presidential Innovation Fellows</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Public Benefits Studio</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Search%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Site Scanning</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>System for Award Management %28SAM%2Egov%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>System of Record Notices %28SORN%29 Dashboard</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Touchpoints</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>U%2ES%2E Digital Corps</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>U%2ES%2E Web Design System %28USWDS%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>USAgov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Vote%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>api%2Edata%2Egov</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>eRulemaking Program %28eR%29</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Telework_policy__c</picklist>
+        <values>
+            <fullName>Hybrid</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>In person</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Remote</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Type</picklist>
+        <values>
+            <fullName>New Business</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Type_of_Contract__c</picklist>
+        <values>
+            <fullName>Firm Fixed Price %28FFP%29</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Time and Materials %28T%26M%29</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>deprecated_TLDGCRM_Technical_Readiness__c</picklist>
+        <values>
+            <fullName>Does not have a website</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Has a broker app%2C with ability to add multiple vendors</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Has a website w%2Fo a sign-in solution</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Login%2Egov is integrated%2C but not used fully</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Login%2Egov is integrated%2C fully</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Uses a home-grown sign-in solution</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Uses a vendor sign-in solution</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>priority_type__c</picklist>
+        <values>
+            <fullName>HISP - High Volume%2C HISP - Lower Volume%2C Volume%2C Strategic%2C IDV Upgrade%2C Leadership Escalation</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+</RecordType>

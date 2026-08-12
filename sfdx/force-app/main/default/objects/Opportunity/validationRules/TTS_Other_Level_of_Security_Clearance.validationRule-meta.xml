@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TTS_Other_Level_of_Security_Clearance</fullName>
+    <active>true</active>
+    <description>If the picklist value &quot;Other&quot; is selected for the field &quot;Level of Security Clearance Required&quot; on the TTS Opportunity page, the &quot;Other Level of Security Clearance Required&quot; field is required.</description>
+    <errorConditionFormula>OR(
+ AND(
+RecordType.Name =&apos;TTS OTCRM Opportunity&apos;,
+ISBLANK( Other_Level_of_Security_Clearance_Requir__c ),
+ISPICKVAL( Level_of_Security_Clearance_Required__c , &apos;other&apos;)
+), 
+AND(
+RecordType.Name =&apos;TTS OTCRM Opportunity&apos;,
+NOT (ISBLANK( Other_Level_of_Security_Clearance_Requir__c )),
+NOT (ISPICKVAL( Level_of_Security_Clearance_Required__c , &apos;other&apos;))
+)
+)</errorConditionFormula>
+    <errorDisplayField>Other_Level_of_Security_Clearance_Requir__c</errorDisplayField>
+    <errorMessage>Fill out &quot; Other Level of Security Clearance Required&quot; only if &quot;Other&quot; was chosen as Level of Security Clearance Required field. If you did not choose &quot;Other&quot;, leave it blank</errorMessage>
+</ValidationRule>

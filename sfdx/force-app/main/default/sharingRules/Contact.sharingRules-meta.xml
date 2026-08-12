@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SharingRules xmlns="http://soap.sforce.com/2006/04/metadata">
+    <sharingCriteriaRules>
+        <fullName>FCIC_Access_to_FCIC_Contacts</fullName>
+        <accessLevel>Edit</accessLevel>
+        <description>Gives the ‘FCIC-All Users’ public group access to contacts of record types FCIC-Individual and FCIC-Duplicate</description>
+        <label>FCIC-Access to FCIC Contacts</label>
+        <sharedTo>
+            <group>FCIC_All_Users</group>
+        </sharedTo>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>FCIC - Individual,FCIC - Duplicate</value>
+        </criteriaItems>
+        <includeRecordsOwnedByAll>false</includeRecordsOwnedByAll>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>LDGCRM_Contact_Federal_GSA_R</fullName>
+        <accessLevel>Read</accessLevel>
+        <description>Provides Read Only Access to Federal and GSA Records</description>
+        <label>LDGCRM - Contact - Federal &amp; GSA - R</label>
+        <sharedTo>
+            <group>LDGCRM_Viewers</group>
+        </sharedTo>
+        <booleanFilter>1 OR 2</booleanFilter>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Federal</value>
+        </criteriaItems>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>GSA</value>
+        </criteriaItems>
+        <includeRecordsOwnedByAll>true</includeRecordsOwnedByAll>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>LDGCRM_Federal_and_GSA_R_W</fullName>
+        <accessLevel>Edit</accessLevel>
+        <description>Allows LDGCRM Users access to Federal and GSA Users</description>
+        <label>LDGCRM - Federal and GSA - R/W</label>
+        <sharedTo>
+            <group>LDGCRM_Team_Members</group>
+        </sharedTo>
+        <booleanFilter>1 or 2</booleanFilter>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Federal</value>
+        </criteriaItems>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>GSA</value>
+        </criteriaItems>
+        <includeRecordsOwnedByAll>true</includeRecordsOwnedByAll>
+    </sharingCriteriaRules>
+    <sharingCriteriaRules>
+        <fullName>TTS_OTCRM_Contacts</fullName>
+        <accessLevel>Edit</accessLevel>
+        <description>TTS OTCRM App Contacts</description>
+        <label>TTS OTCRM Contacts</label>
+        <sharedTo>
+            <group>TTS_OTCRM_Users</group>
+        </sharedTo>
+        <criteriaItems>
+            <field>RecordTypeId</field>
+            <operation>equals</operation>
+            <value>Federal</value>
+        </criteriaItems>
+        <includeRecordsOwnedByAll>false</includeRecordsOwnedByAll>
+    </sharingCriteriaRules>
+</SharingRules>

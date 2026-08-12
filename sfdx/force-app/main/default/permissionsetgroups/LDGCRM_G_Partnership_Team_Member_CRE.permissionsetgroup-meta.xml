@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSetGroup xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Partnership Team Member and OrgWide Hide Salesforce Classic</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>LDGCRM - G - Partnership Team Member - CRE</label>
+    <permissionSets>LDGCRM_Partnership_Team_Member_CRE</permissionSets>
+    <permissionSets>OrgWide_Hide_Salesforce_Classic_System</permissionSets>
+    <status>Updated</status>
+</PermissionSetGroup>

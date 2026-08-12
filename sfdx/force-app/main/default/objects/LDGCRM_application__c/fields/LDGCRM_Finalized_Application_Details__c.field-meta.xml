@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Finalized_Application_Details__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Application record has been reviewed and vital info and usage info is up to date.</description>
+    <inlineHelpText>Application record has been reviewed and vital info and usage info is up to date</inlineHelpText>
+    <label>Finalized Application Details</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

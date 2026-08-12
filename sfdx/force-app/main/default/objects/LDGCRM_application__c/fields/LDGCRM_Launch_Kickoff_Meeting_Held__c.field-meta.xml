@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Launch_Kickoff_Meeting_Held__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Introduce a partner agency to the Login.gov launch process for Level 3+ / IdV application launches.</description>
+    <inlineHelpText>Introduce a partner agency to the Login.gov launch process for Level 3+ / IdV application launches.</inlineHelpText>
+    <label>Launch Kick-off Meeting Held</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>
