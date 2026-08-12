@@ -13,6 +13,9 @@ This is a single-org setup: every script targets the `gsa-peo` sandbox alias. Re
 migration carry an external ID field, `LDGCRM_External_ID__c`, used to correlate Salesforce records
 back to their Airtable source.
 
+See [README.md](README.md) for human-facing setup/quick-start steps (auth, prerequisites, common
+commands). This file focuses on conventions and architecture for working in the code.
+
 ## Repository layout
 
 - `sfdx/` — the Salesforce DX project (`sf` CLI). `force-app/main/default/` holds retrieved metadata.
@@ -90,3 +93,12 @@ Run from inside `sfdx/`:
 - `npm run prettier` / `npm run prettier:verify` — formats `.cls,.cmp,.component,.css,.html,.js,.json,.md,.page,.trigger,.xml,.yaml,.yml`.
 - Husky's `pre-commit` hook runs `lint-staged` (Prettier on all matched files, ESLint on `aura`/`lwc`
   JS, `sfdx-lwc-jest --bail --findRelatedTests --passWithNoTests` on `lwc` changes).
+
+## Skills
+
+Project-specific skills live in `.claude/skills/` and load automatically when relevant:
+- `sfdx-metadata-sync` — retrieving/deploying metadata, extending `sfdx/manifest/package.xml`.
+- `sfdx-sandbox-ops` — safety checklist for any destructive or bulk operation against `gsa-peo`
+  (confirm org, preflight counts, export-before-write, never bypass the typed confirmation gate).
+- `sfdx-data-migration` — conventions for the (not yet built) `scripts/data-migration/` Data Loader
+  scripts: where source/mapping files live, upsert-on-external-ID, load ordering, dry-run-first.

@@ -21,10 +21,17 @@ data/**
 !data/**/.gitkeep
 !data/**/README.md
 
+# Salesforce CLI cache, in case `sf` is ever run from the repo root
+# instead of sfdx/ (which has its own .gitignore for this already)
+/.sf/
+/.sfdx/
+
 # Salesforce CLI / Data Loader local config that may embed credentials
 **/*.sfdx-token
 **/database.conf
 **/*.credentials
+.env
+.env.*
 
 # OS junk
 .DS_Store
