@@ -2,7 +2,8 @@
 
 This repo builds the Salesforce CRM app used by the Login.gov Airtable → Salesforce CRM migration
 project, and the automation around it: pulling metadata from the Salesforce sandbox, exporting a
-data dictionary, cleaning up test data, and (upcoming) loading migrated records with Data Loader.
+data dictionary, cleaning up test data, and pulling/transforming/loading migrated records from
+Airtable via the Salesforce CLI's Bulk API.
 
 Everything here targets a single sandbox: org alias **`gsa-peo`**.
 
@@ -17,9 +18,9 @@ scripts/
   common/                Shared PowerShell helpers (logging, repo-root resolution)
   metadata/              Pull metadata + export the data dictionary from the sandbox
   cleanup/               Interactive, destructive sandbox record cleanup
-  data-migration/        Pull data from Airtable; Data Loader load scripts (not built yet)
+  data-migration/        Pull Airtable data, transform to load-ready CSVs, load into gsa-peo
 logs/                    Gitignored run output (transcripts, CSV exports)
-data/                    Gitignored Airtable exports + Data Loader mapping files
+data/                    Gitignored Airtable exports, prepped load CSVs, and mapping files
 ```
 
 `logs/` and `data/` are gitignored on purpose — their contents can include PII pulled from Login.gov
@@ -96,16 +97,36 @@ sf project deploy start    --source-dir force-app --target-org gsa-peo
 
 The Husky `pre-commit` hook runs `lint-staged` (Prettier + ESLint + related Jest tests) automatically.
 
+> **Known issue:** `deploy validate` (and any `deploy start` that runs tests) currently fails
+> org-wide due to a pre-existing Apex compile error in an unrelated app (FCIC) that shares this
+> sandbox — not something caused by changes in this repo. See `CLAUDE.md`'s "Operational gotchas"
+> for the `--test-level NoTestRun` workaround for metadata-only changes with no Apex involved.
+
 ## Data migration
 
-Pulling source data from Airtable is built; loading it into Salesforce is not yet.
+Moves data from Airtable into `gsa-peo`, in three stages — pull, prep/transform, load. See
+[scripts/data-migration/README.md](scripts/data-migration/README.md) for the full pipeline and
+build status, and
+[scripts/data-migration/TRANSFORMATION-RULES.md](scripts/data-migration/TRANSFORMATION-RULES.md)
+for the field-by-field mapping rules and every data-quality gotcha found per object.
 
 ```powershell
 # Pull every table straight from the Airtable REST API into data/airtable-exports/<Table>.json
 # (overwrites each run). Requires AIRTABLE_API_KEY + AIRTABLE_BASE_ID in .env — see Setup above.
 powershell scripts/data-migration/Get-AirtableExport.ps1
+
+# Transform a pulled table into a load-ready CSV in data/salesforce-loads/
+powershell scripts/data-migration/Build-ImpedimentLoad.ps1
+
+# Load a prepped CSV into gsa-peo (prompts "Type LOAD to continue")
+powershell scripts/data-migration/Invoke-SalesforceLoad.ps1 `
+    -ObjectApiName "LDGCRM_Impediment__c" `
+    -CsvFile "data/salesforce-loads/LDGCRM_Impediment__c-upsert.csv"
 ```
 
-`scripts/data-migration/` is otherwise still reserved for the Data Loader/`sf`-based load scripts that
-will move that pulled data into Salesforce using the field mappings in `data/mappings/`, keyed on
-`LDGCRM_External_ID__c` for idempotent upserts.
+Loading uses the Salesforce CLI's Bulk API (`sf data upsert bulk`/`sf data update bulk`), not the
+Data Loader CLI originally planned — that tool isn't installed in this environment and needs Java
+11+, while `sf` is already installed and used everywhere else in this repo. See the pipeline
+README's Stage 3 section for the full reasoning. Every load is keyed on `LDGCRM_External_ID__c` for
+idempotent upserts, except Account, which is a Salesforce-`Id`-keyed update (Accounts already exist
+independently of this migration — see `TRANSFORMATION-RULES.md`).
