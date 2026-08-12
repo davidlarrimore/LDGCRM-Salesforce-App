@@ -9,5 +9,8 @@ because they can contain PII from Login.gov applicants.
   pulls. Requires `AIRTABLE_API_KEY`/`AIRTABLE_BASE_ID` in the repo-root `.env` (copy `.env.example`).
 - `mappings/` — Data Loader field-mapping files (`.sdl`) and any other object/field mapping docs
   used to drive loads.
+- `salesforce-loads/` — CSVs staged for the Data Loader CLI, written by the `scripts/data-migration/
+  Build-*.ps1` transform scripts (see `scripts/data-migration/README.md` for the full pipeline).
+  Regenerated from the current Airtable export each time a `Build-*` script runs — not hand-edited.
 
 Only `.gitkeep` and this `README.md` are tracked in git; everything else here is local to your machine.

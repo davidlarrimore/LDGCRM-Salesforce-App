@@ -4,8 +4,10 @@
     <description>Overview of what the impediment is, along with any relevant links or documentation.</description>
     <inlineHelpText>Overview of what the impediment is, along with any relevant links or documentation.</inlineHelpText>
     <label>Description</label>
+    <length>32768</length>
     <required>false</required>
     <trackHistory>false</trackHistory>
     <trackTrending>false</trackTrending>
-    <type>TextArea</type>
+    <type>LongTextArea</type>
+    <visibleLines>6</visibleLines>
 </CustomField>

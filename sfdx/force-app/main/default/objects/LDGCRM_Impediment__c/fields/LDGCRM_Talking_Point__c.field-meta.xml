@@ -4,8 +4,10 @@
     <description>Ways to talk about the impediment to partners</description>
     <inlineHelpText>Ways to talk about the impediment to partners</inlineHelpText>
     <label>Talking Point</label>
+    <length>32768</length>
     <required>false</required>
     <trackHistory>false</trackHistory>
     <trackTrending>false</trackTrending>
-    <type>TextArea</type>
+    <type>LongTextArea</type>
+    <visibleLines>6</visibleLines>
 </CustomField>

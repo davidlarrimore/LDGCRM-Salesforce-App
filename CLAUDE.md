@@ -137,18 +137,22 @@ onto:
   or edits the field by hand, can silently create duplicates. Consider flipping `unique` to `true` on the
   objects driven entirely by this migration (not on Account, see below) as a guardrail.
 
+See `scripts/data-migration/TRANSFORMATION-RULES.md` for the full field-by-field mapping rules and
+every gotcha discovered per object (Account's Type/Market Segment logic, Impediment's Category
+value map, etc.) — this section is the short cross-object summary.
+
 **Airtable table → Salesforce object**, with the linking columns that matter for load order:
 
 | Airtable table | Salesforce object | Airtable link columns → Salesforce lookup |
 | --- | --- | --- |
-| Accounts | Account (`Federal` record type) | *(already migrated — see below)* |
+| Accounts | Account (`Federal` record type) | *(already migrated — see below)*; also `States + DC/PR` (checkbox) → `Type` (`"State"` if checked, else `"Federal"` — confirmed against gsa-peo's existing data, not just Airtable's field name; see below) |
 | Partner Accounts | `LDGCRM_Partner_Account__c` | `Account Record ID` → `LDGCRM_Account__c` (Master-Detail) |
 | Applications | `LDGCRM_application__c` (`LDGCRM_Application` record type) | `Partner Account Record ID (from Partner Agreement)` → `LDGCRM_Partner_Account__c`; `Opportunity Record ID` → `LDGCRM_Opportunity__c` |
 | Contacts | Contact (`Federal` record type) | no direct Account/Application lookup on Contact itself — relationships go through the junctions below |
 | Applications × Contacts (embedded in Contacts/Applications exports) | `LDGCRM_Application_Contact__c` | needs both the Application's and the Contact's `rec...` IDs; splits Airtable's comma-joined multi-value cells into one junction row per pair |
 | Opportunities | Opportunity (`Login_gov` record type) | `Account Record ID` → `AccountId` |
 | Opportunity Contacts | `OpportunityContactRole` | `Opportunity Record ID` + Contact `rec...` ID; `Contact Type` → `Role`, `Primary` → `IsPrimary` (blocked on the `externalId` fix above) |
-| Impediments | `LDGCRM_Impediment__c` | — |
+| Impediments | `LDGCRM_Impediment__c` | — ; `Category` needs an explicit value map, not passthrough — see below |
 | Impediments × Opportunities (`Opportunities blocked` / `Opportunities requested` columns) | `LDGCRM_Opportunity_Impediment__c` | one junction row per Opportunity in each list; `Opportunities blocked` → `LDGCRM_Severity__c = "Blocker"`, `Opportunities requested` → `"Impediment"` |
 | Market Segments | `LDGCRM_Market_Segment__c` | *(already migrated — see above)* |
 | Meetings | Activity, as an **Event** (`LDGCRM_Meeting_Type__c` from `Meeting Type`) | `Opportunity Record ID` if present, else `Accounts Record ID`, → `WhatId` |
@@ -157,19 +161,45 @@ Meetings only carry a single `Date` column (no start/end time) — loading them 
 synthesizing `StartDateTime`/`EndDateTime` (e.g. a fixed default duration off that date), since
 Airtable has no time-of-day to carry over.
 
-**Current sandbox state (checked 2026-08-12):** Account and Market Segment are effectively
-**pre-migrated** — 531 Accounts exist (all `Federal` record type), 527 already carry a `rec...`
+**Not every Airtable column is a simple same-name mapping.** `States + DC/PR` looks like it might
+hold a state name but is actually a plain checkbox distinguishing state/DC/territory government
+Accounts from federal ones — it maps to the standard `Type` field, not a new custom field, and its
+value isn't "true"/"false", it's `"State"` vs `"Federal"`. This was confirmed empirically against
+gsa-peo's existing Accounts (54 already `Type="State"`, 530 already `Type="Federal"` — note
+`"Federal"`, not the `Type` picklist's defined `"Federal Agency"` value, which only 3 records use;
+the field isn't restricted) before being encoded in `Build-AccountReconciliation.ps1`, rather than
+assumed from the Airtable column name. Treat every table in the mapping above the same way —
+check what a column *actually* contains and how existing Salesforce data already uses the target
+field before writing a transform, don't assume the Airtable column name describes its content or
+that Salesforce's picklist metadata reflects what's actually stored. Same lesson on Impediments:
+Airtable's free-text `Category` column (`"Issue on their end"`, `"Relationship Issue"`, `"Product /
+Feature request"`) doesn't match `LDGCRM_Category__c`'s restricted 3-value picklist verbatim
+(`"Issue on partner end"`, `"Relationship issue"`) — a restricted picklist rejects anything outside
+its defined values, so `Build-ImpedimentLoad.ps1` maps them explicitly. Also don't assume every
+Airtable column has a Salesforce field to land in — Impediments' `Blocked revenue`/`Requested
+revenue`/`Blocked Annual IdV users`/count columns are Airtable-side rollups with no equivalent
+field (and `LDGCRM_Blocked_Revenue__c` is itself a roll-up Summary field computed from
+`LDGCRM_Opportunity_Impediment__c` — Salesforce rejects direct writes to it), so none of those are
+migrated.
+
+**Current sandbox state (checked 2026-08-12, re-verified same day via
+`Build-AccountReconciliation.ps1`):** Account and Market Segment are effectively **pre-migrated** —
+588 Accounts now exist (all `Federal` record type; this count moved from an earlier same-day
+reading of 531, so treat it as a moving target, not a fixed baseline), 584 already carry a `rec...`
 `LDGCRM_External_ID__c`, and all 6 Market Segments exist. Every other object is essentially empty
 (2 Opportunities, 3 Contacts, 2 Partner Accounts, 4 Applications, 1 Impediment, 0 Tasks/Events/
 OpportunityContactRoles) — a handful of obvious test/sample rows (`Test Account`, `HHS - Test`,
-`Test Partner Account`, `Test Market Segment`, …). Airtable has 757 Account rows against those 531
+`Test Partner Account`, `Test Market Segment`, …). Airtable has 757 Account rows against those 588
 Salesforce Accounts, so **don't assume 1:1** — reconcile by external ID first, then by name, and treat
 any Airtable Account row that doesn't match an existing Salesforce Account as an exception for human
 review rather than auto-creating a new Account (this is also why Account's `LDGCRM_External_ID__c`
 should stay `unique=false`/non-enforced for now, rather than being tightened like the other objects —
-a premature uniqueness constraint would block the reconciliation pass on the 4 known untagged rows,
-one of which, `Depart of Homeland Security`, looks like a typo'd duplicate of an existing tagged
-Account and needs a human decision, not a script, to resolve).
+a premature uniqueness constraint would block the reconciliation pass on the currently-172 untagged
+rows, one of which, `Depart of Homeland Security`, looks like a typo'd duplicate of an existing tagged
+Account and needs a human decision, not a script, to resolve). `Build-AccountReconciliation.ps1`
+(`scripts/data-migration/`) automates this reconciliation — external ID, Market Segment, and Type
+backfill — read-only against Salesforce, writing an update CSV plus human-review CSVs for anything
+it can't confidently match; see `scripts/data-migration/README.md` for the full pipeline.
 
 **Load order** (parents before children/junctions — the reverse of the delete order in
 `scripts/cleanup/cleanup-gsa-peo.ps1`): Market Segment → Account → `LDGCRM_Partner_Account__c` →
@@ -235,6 +265,20 @@ Run from inside `sfdx/`:
 
 ## Operational gotchas
 
+- **Any `sf project deploy validate` (or a `deploy start` that runs tests) currently fails org-wide**
+  due to a pre-existing Apex compile error unrelated to this app: `GSA_FCIC_AC_Manual_InitialBatch`
+  (part of the unrelated FCIC app that shares this sandbox — see the wildcard-retrieve warning below)
+  has a genuine compile error (`line 23: Variable does not exist: metadata`). Salesforce compiles
+  *all* Apex in the org as a prerequisite for running any tests, so this one broken class cascades
+  into "Dependent class is invalid and needs recompilation" errors and test failures across the
+  entire org, regardless of what you're actually deploying — discovered 2026-08-12 while deploying
+  an unrelated two-field metadata change (see `scripts/data-migration/TRANSFORMATION-RULES.md`'s
+  Impediment section). **Workaround for metadata-only changes with no Apex/trigger component**, on
+  this sandbox (not production): `sf project deploy start --test-level NoTestRun --target-org
+  gsa-peo` skips test execution entirely, sidestepping the recompilation cascade. This does *not*
+  fix the underlying problem — a deploy that actually includes Apex, or that must run tests for any
+  other reason, is still blocked until someone who owns the FCIC app fixes
+  `GSA_FCIC_AC_Manual_InitialBatch`.
 - **`sf project retrieve start` requires running from inside `sfdx/`** (or passing paths relative to
   it) — it needs `sfdx-project.json` in the working directory. Running it from the repo root fails
   with `InvalidProjectWorkspaceError`.
