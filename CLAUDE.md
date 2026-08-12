@@ -83,9 +83,13 @@ next to the script or inventing new log locations:
 Current scripts:
 - `scripts/metadata/Get-LDGCRMDataDictionary.ps1` — exports a full object/field data dictionary CSV
   via `sf sobject describe`; discovers custom objects by Salesforce label under the `LDGCRM_` prefix.
-- `scripts/metadata/Sync-Metadata.ps1` — runs `sf project retrieve start` against
-  `sfdx/manifest/package.xml`; extend the manifest as the app grows rather than hardcoding new types
-  into scripts.
+- `scripts/metadata/Sync-Metadata.ps1` — before retrieving, scans the sandbox for components whose
+  name matches `LDGCRM_`/`LGDCRM_` but aren't yet in `sfdx/manifest/package.xml`, adds them
+  automatically, and reports anything new that *doesn't* match the naming convention for manual
+  review instead of guessing (this sandbox hosts unrelated apps like FCIC that share the same
+  metadata types — see `scripts/metadata/ldgcrm-manifest-ignore.json` for confirmed non-LDGCRM
+  components that should stop resurfacing in that report). Then runs `sf project retrieve start`
+  against the manifest. `-WhatIf` reports only; `-SkipDiscovery` retrieves the manifest as-is.
 - `scripts/cleanup/cleanup-gsa-peo.ps1` — **interactive and destructive**: hard-deletes sandbox
   records by object (only rows where `LDGCRM_External_ID__c` is populated), after a typed
   `HARD DELETE` confirmation. Exports the record IDs it deletes first for an audit trail. Treat with

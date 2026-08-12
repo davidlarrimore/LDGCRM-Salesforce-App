@@ -4,7 +4,7 @@
         Starter manifest for pulling the Login.gov CRM data model and app
         config out of the gsa-peo sandbox with the Salesforce CLI:
 
-            sf project retrieve start -x manifest/package.xml --target-org gsa-peo
+            sf project retrieve start -x manifest/package.xml -o gsa-peo
 
         Add members/types as the app grows (new custom objects, flows,
         permission sets, etc.). Members are listed explicitly rather than
