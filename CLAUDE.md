@@ -46,12 +46,23 @@ objects carrying custom fields: Account, Contact, Opportunity, `OpportunityConta
   junction, and to `LDGCRM_Application__c` via `LDGCRM_Application_Contact__c` (junction).
 - **Opportunity** has an Owner (User) and an Account reference; parents related Activities
   (Task/Event, labeled "Meeting") and Impediments.
-- **`LDGCRM_Application__c`** is a Master-Detail child of **`LDGCRM_Partner_Account__c`**, and carries
-  a "Partner Portal Admin" flag on its `LDGCRM_Application_Contact__c` junction rows.
-  `LDGCRM_Partner_Account__c` also relates to Opportunity.
+- **`LDGCRM_Application__c`** has a required **Lookup** (not Master-Detail) to
+  **`LDGCRM_Partner_Account__c`** (`LDGCRM_Partner_Account__c` field), and carries a "Partner Portal
+  Admin" flag on its `LDGCRM_Application_Contact__c` junction rows. It also has an optional Lookup to
+  Opportunity (filtered to the `Login_gov` record type).
+- **`LDGCRM_Partner_Account__c`** is the true Master-Detail child of **Account** (via `LDGCRM_Account__c`,
+  filtered to the `Federal` Account record type) and relates to Opportunity indirectly through
+  `LDGCRM_Application__c`.
 - **Account** has an Owner (User), a parent Account lookup, and a lookup to `LDGCRM_Market_Segment__c`.
-- **`LDGCRM_Impediment__c`** relates to Opportunity via **`LDGCRM_Opportunity_Impediment__c`** (junction).
-- **Activity** (Task/Event) references both an Account and an Opportunity.
+- **`LDGCRM_Opportunity_Impediment__c`** is a true junction with **two Master-Detail relationships** —
+  to `LDGCRM_Impediment__c` and to Opportunity — so both parents must exist before a junction row can
+  be created (and both parent rows are deleted if either side deletes them). `LDGCRM_Application_Contact__c`,
+  by contrast, links `LDGCRM_Application__c` and Contact via two plain **Lookups**, not Master-Detail —
+  that's why it needs the duplicate-record-check Flow mentioned below (Master-Detail junctions don't).
+- **Activity** (Task/Event) reaches both an Account and an Opportunity through the single polymorphic
+  `WhatId` field — there's no separate custom Account lookup. A meeting tied to a specific Opportunity
+  gets `WhatId` = that Opportunity (its Account is reachable via `Opportunity.AccountId`); a meeting
+  tied only to an Account (no Opportunity) gets `WhatId` = that Account directly.
 
 Nine record-triggered **Flows** (`force-app/main/default/flows/`) implement the automation layer:
 duplicate-record checks on the two junction objects, Market Segment assignment on Application/Opportunity
@@ -65,11 +76,116 @@ grouped into matching **PermissionSetGroups** and assigned via the **Group**s `L
 Prefer reading `force-app/main/default/objects/` for field-level detail; use
 `scripts/metadata/Get-LDGCRMDataDictionary.ps1` when you want it flattened to CSV instead of XML.
 
+## Airtable API
+
+`scripts/data-migration/Get-AirtableExport.ps1` pulls current Airtable data straight from the REST API
+into `data/airtable-exports/<Table>.json` (one file per table, overwritten each run — see "Scripts"
+below). This replaced an earlier manual CSV/XLSX export-zip workflow; don't recreate that structure —
+the JSON pull is the only source of truth for Airtable data in this repo now.
+
+**Authentication:** a Personal Access Token (PAT), not the old-style API key — Airtable removed
+`key...` API keys in Feb 2024, so a token must start with `pat...`. Create/manage one in the Airtable
+Builder hub (profile avatar → Builder hub → Personal access tokens); it needs the **`data.records:read`**
+scope at minimum, **`schema.bases:read`** too if you need to look up table IDs/names (see below), and
+must be explicitly granted access to this base (PATs are scoped per-base/workspace, not account-wide).
+Send it as `Authorization: Bearer <token>`. Locally it lives in the gitignored repo-root `.env` as
+`AIRTABLE_API_KEY` (named after the deprecated concept, but the value is a PAT) alongside
+`AIRTABLE_BASE_ID` (the `app...` string from the base's API docs page or its browser URL) — copy
+`.env.example` to start. `scripts/common/Common.ps1`'s `Import-DotEnv` loads `.env` into the process
+environment; nothing else in this repo reads it.
+
+**REST API shape:**
+- Base URL: `https://api.airtable.com/v0/{baseId}/{tableIdOrName}` — table names work but **table IDs
+  are preferred and are what this repo's script uses**, because table *names* are user-editable in
+  Airtable and a rename silently 403s a name-based request (this actually happened here: the "Partner
+  Accounts" table was renamed to "Partners" in Airtable, breaking a name-keyed pull — Airtable returns
+  403 uniformly for "no permission" and "table doesn't exist/isn't visible", so a rename looks
+  identical to an auth failure until you check). `Get-AirtableExport.ps1`'s `$DefaultTables` hardcodes
+  the current table-ID mapping (captured 2026-08-12) as the single source of truth — update it there,
+  not here, if a table is renamed/added/removed.
+- Discover table names/IDs via the metadata endpoint: `GET /v0/meta/bases/{baseId}/tables` (needs the
+  `schema.bases:read` scope — separate from `data.records:read`, so a 403 here doesn't mean the record
+  endpoints are broken too).
+- **Pagination:** one page at a time, 100 records max per page (`pageSize` param). Pass the previous
+  response's `offset` value back as a query param to get the next page; no `offset` in the response
+  means you're done.
+- **Rate limit:** 5 requests/sec per base; exceeding it returns `429`. `Get-AirtableExport.ps1` paces
+  requests ~250ms apart and retries on `429` with a 30s backoff.
+- **Record shape:** each record is `{ id: "rec...", createdTime, fields: { ... } }`. Linked-record
+  fields come back as real JSON arrays of `rec...` IDs — not the comma-joined strings a CSV export
+  would give — which is the main advantage of pulling via the API over the old manual export.
+
+## Airtable → Salesforce mapping
+
+**External ID convention:** every Airtable table has a record ID column (`rec...`, e.g. `recqKg0hKPxCCH4M1`
+on `Accounts Record ID`) that is the upsert key for `LDGCRM_External_ID__c` on the matching Salesforce
+object — one Airtable base row becomes one Salesforce record carrying that ID. Two exceptions to hold
+onto:
+- **`LDGCRM_Market_Segment__c` currently stores the segment *name*** (`"Benefits"`, `"Defense"`, …) in
+  `LDGCRM_External_ID__c`, not the Airtable `rec...` ID from the Market Segments table's `Unique ID`
+  column. There are only 5 real segments plus a `Test Market Segment` row, all already loaded — decide
+  once (backfill to the `rec...` ID for consistency, or keep matching by name since the segment list is
+  small and stable) rather than let a load script silently create duplicates by upserting on the wrong
+  value.
+- **`OpportunityContactRole.LDGCRM_External_ID__c` has `externalId=false`** in its field metadata (every
+  other object's copy is `externalId=true`). A Bulk API `upsert --external-id` call needs that flag set,
+  so this field needs a metadata fix (`sfdx-metadata-sync`) before the Opportunity Contacts pull can be
+  loaded idempotently.
+- On every object, `LDGCRM_External_ID__c` is `externalId=true` but **`unique=false` and `required=false`**
+  — Salesforce will not reject a duplicate value at the database level. A load script upserting on this
+  field is safe (Bulk API upsert still matches correctly), but anything that inserts instead of upserts,
+  or edits the field by hand, can silently create duplicates. Consider flipping `unique` to `true` on the
+  objects driven entirely by this migration (not on Account, see below) as a guardrail.
+
+**Airtable table → Salesforce object**, with the linking columns that matter for load order:
+
+| Airtable table | Salesforce object | Airtable link columns → Salesforce lookup |
+| --- | --- | --- |
+| Accounts | Account (`Federal` record type) | *(already migrated — see below)* |
+| Partner Accounts | `LDGCRM_Partner_Account__c` | `Account Record ID` → `LDGCRM_Account__c` (Master-Detail) |
+| Applications | `LDGCRM_application__c` (`LDGCRM_Application` record type) | `Partner Account Record ID (from Partner Agreement)` → `LDGCRM_Partner_Account__c`; `Opportunity Record ID` → `LDGCRM_Opportunity__c` |
+| Contacts | Contact (`Federal` record type) | no direct Account/Application lookup on Contact itself — relationships go through the junctions below |
+| Applications × Contacts (embedded in Contacts/Applications exports) | `LDGCRM_Application_Contact__c` | needs both the Application's and the Contact's `rec...` IDs; splits Airtable's comma-joined multi-value cells into one junction row per pair |
+| Opportunities | Opportunity (`Login_gov` record type) | `Account Record ID` → `AccountId` |
+| Opportunity Contacts | `OpportunityContactRole` | `Opportunity Record ID` + Contact `rec...` ID; `Contact Type` → `Role`, `Primary` → `IsPrimary` (blocked on the `externalId` fix above) |
+| Impediments | `LDGCRM_Impediment__c` | — |
+| Impediments × Opportunities (`Opportunities blocked` / `Opportunities requested` columns) | `LDGCRM_Opportunity_Impediment__c` | one junction row per Opportunity in each list; `Opportunities blocked` → `LDGCRM_Severity__c = "Blocker"`, `Opportunities requested` → `"Impediment"` |
+| Market Segments | `LDGCRM_Market_Segment__c` | *(already migrated — see above)* |
+| Meetings | Activity, as an **Event** (`LDGCRM_Meeting_Type__c` from `Meeting Type`) | `Opportunity Record ID` if present, else `Accounts Record ID`, → `WhatId` |
+
+Meetings only carry a single `Date` column (no start/end time) — loading them as Event means
+synthesizing `StartDateTime`/`EndDateTime` (e.g. a fixed default duration off that date), since
+Airtable has no time-of-day to carry over.
+
+**Current sandbox state (checked 2026-08-12):** Account and Market Segment are effectively
+**pre-migrated** — 531 Accounts exist (all `Federal` record type), 527 already carry a `rec...`
+`LDGCRM_External_ID__c`, and all 6 Market Segments exist. Every other object is essentially empty
+(2 Opportunities, 3 Contacts, 2 Partner Accounts, 4 Applications, 1 Impediment, 0 Tasks/Events/
+OpportunityContactRoles) — a handful of obvious test/sample rows (`Test Account`, `HHS - Test`,
+`Test Partner Account`, `Test Market Segment`, …). Airtable has 757 Account rows against those 531
+Salesforce Accounts, so **don't assume 1:1** — reconcile by external ID first, then by name, and treat
+any Airtable Account row that doesn't match an existing Salesforce Account as an exception for human
+review rather than auto-creating a new Account (this is also why Account's `LDGCRM_External_ID__c`
+should stay `unique=false`/non-enforced for now, rather than being tightened like the other objects —
+a premature uniqueness constraint would block the reconciliation pass on the 4 known untagged rows,
+one of which, `Depart of Homeland Security`, looks like a typo'd duplicate of an existing tagged
+Account and needs a human decision, not a script, to resolve).
+
+**Load order** (parents before children/junctions — the reverse of the delete order in
+`scripts/cleanup/cleanup-gsa-peo.ps1`): Market Segment → Account → `LDGCRM_Partner_Account__c` →
+Contact → Opportunity → `LDGCRM_application__c` → `LDGCRM_Opportunity_Impediment__c` (needs
+`LDGCRM_Impediment__c` and Opportunity first) → `LDGCRM_Application_Contact__c` →
+`OpportunityContactRole` → Activity (Meetings, needs Account/Opportunity first).
+
 ## Scripts
 
-All scripts are PowerShell, **requiring pwsh 7+** (cross-platform: Windows/macOS/Linux). Never
-reintroduce Windows-only path syntax (hardcoded backslashes, `$env:`-only assumptions, etc.) into
-shared script code — use `Join-Path`/`Split-Path` as the existing scripts do.
+All scripts are PowerShell, **targeting Windows PowerShell 5.1+** (this repo's dev machines don't have
+PowerShell 7/`pwsh` installed, and installing it is blocked by Group Policy on at least one of them —
+so `#Requires -Version 5.1` at the top of every script, not 7.0). Avoid syntax that only exists in
+PowerShell 6+ (`??`, `?.`, ternary `?:`, `ConvertFrom-Json -AsHashtable`, `ForEach-Object -Parallel`,
+multi-argument `Join-Path`) — stick to `Join-Path`/`Split-Path` with the classic two-argument form, as
+the existing scripts do. Scripts still run fine under `pwsh` 7+ if a machine happens to have it; they
+just don't require it.
 
 Every script dot-sources `scripts/common/Common.ps1` and uses its helpers rather than writing output
 next to the script or inventing new log locations:
@@ -94,9 +210,16 @@ Current scripts:
   records by object (only rows where `LDGCRM_External_ID__c` is populated), after a typed
   `HARD DELETE` confirmation. Exports the record IDs it deletes first for an audit trail. Treat with
   the same caution as any prod-affecting script even though it targets a sandbox.
-- `scripts/data-migration/` — placeholder; not built yet. Upcoming Data Loader-based scripts
-  (Airtable export -> Salesforce load) belong here and should follow the same `Common.ps1`
-  logging/PII conventions as the rest of `scripts/`.
+- `scripts/data-migration/Get-AirtableExport.ps1` — pulls current data directly from the Airtable REST
+  API (one JSON file per table, paginated via `offset`) into `data/airtable-exports/<Table>.json`,
+  **overwriting** the previous pull each run (a timestamped transcript + `pull-summary-<timestamp>.csv`
+  still land in `logs/data-migration/` via `Common.ps1`, so run history isn't lost, just the data
+  itself isn't duplicated per run). See "Airtable API" above for auth/connection details. `-Tables`
+  limits the pull to a subset; defaults to all nine tables in the "Airtable table → Salesforce object"
+  mapping above.
+- `scripts/data-migration/` is otherwise still a placeholder for the upsert/load scripts (Airtable ->
+  Salesforce) — not built yet. Those should follow the same `Common.ps1` logging/PII conventions as
+  the rest of `scripts/`.
 
 ## sfdx/ commands
 

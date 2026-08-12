@@ -17,7 +17,7 @@ scripts/
   common/                Shared PowerShell helpers (logging, repo-root resolution)
   metadata/              Pull metadata + export the data dictionary from the sandbox
   cleanup/               Interactive, destructive sandbox record cleanup
-  data-migration/        Data Loader migration scripts (not built yet)
+  data-migration/        Pull data from Airtable; Data Loader load scripts (not built yet)
 logs/                    Gitignored run output (transcripts, CSV exports)
 data/                    Gitignored Airtable exports + Data Loader mapping files
 ```
@@ -28,7 +28,9 @@ applicants via Airtable or the sandbox. Only `.gitkeep`/`README.md` placeholders
 ## Prerequisites
 
 - [Salesforce CLI](https://developer.salesforce.com/tools/salesforcecli) (`sf`)
-- [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) (`pwsh`) — all automation scripts are cross-platform PowerShell, not Windows-only
+- Windows PowerShell 5.1+ (`powershell`, built into Windows) — all automation scripts target this;
+  they also run fine under [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell)
+  (`pwsh`) if you have it, but nothing in `scripts/` requires it
 - Node.js (for `sfdx/`'s lint/test/prettier tooling — see `sfdx/package.json`)
 - Access to the `gsa-peo` Salesforce sandbox
 
@@ -48,24 +50,28 @@ cd sfdx && npm install
 # this machine's disk mount adds a long path prefix that trips Windows' 260-char
 # limit on deeply nested Salesforce metadata paths. Fix once per clone:
 git config core.longpaths true
+
+# For the Airtable pull script: copy the template and fill in your own
+# Personal Access Token + base ID (both gitignored, never commit .env)
+cp .env.example .env
 ```
 
 ## Common tasks
 
-Run these from the repo root with `pwsh`:
+Run these from the repo root with `powershell`:
 
-```bash
+```powershell
 # Pull metadata listed in sfdx/manifest/package.xml into sfdx/force-app
-pwsh scripts/metadata/Sync-Metadata.ps1
+powershell scripts/metadata/Sync-Metadata.ps1
 
 # Export a full object/field data dictionary CSV to logs/metadata/
-pwsh scripts/metadata/Get-LDGCRMDataDictionary.ps1
+powershell scripts/metadata/Get-LDGCRMDataDictionary.ps1
 ```
 
 **Destructive — sandbox test-data cleanup:**
 
-```bash
-pwsh scripts/cleanup/cleanup-gsa-peo.ps1
+```powershell
+powershell scripts/cleanup/cleanup-gsa-peo.ps1
 ```
 
 Hard-deletes records (only rows where `LDGCRM_External_ID__c` is set) after a typed `HARD DELETE`
@@ -90,8 +96,16 @@ sf project deploy start    --source-dir force-app --target-org gsa-peo
 
 The Husky `pre-commit` hook runs `lint-staged` (Prettier + ESLint + related Jest tests) automatically.
 
-## Data migration (Data Loader)
+## Data migration
 
-Not built yet. `scripts/data-migration/` is reserved for the Data Loader wrapper scripts that will
-move Airtable exports (`data/airtable-exports/`) into Salesforce using the field mappings in
-`data/mappings/`, keyed on `LDGCRM_External_ID__c` for idempotent upserts.
+Pulling source data from Airtable is built; loading it into Salesforce is not yet.
+
+```powershell
+# Pull every table straight from the Airtable REST API into data/airtable-exports/<Table>.json
+# (overwrites each run). Requires AIRTABLE_API_KEY + AIRTABLE_BASE_ID in .env — see Setup above.
+powershell scripts/data-migration/Get-AirtableExport.ps1
+```
+
+`scripts/data-migration/` is otherwise still reserved for the Data Loader/`sf`-based load scripts that
+will move that pulled data into Salesforce using the field mappings in `data/mappings/`, keyed on
+`LDGCRM_External_ID__c` for idempotent upserts.

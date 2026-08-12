@@ -22,8 +22,8 @@ don't guess at a different org alias.
 
 Prefer the manifest-driven sync over ad hoc `--metadata` flags, so retrievals stay repeatable:
 
-```bash
-pwsh scripts/metadata/Sync-Metadata.ps1
+```powershell
+powershell scripts/metadata/Sync-Metadata.ps1
 ```
 
 This runs `sf project retrieve start -x manifest/package.xml --target-org gsa-peo` from `sfdx/` and
@@ -100,8 +100,8 @@ they've already asked for the deploy explicitly.
 For a full object/field data dictionary (types, required-ness, relationships), use the describe-based
 export instead of reading raw metadata XML:
 
-```bash
-pwsh scripts/metadata/Get-LDGCRMDataDictionary.ps1
+```powershell
+powershell scripts/metadata/Get-LDGCRMDataDictionary.ps1
 ```
 
 Output CSV lands in `logs/metadata/` (gitignored — it's a full sandbox schema dump, not secret, but

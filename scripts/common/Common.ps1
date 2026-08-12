@@ -2,8 +2,10 @@
 # Dot-source from a script in scripts/<category>/:
 #   . (Join-Path $PSScriptRoot "..\common\Common.ps1")
 #
-# Cross-platform: uses Join-Path/Split-Path only, no hardcoded
-# path separators, so scripts run under pwsh on Windows, macOS, or Linux.
+# Targets Windows PowerShell 5.1 (no PowerShell 7-only syntax: no ??, ?., ternary
+# ?:, -AsHashtable, -Parallel, or multi-argument Join-Path). Uses Join-Path/Split-Path
+# with the classic two-argument form only, so path handling stays portable if this
+# ever does run under pwsh 7+ on another machine.
 
 function Get-RepoRoot {
     # This file lives at scripts/common/, so the repo root is two levels up.
@@ -53,4 +55,41 @@ function Start-ScriptLog {
 
 function Stop-ScriptLog {
     Stop-Transcript | Out-Null
+}
+
+function Import-DotEnv {
+    <#
+        Loads KEY=VALUE pairs from the repo-root .env file into the current
+        process's environment variables. Skips blank lines and #-comments.
+        Never overwrites a variable that's already set in the environment,
+        so an explicit $env:X set before running a script still wins.
+    #>
+    param(
+        [string]$Path = (Join-Path (Get-RepoRoot) ".env")
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    foreach ($Line in Get-Content -LiteralPath $Path) {
+        $Trimmed = $Line.Trim()
+
+        if ([string]::IsNullOrWhiteSpace($Trimmed) -or $Trimmed.StartsWith("#")) {
+            continue
+        }
+
+        $Separator = $Trimmed.IndexOf("=")
+
+        if ($Separator -lt 1) {
+            continue
+        }
+
+        $Key = $Trimmed.Substring(0, $Separator).Trim()
+        $Value = $Trimmed.Substring($Separator + 1).Trim().Trim('"').Trim("'")
+
+        if (-not (Test-Path "Env:$Key")) {
+            Set-Item -Path "Env:$Key" -Value $Value
+        }
+    }
 }

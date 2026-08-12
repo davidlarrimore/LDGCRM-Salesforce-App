@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+#Requires -Version 5.1
 <#
     Pulls the metadata listed in sfdx/manifest/package.xml from the sandbox
     into sfdx/force-app, using the Salesforce CLI.
@@ -14,10 +14,10 @@
     for the running list of known false positives).
 
     Usage:
-        pwsh scripts/metadata/Sync-Metadata.ps1
-        pwsh scripts/metadata/Sync-Metadata.ps1 -OrgAlias gsa-peo
-        pwsh scripts/metadata/Sync-Metadata.ps1 -WhatIf          # report only; no manifest edit, no retrieve
-        pwsh scripts/metadata/Sync-Metadata.ps1 -SkipDiscovery   # retrieve the manifest as-is, skip the scan
+        powershell scripts/metadata/Sync-Metadata.ps1
+        powershell scripts/metadata/Sync-Metadata.ps1 -OrgAlias gsa-peo
+        powershell scripts/metadata/Sync-Metadata.ps1 -WhatIf          # report only; no manifest edit, no retrieve
+        powershell scripts/metadata/Sync-Metadata.ps1 -SkipDiscovery   # retrieve the manifest as-is, skip the scan
 #>
 param(
     [string]$OrgAlias = "gsa-peo",
