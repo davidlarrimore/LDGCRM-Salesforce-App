@@ -69,8 +69,6 @@ next to the script or inventing new log locations:
 Current scripts:
 - `scripts/metadata/Get-LDGCRMDataDictionary.ps1` — exports a full object/field data dictionary CSV
   via `sf sobject describe`; discovers custom objects by Salesforce label under the `LDGCRM_` prefix.
-- `scripts/metadata/Inspect-SalesforceApp.ps1` — retrieves and inspects the app's CustomApplication
-  and Utility Bar FlexiPage; read-only, does not deploy anything.
 - `scripts/metadata/Sync-Metadata.ps1` — runs `sf project retrieve start` against
   `sfdx/manifest/package.xml`; extend the manifest as the app grows rather than hardcoding new types
   into scripts.

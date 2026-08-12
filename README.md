@@ -55,9 +55,6 @@ pwsh scripts/metadata/Sync-Metadata.ps1
 
 # Export a full object/field data dictionary CSV to logs/metadata/
 pwsh scripts/metadata/Get-LDGCRMDataDictionary.ps1
-
-# Retrieve + inspect the app's CustomApplication and Utility Bar FlexiPage (read-only)
-pwsh scripts/metadata/Inspect-SalesforceApp.ps1
 ```
 
 **Destructive — sandbox test-data cleanup:**
