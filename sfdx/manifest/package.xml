@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!--
+        Starter manifest for pulling the Login.gov CRM data model and app
+        config out of the gsa-peo sandbox with the Salesforce CLI:
+
+            sf project retrieve start -x manifest/package.xml --target-org gsa-peo
+
+        Add members/types as the app grows (new custom objects, flows,
+        permission sets, etc.). Wildcard ("*") members retrieve everything
+        of that type and are safe even when nothing exists yet.
+    -->
+    <types>
+        <members>Account</members>
+        <members>Contact</members>
+        <members>Opportunity</members>
+        <members>LDGCRM_Partner_account__c</members>
+        <members>LDGCRM_Application__c</members>
+        <members>LDGCRM_Application_Contact__c</members>
+        <members>LDGCRM_Impediment__c</members>
+        <members>LDGCRM_Opportunity_Impediment__c</members>
+        <members>LDGCRM_Market_Segment__c</members>
+        <name>CustomObject</name>
+    </types>
+    <types>
+        <members>LDGCRM_Login_Gov_CRM_App</members>
+        <name>CustomApplication</name>
+    </types>
+    <types>
+        <members>*</members>
+        <name>FlexiPage</name>
+    </types>
+    <types>
+        <members>*</members>
+        <name>PermissionSet</name>
+    </types>
+    <types>
+        <members>*</members>
+        <name>Layout</name>
+    </types>
+    <types>
+        <members>*</members>
+        <name>Flow</name>
+    </types>
+    <version>64.0</version>
+</Package>

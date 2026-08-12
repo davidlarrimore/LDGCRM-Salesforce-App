@@ -1,0 +1,39 @@
+# ============================================================
+# Login.gov CRM Migration - repo-wide ignore rules
+# ============================================================
+# The sfdx/ project has its own .gitignore for SFDX/CLI artifacts.
+# This file covers the automation scripts, run logs, and data
+# folders added around it. Run output and data extracts can
+# contain Login.gov applicant PII pulled from Airtable or the
+# sandbox, so they are excluded by default - only source-controlled
+# scripts and documentation should be committed from those trees.
+
+# Script run output (CSV exports, sf CLI JSON, Data Loader success/
+# error logs, etc.) - keep folder structure via .gitkeep
+logs/**
+!logs/**/
+!logs/**/.gitkeep
+!logs/**/README.md
+
+# Data extracts / Data Loader source & mapping files (may contain PII)
+data/**
+!data/**/
+!data/**/.gitkeep
+!data/**/README.md
+
+# Salesforce CLI / Data Loader local config that may embed credentials
+**/*.sfdx-token
+**/database.conf
+**/*.credentials
+
+# OS junk
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Editor
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
