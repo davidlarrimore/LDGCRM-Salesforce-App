@@ -2,10 +2,10 @@
 
 <#
     The final chunk of the Airtable -> Salesforce data-migration pipeline (see
-    docs/README.md). Turns freeform Airtable columns that have no dedicated
+    docs/engineering/ARCHITECTURE.md). Turns freeform Airtable columns that have no dedicated
     Salesforce field into ContentNote records attached to the record they
     describe. Full candidate analysis and the reasoning behind every inclusion
-    and exclusion live in docs/TRANSFORMATION-RULES.md's "Notes" section.
+    and exclusion live in docs/engineering/TRANSFORMATION-RULES.md's "Notes" section.
 
     MUST RUN LAST. A note attaches to a record that has to already exist, so
     every other object must be loaded first.
@@ -59,7 +59,7 @@
     produce no note at all.
 
     Meetings columns are NOT included: that object is deferred pending Einstein
-    Activity Capture (see docs/BACKLOG.md 2). If unmatched meetings later land
+    Activity Capture (see docs/engineering/BACKLOG.md 2). If unmatched meetings later land
     here as notes, this chunk grows by up to ~1,800 records.
 #>
 

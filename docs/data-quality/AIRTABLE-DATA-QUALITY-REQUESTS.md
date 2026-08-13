@@ -1,9 +1,20 @@
 # Airtable data quality requests
 
+> **Who this is for:** whoever owns and maintains the **Airtable base** — not developers. Every item
+> here is something you can fix in Airtable that will pull more records into Salesforce.
+>
+> **You don't need to understand the migration to act on this.** Each item says what's wrong, which
+> rows, and how many records it unblocks. Work top down; the list is ordered by impact.
+>
+> **Nothing here requires an engineer.** Every transform re-reads Airtable on each run, so fixing an
+> item and asking for a re-run picks up the newly valid records automatically — no code change, no
+> deployment.
+>
+> Developers looking for the technical mapping decisions want
+> [TRANSFORMATION-RULES.md](../engineering/TRANSFORMATION-RULES.md) instead.
+
 This is a running list of things in the Airtable base that are blocking, or would improve, the
-migration into Salesforce — written for whoever owns/maintains the Airtable data, not developers.
-If you're a developer looking for the technical mapping decisions instead, see
-[TRANSFORMATION-RULES.md](TRANSFORMATION-RULES.md).
+migration into Salesforce.
 
 **This list grows as more tables get migrated** (Contacts, Opportunities, and a few others haven't
 been reviewed yet as of 2026-08-13) — it isn't the final/complete list, just everything found so far.

@@ -36,7 +36,7 @@
 #
 # Do not re-create a "gsa-peo" alias pointing anywhere other than production.
 # When production genuinely needs authorizing, see the auth runbook in
-# docs/README.md ("Environments and org aliases").
+# docs/engineering/ARCHITECTURE.md ("Environments and org aliases").
 # =============================================================================
 
 function Get-LdgcrmEnvironmentTable {
@@ -116,7 +116,7 @@ function Get-LdgcrmEnvironment {
 
     if (-not $Entry.Alias) {
         throw ("Environment '$Environment' ($($Entry.Label)) has no org alias configured yet. " +
-               "Authorize the org (see docs/README.md, 'Environments and org aliases'), then fill in " +
+               "Authorize the org (see docs/engineering/ARCHITECTURE.md, 'Environments and org aliases'), then fill in " +
                "Alias and SandboxName for '$Environment' in scripts/common/Common.Orgs.ps1.")
     }
 
@@ -188,7 +188,7 @@ function Assert-LdgcrmOrgTarget {
 
     if ($LASTEXITCODE -ne 0) {
         throw ("Could not reach org alias '$Alias' for environment '$Environment' ($($Entry.Label)). " +
-               "Authorize it first - see docs/README.md, 'Environments and org aliases'.")
+               "Authorize it first - see docs/engineering/ARCHITECTURE.md, 'Environments and org aliases'.")
     }
 
     $Json = $RawResult | ConvertFrom-Json

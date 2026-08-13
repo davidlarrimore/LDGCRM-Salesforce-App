@@ -8,7 +8,7 @@
     WHY THIS EXISTS
       The load order is a hard dependency chain - parents before children,
       Opportunity before Application, Impediment before its junction, Notes dead
-      last - and until now it lived only in prose (docs/README.md "Load order")
+      last - and until now it lived only in prose (docs/engineering/ARCHITECTURE.md "Load order")
       and a checklist a human walked by hand. That is fine for a developer who
       has read both. It is not fine for the Operations team, who will run this
       against QA, Full and eventually production, and for whom "run these
@@ -103,7 +103,7 @@ $RunStart = Get-Date
 # =============================================================================
 # THE SEQUENCE
 # =============================================================================
-# Order is the dependency chain from docs/README.md. Each entry is data, not
+# Order is the dependency chain from docs/engineering/ARCHITECTURE.md. Each entry is data, not
 # code, so adding an object is a table edit.
 #
 #   Name        short handle for -StartAtStep / -OnlySteps
@@ -764,7 +764,7 @@ else {
     Write-Host "Run directory (restore point, baseline and post-load counts):" -ForegroundColor Cyan
     Write-Host "  $RunDirectory"
     Write-Host ""
-    Write-Host "This is NOT a full verification. Walk docs/RELOAD-QA-CHECKLIST.md - success" -ForegroundColor Cyan
+    Write-Host "This is NOT a full verification. Walk docs/operations/RELOAD-QA-CHECKLIST.md - success" -ForegroundColor Cyan
     Write-Host "counts are not the same as correct data." -ForegroundColor Cyan
 
     if ($Problems.Count -gt 0) { exit 1 }

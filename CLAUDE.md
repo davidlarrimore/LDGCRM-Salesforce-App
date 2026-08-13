@@ -38,7 +38,7 @@ deleted and production isn't authorized here, so a stale reference fails loudly 
 to production. Prose in this file still saying "gsa-peo" for a past finding means the Dev sandbox.
 
 Writes/deletes against `Prod` need the org alias typed at an extra guard
-(`Assert-LdgcrmProductionConsent`) on top of the script's own confirmation. See `docs/README.md`,
+(`Assert-LdgcrmProductionConsent`) on top of the script's own confirmation. See `docs/engineering/ARCHITECTURE.md`,
 "Environments and org aliases", for the authorization runbook for a new sandbox.
 
 See [README.md](README.md) for human-facing setup/quick-start steps (auth, prerequisites, common
@@ -87,7 +87,7 @@ objects carrying custom fields: Account, Contact, Opportunity, `OpportunityConta
   exact-match for 72 of 76 Partner Accounts, which is why all 8 DOD Partner Accounts show the same
   identical 50 Opportunities. The only authored path is via `LDGCRM_application__c` (which references
   both): **82 Opportunities, all unambiguous, ~9% coverage**. See
-  `docs/TRANSFORMATION-RULES.md`'s Opportunity section — it also records the wrong intermediate
+  `docs/engineering/TRANSFORMATION-RULES.md`'s Opportunity section — it also records the wrong intermediate
   conclusion this produced, and the "identical sets across unrelated records = rollup, not
   relationship" tell that caught it.
 - **Account** has an Owner (User), a parent Account lookup, and a lookup to `LDGCRM_Market_Segment__c`.
@@ -180,7 +180,7 @@ onto:
   than upsert: `Build-OpportunityContactRoleLoad.ps1` queries what exists, keys it on
   `(OpportunityId, ContactId, Role)`, and inserts only what's missing. The field is still populated
   for traceability. **Loaded 2026-08-13: 515 rows.** Two source traps documented in
-  `docs/TRANSFORMATION-RULES.md`: `Opportunity Record ID` on that table is the row's OWN id (0 of 520
+  `docs/engineering/TRANSFORMATION-RULES.md`: `Opportunity Record ID` on that table is the row's OWN id (0 of 520
   are real Opportunity ids — the real link is `Opportunity Record ID (from Opportunities)`), and the
   table has no Contact link at all.
 - On every object, `LDGCRM_External_ID__c` is `externalId=true` but **`unique=false` and `required=false`**
@@ -189,7 +189,7 @@ onto:
   or edits the field by hand, can silently create duplicates. Consider flipping `unique` to `true` on the
   objects driven entirely by this migration (not on Account, see below) as a guardrail.
 
-See `docs/TRANSFORMATION-RULES.md` for the full field-by-field mapping rules and
+See `docs/engineering/TRANSFORMATION-RULES.md` for the full field-by-field mapping rules and
 every gotcha discovered per object (Account's Type/Market Segment logic, Impediment's Category
 value map, etc.) — this section is the short cross-object summary.
 
@@ -199,7 +199,7 @@ value map, etc.) — this section is the short cross-object summary.
 | --- | --- | --- |
 | Accounts | Account (`Federal` record type) | *(already migrated — see below)*; also `States + DC/PR` (checkbox) → `Type` (`"State"` if checked, else `"Federal"` — confirmed against gsa-peo's existing data, not just Airtable's field name; see below) |
 | Partner Accounts | `LDGCRM_Partner_Account__c` | `Account Record ID` → `LDGCRM_Account__c` (Master-Detail, requires Account loaded first); `Name`/`LDGCRM_Agreement_Short_Name__c` ← `Agreement Short Name` (no dedicated Name column exists) |
-| Applications | `LDGCRM_application__c` (`LDGCRM_Application` record type — its only active record type) | `Partner Account Record ID (from Partner Agreement)` → `LDGCRM_Partner_Account__c` (required); `Opportunity Record ID` → `LDGCRM_Opportunity__c`; `Demographic Served` needed a Global Value Set expansion (6 → 25 values) — see `docs/TRANSFORMATION-RULES.md` for the full analysis and justification |
+| Applications | `LDGCRM_application__c` (`LDGCRM_Application` record type — its only active record type) | `Partner Account Record ID (from Partner Agreement)` → `LDGCRM_Partner_Account__c` (required); `Opportunity Record ID` → `LDGCRM_Opportunity__c`; `Demographic Served` needed a Global Value Set expansion (6 → 25 values) — see `docs/engineering/TRANSFORMATION-RULES.md` for the full analysis and justification |
 | Contacts | Contact (`Federal` record type) | no direct Account/Application lookup on Contact itself — relationships go through the junctions below |
 | Applications × Contacts (embedded in Contacts/Applications exports) | `LDGCRM_Application_Contact__c` | needs both the Application's and the Contact's `rec...` IDs; splits Airtable's comma-joined multi-value cells into one junction row per pair |
 | Opportunities | Opportunity (`Login_gov` record type) | `Account Record ID` → `AccountId` |
@@ -241,7 +241,7 @@ legacy `Note` object) attached to their parent record, in a dedicated **Notes ch
 built last**, after every other object's records exist. This is forward-only — it does not apply to
 columns already migrated as dedicated fields (Partner Account's `Current Status Summary`,
 Impediment's `Description`/`Talking Point` stay exactly as built). See
-`docs/TRANSFORMATION-RULES.md`'s "Notes" section for the full mechanism, current
+`docs/engineering/TRANSFORMATION-RULES.md`'s "Notes" section for the full mechanism, current
 candidate-field list, and open questions (e.g. Partner Accounts' `Escalated User Support Cases`
 appears to reference an Airtable table this migration doesn't currently pull at all).
 
@@ -253,7 +253,7 @@ a normal writable field, but each is actually a formula computed from other fiel
 migrated (mostly checkboxes) — Salesforce rejects direct writes to a formula field outright. Caught
 before `Build-ApplicationLoad.ps1` was written, not after a failed load. Same instinct as checking a
 picklist's restricted values or a TextArea's real length before trusting a field's surface
-appearance — see `docs/TRANSFORMATION-RULES.md`'s General Principle #7 and the
+appearance — see `docs/engineering/TRANSFORMATION-RULES.md`'s General Principle #7 and the
 Application section's dedicated note for the full example.
 
 **The `LDGCRM_Opportunity_Impediment__c` junction is loaded as of 2026-08-13: 267 records** (267/267).
@@ -310,7 +310,7 @@ purely offline transform) to skip rows whose parent Partner Account doesn't exis
 submitting guaranteed failures. **`LDGCRM_Broker_App_Parent__c` is deliberately not loaded** — a
 self-referential lookup can't resolve within its own upsert batch and needs a second pass (not built).
 
-**Current sandbox state (rebuilt 2026-08-13 — see `docs/README.md`'s "Production Account seed"
+**Current sandbox state (rebuilt 2026-08-13 — see `docs/engineering/ARCHITECTURE.md`'s "Production Account seed"
 section for the full rebuild):** the Account/Partner Account chain was deliberately hard-deleted
 (scoped, via `scripts/cleanup/Invoke-SandboxFactoryReset.ps1`) and rebuilt from a real production Account
 export to make reconciliation testing meaningful, rather than testing against arbitrary sandbox seed
@@ -327,11 +327,11 @@ new Account (this is also why Account's `LDGCRM_External_ID__c` should stay `uni
 non-enforced for now). 169 rows remain unmatched as of the rebuild — confirmed 2026-08-13 that most
 checked so far are duplicate rows *within Airtable itself* (e.g. `Army`/`Navy`/`Air Force` alongside
 already-linked `Department of the Army`/`Department of the Navy`/`Department of the Air Force`
-entries), not genuinely missing Accounts — see `docs/AIRTABLE-DATA-QUALITY-REQUESTS.md` for the
+entries), not genuinely missing Accounts — see `docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md` for the
 full list and a human decision needed for each. `Build-AccountReconciliation.ps1`
 (`scripts/data-migration/`) automates this reconciliation — external ID, Market Segment, and Type
 backfill — read-only against Salesforce, writing an update CSV plus human-review CSVs for anything
-it can't confidently match; see `docs/README.md` for the full pipeline.
+it can't confidently match; see `docs/engineering/ARCHITECTURE.md` for the full pipeline.
 
 **Load order** (parents before children/junctions — the reverse of the delete order in
 `scripts/cleanup/Invoke-SandboxFactoryReset.ps1`): Market Segment → Account → `LDGCRM_Partner_Account__c` →
@@ -414,7 +414,7 @@ Current scripts:
 - **Still to build:** `Build-ContactLoad.ps1`, the junction objects
   (`LDGCRM_Opportunity_Impediment__c`, `LDGCRM_Application_Contact__c`), `OpportunityContactRole`
   (blocked on an `externalId` metadata fix), Meetings, an Application **second pass** for the
-  `LDGCRM_Broker_App_Parent__c` self-lookup, and the final Notes chunk. See `docs/README.md` for
+  `LDGCRM_Broker_App_Parent__c` self-lookup, and the final Notes chunk. See `docs/engineering/ARCHITECTURE.md` for
   per-script status.
 
 ## sfdx/ commands
@@ -467,7 +467,7 @@ Run from inside `sfdx/`:
   *all* Apex in the org as a prerequisite for running any tests, so this one broken class cascades
   into "Dependent class is invalid and needs recompilation" errors and test failures across the
   entire org, regardless of what you're actually deploying — discovered 2026-08-12 while deploying
-  an unrelated two-field metadata change (see `docs/TRANSFORMATION-RULES.md`'s
+  an unrelated two-field metadata change (see `docs/engineering/TRANSFORMATION-RULES.md`'s
   Impediment section). **Workaround for metadata-only changes with no Apex/trigger component**, on
   this sandbox (not production): `sf project deploy start --test-level NoTestRun --target-org
   gsa-peo` skips test execution entirely, sidestepping the recompilation cascade. This does *not*
@@ -496,11 +496,26 @@ Run from inside `sfdx/`:
   this repo's local git config) and retry; for non-git file deletion, use `robocopy <empty-dir> <target>
   /MIR` rather than `Remove-Item -Recurse`, which does not reliably handle the same long paths.
 
+## Documentation layout
+
+`docs/` is split by **audience**, because they barely overlap. Put new documentation in the right
+one rather than growing this file or `docs/README.md`:
+
+| Path | Audience | Contents |
+| --- | --- | --- |
+| `docs/operations/` | People **running** a migration, assuming no prior knowledge | `SETUP.md`, `RUNNING-A-LOAD.md`, `TROUBLESHOOTING.md`, `ROLLBACK.md`, `RELOAD-QA-CHECKLIST.md` |
+| `docs/engineering/` | People **changing** the pipeline | `ARCHITECTURE.md` (was `docs/README.md`), `TRANSFORMATION-RULES.md`, `BACKLOG.md` |
+| `docs/data-quality/` | The **Airtable data owners** — not developers | `AIRTABLE-DATA-QUALITY-REQUESTS.md` |
+| `docs/*.pdf` / `*.html` | **Stakeholders** | Dated point-in-time status reports; never edit an old one to refresh it |
+| `logs/README.md` | Anyone reading run output | What each kind of run leaves behind |
+
+`docs/README.md` is an **index only** — it routes by audience and holds no content of its own.
+
 ## Skills
 
 Project-specific skills live in `.claude/skills/` and load automatically when relevant:
 - `sfdx-metadata-sync` — retrieving/deploying metadata, extending `sfdx/manifest/package.xml`.
-- `sfdx-sandbox-ops` — safety checklist for any destructive or bulk operation against `gsa-peo`
+- `sfdx-sandbox-ops` — safety checklist for any destructive or bulk operation against a sandbox
   (confirm org, preflight counts, export-before-write, never bypass the typed confirmation gate).
-- `sfdx-data-migration` — conventions for the (not yet built) `scripts/data-migration/` Data Loader
-  scripts: where source/mapping files live, upsert-on-external-ID, load ordering, dry-run-first.
+- `sfdx-data-migration` — conventions for the `scripts/data-migration/` scripts: where source and
+  mapping files live, upsert-on-external-ID, load ordering, dry-run-first.

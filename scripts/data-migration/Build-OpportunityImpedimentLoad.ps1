@@ -2,8 +2,8 @@
 
 <#
     Chunk 3 of the Airtable -> Salesforce data-migration pipeline (see
-    docs/README.md). Builds the LDGCRM_Opportunity_Impediment__c junction.
-    Full reasoning lives in docs/TRANSFORMATION-RULES.md's Opportunity
+    docs/engineering/ARCHITECTURE.md). Builds the LDGCRM_Opportunity_Impediment__c junction.
+    Full reasoning lives in docs/engineering/TRANSFORMATION-RULES.md's Opportunity
     Impediment section.
 
     SOURCE: the Impediments table's two linked-record columns, which encode the

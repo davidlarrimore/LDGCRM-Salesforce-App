@@ -1,15 +1,31 @@
 # Full reload QA checklist
 
+> **Who this is for:** whoever is running a complete **wipe and reload** of a sandbox — emptying it
+> and rebuilding from scratch, usually to rehearse the production migration or to verify something
+> that can only be checked at load time.
+>
+> **This is not the normal way to load data.** For an ordinary load, use
+> [RUNNING-A-LOAD.md](RUNNING-A-LOAD.md). Come here only when you specifically need to start from
+> an empty org.
+>
+> **Prerequisites:** work through [SETUP.md](SETUP.md) first, and read
+> [RUNNING-A-LOAD.md](RUNNING-A-LOAD.md) — this checklist assumes you know what the pipeline does
+> and adds verification around it rather than explaining it.
+>
+> ⚠️ **This procedure permanently deletes records.** Hard deletes bypass the Recycle Bin. It is
+> blocked from production by construction, but it will happily empty a sandbox someone else is
+> using — coordinate first.
+
 Operational runbook for a complete wipe-and-reload, written for whoever actually runs it. The trigger
-for this one is the **record-ownership work built 2026-08-13** — ownership is set by the transforms at
+for the 2026-08-13 run was the **record-ownership work** — ownership is set by the transforms at
 load time, so it cannot be verified without reloading.
 
 Work top to bottom. **Phase 3 is a hard gate**: do not start the full load until the test batch
 passes, because the ownership design rests on one Bulk API behaviour this pipeline has never
 exercised.
 
-Related: [`README.md`](README.md) (pipeline + load order), [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)
-(field rules + the ownership section), [`BACKLOG.md`](BACKLOG.md), and the `sfdx-sandbox-ops` skill.
+Related: [`README.md`](../engineering/ARCHITECTURE.md) (pipeline + load order), [`TRANSFORMATION-RULES.md`](../engineering/TRANSFORMATION-RULES.md)
+(field rules + the ownership section), [`BACKLOG.md`](../engineering/BACKLOG.md), and the `sfdx-sandbox-ops` skill.
 
 ---
 
@@ -559,7 +575,7 @@ was found this way, never in a success count.
 - [ ] No unexpected new records on objects nobody loaded (Event, Task, Case, Lead).
 - [ ] Pre-existing/untagged test records still at baseline counts.
 - [ ] Review every `logs/data-migration/*-skipped-*.csv` and `*-review-*.csv` from this run and fold
-      anything new into [`AIRTABLE-DATA-QUALITY-REQUESTS.md`](AIRTABLE-DATA-QUALITY-REQUESTS.md).
+      anything new into [`AIRTABLE-DATA-QUALITY-REQUESTS.md`](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md).
       Findings sitting unread in `logs/` are the failure mode that rule exists to prevent.
 
 ---

@@ -2,7 +2,7 @@
 
 <#
     Chunk 5 of the Airtable -> Salesforce data-migration pipeline (see
-    docs/README.md) - the actual load step. Wraps `sf data
+    docs/engineering/ARCHITECTURE.md) - the actual load step. Wraps `sf data
     upsert bulk` / `sf data update bulk` (Bulk API 2.0) around a CSV produced
     by one of this directory's Build-*.ps1 transform scripts.
 
@@ -92,7 +92,7 @@ $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Invoke-Sale
 # WHY THAT MATTERS TO THIS MIGRATION
 #   371 of the 1,487 migrated Contacts have no resolvable Account (most
 #   because their Airtable Account is one of the unreconciled duplicates - see
-#   docs/AIRTABLE-DATA-QUALITY-REQUESTS.md). Loading them with the trigger
+#   docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md). Loading them with the trigger
 #   active creates 371 junk Accounts in an org where Account counts are already
 #   a moving target and where this migration's own Account reconciliation
 #   depends on those counts being meaningful. A 18-row test batch created 4

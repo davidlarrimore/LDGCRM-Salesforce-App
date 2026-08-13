@@ -2,8 +2,8 @@
 
 <#
     Chunk 2 of the Airtable -> Salesforce data-migration pipeline (see
-    docs/README.md). Full field-by-field investigation and every exclusion's
-    reasoning live in docs/TRANSFORMATION-RULES.md's Opportunity section -
+    docs/engineering/ARCHITECTURE.md). Full field-by-field investigation and every exclusion's
+    reasoning live in docs/engineering/TRANSFORMATION-RULES.md's Opportunity section -
     this header covers only what a script reader needs at a glance.
 
     Opportunity is an independent parent (like Contact and Impediment), but
@@ -54,7 +54,7 @@
     Accounts), not an authored link, so it cannot say which Partner Account an
     individual Opportunity belongs to. All 8 Partner Accounts under the
     Department of Defense carry byte-identical 50-Opportunity lists, several
-    named "(placeholder)". See docs/TRANSFORMATION-RULES.md.
+    named "(placeholder)". See docs/engineering/TRANSFORMATION-RULES.md.
 
     OwnerId comes from Airtable's "Pod Opportunity Lead" (a collaborator object
     carrying .email), per the ownership rule agreed 2026-08-13: use the Airtable
@@ -64,7 +64,7 @@
     that is deliberate and not an oversight.
 
     This needs no separate pass: Partner Accounts load BEFORE Opportunity (see
-    the load order in docs/README.md), so the lookup resolves during this same
+    the load order in docs/engineering/ARCHITECTURE.md), so the lookup resolves during this same
     load, and the derivation only needs the local Applications JSON export, not
     Applications loaded into Salesforce. (Contrast Application's
     LDGCRM_Broker_App_Parent__c, which is genuinely a second pass because it is
@@ -331,7 +331,7 @@ foreach ($Row in $AirtableOpportunities) {
         $SkippedRows.Add([PSCustomObject]@{
             AirtableRecordId = $RecId
             Name             = $Name
-            Reason           = "Linked Account $AccountId is not reconciled in $OrgAlias (duplicate/unmatched Airtable Account - see docs/AIRTABLE-DATA-QUALITY-REQUESTS.md). Would fail the load with INVALID_FIELD - skipped."
+            Reason           = "Linked Account $AccountId is not reconciled in $OrgAlias (duplicate/unmatched Airtable Account - see docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md). Would fail the load with INVALID_FIELD - skipped."
         })
         continue
     }

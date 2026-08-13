@@ -2,9 +2,9 @@
 
 <#
     Chunk 3 of the Airtable -> Salesforce data-migration pipeline (see
-    docs/README.md). Builds the LDGCRM_Application_Contact__c junction linking
+    docs/engineering/ARCHITECTURE.md). Builds the LDGCRM_Application_Contact__c junction linking
     LDGCRM_application__c to Contact. Full reasoning lives in
-    docs/TRANSFORMATION-RULES.md's Application Contact section.
+    docs/engineering/TRANSFORMATION-RULES.md's Application Contact section.
 
     Requires BOTH Application and Contact to be loaded first - a junction row
     whose either side can't resolve fails outright, so unresolvable pairs are
@@ -93,7 +93,7 @@ $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-Appli
 # The Airtable role that maps to the junction's Partner Portal Admin checkbox.
 # Every other Role value (Technical POC, Program POC, Help Desk POC, Exec POC,
 # PAG POC, ConMon Attendee, Archive, Threat Intel POC, UX POC) has no field on
-# this object - see docs/TRANSFORMATION-RULES.md.
+# this object - see docs/engineering/TRANSFORMATION-RULES.md.
 $PartnerPortalAdminRole = "Partner Portal Admin"
 
 try {

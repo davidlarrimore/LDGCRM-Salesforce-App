@@ -2,10 +2,10 @@
 
 <#
     Chunk 3 of the Airtable -> Salesforce data-migration pipeline (see
-    docs/README.md). Full field-by-field investigation,
+    docs/engineering/ARCHITECTURE.md). Full field-by-field investigation,
     every exclusion's reasoning, and the Demographic Served picklist expansion
     (deployed separately via sfdx-metadata-sync before this script was written)
-    live in docs/TRANSFORMATION-RULES.md's Application section - this header only
+    live in docs/engineering/TRANSFORMATION-RULES.md's Application section - this header only
     covers what a script reader needs at a glance, not the full justification.
 
     LDGCRM_Partner_Account__c is a REQUIRED Lookup - needs Partner Account
@@ -17,7 +17,7 @@
     transform, like Impediment (no User-resolution or reconciliation needed
     here, unlike Account/Partner Account).
 
-    Fields NOT written, deliberately (see docs/TRANSFORMATION-RULES.md for why each
+    Fields NOT written, deliberately (see docs/engineering/TRANSFORMATION-RULES.md for why each
     one specifically):
       - LDGCRM_Market_Segment__c: before-save Flow derives it from the linked
         Partner Account's Account.
@@ -94,7 +94,7 @@ $LaunchLevelMap = @{
 }
 
 # The 24 Demographic Served categories used within the last 18 months
-# (2026-08-12 analysis - see docs/TRANSFORMATION-RULES.md), mapped to their
+# (2026-08-12 analysis - see docs/engineering/TRANSFORMATION-RULES.md), mapped to their
 # LDGCRM_Demographic_Served__c value. Every value maps to itself except
 # "Contractors", which reuses the picklist's pre-existing "Gov't Employees
 # (Contractors)" value rather than adding a near-duplicate. Any Airtable
@@ -264,7 +264,7 @@ Write-Host "$($AirtableApplications.Count) Airtable Application rows loaded."
 # LDGCRM_Partner_Account__c is a REQUIRED lookup resolved by external ID at
 # load time. A row referencing a Partner Account that exists in Airtable but
 # never made it into gsa-peo (its own parent Account is unresolved - see
-# docs/AIRTABLE-DATA-QUALITY-REQUESTS.md) is a guaranteed Bulk API failure,
+# docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) is a guaranteed Bulk API failure,
 # not a maybe. The 2026-08-13 load submitted 343 such rows and got 343
 # INVALID_FIELD errors back. Checking up front turns those into an explicit,
 # reviewable skip list instead of load-time noise that buries real failures.
@@ -401,7 +401,7 @@ foreach ($Row in $AirtableApplications) {
         $SkippedRows.Add([PSCustomObject]@{
             AirtableRecordId = $RecId
             Name             = $Name
-            Reason           = "Linked Partner Account $PartnerAccountId is not loaded in $OrgAlias (its own parent Account is unresolved - see docs/AIRTABLE-DATA-QUALITY-REQUESTS.md). Would fail the load with INVALID_FIELD - skipped. Re-run once the Account/Partner Account data is fixed."
+            Reason           = "Linked Partner Account $PartnerAccountId is not loaded in $OrgAlias (its own parent Account is unresolved - see docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md). Would fail the load with INVALID_FIELD - skipped. Re-run once the Account/Partner Account data is fixed."
         })
         continue
     }

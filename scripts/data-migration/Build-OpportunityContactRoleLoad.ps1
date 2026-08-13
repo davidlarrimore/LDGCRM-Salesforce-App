@@ -2,9 +2,9 @@
 
 <#
     Chunk 4 of the Airtable -> Salesforce data-migration pipeline (see
-    docs/README.md). Builds OpportunityContactRole from the Airtable
+    docs/engineering/ARCHITECTURE.md). Builds OpportunityContactRole from the Airtable
     "Opportunity Contacts" table. Full reasoning lives in
-    docs/TRANSFORMATION-RULES.md's OpportunityContactRole section.
+    docs/engineering/TRANSFORMATION-RULES.md's OpportunityContactRole section.
 
     THIS OBJECT CANNOT BE UPSERTED - IT IS THE ONLY ONE IN THE PIPELINE THAT
     RESOLVES REAL SALESFORCE IDs INSTEAD.

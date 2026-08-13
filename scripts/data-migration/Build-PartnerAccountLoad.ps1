@@ -2,7 +2,7 @@
 
 <#
     Chunk 2 of the Airtable -> Salesforce data-migration pipeline (see
-    docs/README.md). LDGCRM_Partner_Account__c is a true
+    docs/engineering/ARCHITECTURE.md). LDGCRM_Partner_Account__c is a true
     Master-Detail child of Account (LDGCRM_Account__c, filtered to the Federal
     record type), so unlike Impediment this needs the parent Account's
     LDGCRM_External_ID__c already populated - run Build-AccountReconciliation.ps1
@@ -24,7 +24,7 @@
     would be redundant at best (the Flow would just overwrite it on insert
     anyway) and reintroduces exactly the kind of value-mapping bug already
     found and fixed in Build-AccountReconciliation.ps1's Market Segment column
-    (see docs/TRANSFORMATION-RULES.md) for no benefit. The same pattern applies to
+    (see docs/engineering/TRANSFORMATION-RULES.md) for no benefit. The same pattern applies to
     Opportunity and Application, which have their own analogous before-save
     Flows deriving Market Segment from their related Account - neither of
     those future transform scripts should set it either.

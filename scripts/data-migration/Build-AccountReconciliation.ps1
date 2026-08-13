@@ -2,7 +2,7 @@
 
 <#
     Chunk 1 of the Airtable -> Salesforce data-migration pipeline (see
-    docs/README.md for the full pipeline).
+    docs/engineering/ARCHITECTURE.md for the full pipeline).
 
     Account is a special case: unlike every other object in this migration,
     Salesforce Account records already exist independently of Airtable (they

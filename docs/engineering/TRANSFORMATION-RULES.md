@@ -1,12 +1,24 @@
 # Airtable → Salesforce field transformation rules
 
+> **Who this is for:** engineers writing or changing a transform, and anyone asking "why does this
+> field end up like that?" It is a **reference to search, not a document to read end to end** —
+> it runs to about 1,900 lines. Jump to the object you care about.
+>
+> **Read the [General Principles](#general-principle-read-this-before-writing-a-new-transform)
+> before writing any new transform.** They are distilled from mistakes that reached a real org, and
+> most describe a specific way Salesforce or Airtable will mislead you.
+>
+> **Not an engineer?** If the source data looks wrong, go to
+> [../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md).
+> If you need to run a load, go to [../operations/RUNNING-A-LOAD.md](../operations/RUNNING-A-LOAD.md).
+
 This is the authoritative, field-by-field record of how each Airtable table's columns become each
 Salesforce object's fields in this migration — every mapping decision, every excluded field, and
-every gotcha discovered while building the `Build-*.ps1` transform scripts in this directory. When
-in doubt about why a script does something a particular way, this is where the reasoning lives.
+every gotcha discovered while building the `Build-*.ps1` transform scripts. When in doubt about why
+a script does something a particular way, this is where the reasoning lives.
 
 `CLAUDE.md`'s "Airtable → Salesforce mapping" section has the short cross-object summary (which
-table maps to which object, load order); `docs/README.md` has the pipeline
+table maps to which object, load order); `ARCHITECTURE.md` has the pipeline
 architecture and build status. This document is the detail underneath both — add a new `##` section
 here every time a `Build-*.ps1` script is built, before considering that chunk done.
 
@@ -230,7 +242,7 @@ therefore near-meaningless as loaded — not because the rule misfires, but beca
 ownership it inherits from carries almost no information.
 
 This is now an evidenced decision rather than an argument, and it is the strongest available input to
-D2 in [`RELOAD-QA-CHECKLIST.md`](RELOAD-QA-CHECKLIST.md): keep the rule, drop the inheritance in
+D2 in [`RELOAD-QA-CHECKLIST.md`](../operations/RELOAD-QA-CHECKLIST.md): keep the rule, drop the inheritance in
 favour of the named fallback, or inherit only from real people. **No code change is proposed here —
 the rule was confirmed as-is on 2026-08-13 and this is evidence for revisiting it, not a decision to
 change it.**
@@ -927,7 +939,7 @@ include the linkage automatically. It wouldn't have: an operator would have had 
 step, and forgetting it would leave every Opportunity's Partner Account silently blank.
 
 There is no ordering obstacle: **Partner Accounts load before Opportunity** (see the load order in
-`docs/README.md`), so the lookup resolves during the same load, and the derivation only needs the
+`ARCHITECTURE.md`), so the lookup resolves during the same load, and the derivation only needs the
 local Applications JSON export — not Applications loaded into Salesforce. Verified by consolidating
 and re-running: identical 66 links, 742/742 succeeded.
 
@@ -1712,7 +1724,7 @@ false.** All 68 rows carrying a `Broker App Parent` failed with `Foreign key ext
 ... in entity LDGCRM_application__c`, even though the referenced parent Application was in the same
 CSV. `LDGCRM_Broker_App_Parent__c` is therefore no longer written by this script at all — it needs a
 **second pass** re-upserting only `LDGCRM_External_ID__c` + the parent reference, after every
-Application row exists in the org (see `docs/README.md`'s Load order). Applies to any future
+Application row exists in the org (see `ARCHITECTURE.md`'s Load order). Applies to any future
 self-referential lookup in this pipeline, not just this one.
 
 **3. `Name` (80) and `Url` (255) are Salesforce platform hard limits, not fixable field metadata.**

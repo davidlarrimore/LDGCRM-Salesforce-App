@@ -2,8 +2,8 @@
 
 <#
     Chunk 2 of the Airtable -> Salesforce data-migration pipeline (see
-    docs/README.md). Full field-by-field reasoning lives in
-    docs/TRANSFORMATION-RULES.md's Contact section.
+    docs/engineering/ARCHITECTURE.md). Full field-by-field reasoning lives in
+    docs/engineering/TRANSFORMATION-RULES.md's Contact section.
 
     Contact is an independent parent - nothing has to be loaded before it -
     but it does carry optional lookups to Account and LDGCRM_Partner_Account__c,
@@ -553,7 +553,7 @@ foreach ($Group in $Groups) {
             ContactExternalId = $Group.ExternalId
             Email             = $Email
             Reason            = if ($AccountFromAirtableColumn) {
-                                    "SKIPPED - not loaded. Airtable links this contact to an Account that isn't reconciled in $OrgAlias (duplicate/unmatched Airtable Account - see docs/AIRTABLE-DATA-QUALITY-REQUESTS.md), and neither a linked Application nor a linked Opportunity resolves to one."
+                                    "SKIPPED - not loaded. Airtable links this contact to an Account that isn't reconciled in $OrgAlias (duplicate/unmatched Airtable Account - see docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md), and neither a linked Application nor a linked Opportunity resolves to one."
                                 } else {
                                     "SKIPPED - not loaded. No Account link in Airtable, and neither a linked Application nor a linked Opportunity resolves to one."
                                 }

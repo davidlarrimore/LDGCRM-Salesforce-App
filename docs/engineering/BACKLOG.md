@@ -1,10 +1,12 @@
 # Migration backlog
 
-Work that is agreed but not yet built, plus the decisions each item still needs. This is the
-engineering-facing companion to the stakeholder report
-([`migration-load-report-2026-08-13.html`](migration-load-report-2026-08-13.html)); per-object
-build status lives in [`README.md`](README.md) and the field-level detail in
-[`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md).
+> **Who this is for:** engineers picking up the next piece of work, and anyone asking "is this
+> already known?" Each item records the decisions it still needs, not just the task.
+
+Work that is agreed but not yet built. This is the engineering-facing companion to the
+[stakeholder report](../migration-load-report-2026-08-13-post-reload.pdf); per-object build status
+lives in [ARCHITECTURE.md](ARCHITECTURE.md) and the field-level detail in
+[TRANSFORMATION-RULES.md](TRANSFORMATION-RULES.md).
 
 Ordered roughly by value, not by effort.
 
@@ -208,7 +210,7 @@ active Salesforce User.** The remaining 530 are led by people who are deactivate
 all (`elizabeth.mays@gsa.gov` alone leads 182). **Those meetings can never sync**, because there is
 no calendar to connect. That is a ceiling of roughly **71%**, before any matching accuracy is
 considered — and it overlaps exactly with the missing-logins item in
-[`AIRTABLE-DATA-QUALITY-REQUESTS.md`](AIRTABLE-DATA-QUALITY-REQUESTS.md), so provisioning those users
+[`AIRTABLE-DATA-QUALITY-REQUESTS.md`](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md), so provisioning those users
 raises this ceiling as well as fixing record ownership.
 
 ---
@@ -449,7 +451,7 @@ do not let its existence justify skipping the backup.
 **Status:** ongoing, no engineering work required.
 
 Every transform re-reads Airtable and re-queries Salesforce, so fixing the items in
-[`AIRTABLE-DATA-QUALITY-REQUESTS.md`](AIRTABLE-DATA-QUALITY-REQUESTS.md) and re-running picks up the
+[`AIRTABLE-DATA-QUALITY-REQUESTS.md`](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) and re-running picks up the
 newly-valid records automatically. The largest single lever remains the **169 unmatched Accounts**,
 which cascade into Partner Accounts → Applications → Application-Contact links, and into Opportunities
 → Opportunity-Impediment links.

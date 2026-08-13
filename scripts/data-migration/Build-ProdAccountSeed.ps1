@@ -18,13 +18,13 @@
     always carry that gap; one seeded by Invoke-AccountBootstrap.ps1 from empty
     will not.
 
-    Kept, not deleted, because docs/README.md and TRANSFORMATION-RULES.md
+    Kept, not deleted, because docs/engineering/ARCHITECTURE.md and TRANSFORMATION-RULES.md
     record what it did on 2026-08-13 and those accounts of the rebuild should
     stay checkable. Delete it once the bootstrap has been exercised in QA.
     ============================================================
 
     One-time(ish) bootstrap step, not part of the regular Airtable pipeline
-    chunks - see docs/README.md for how this fits in. Purpose: the Dev
+    chunks - see docs/engineering/ARCHITECTURE.md for how this fits in. Purpose: the Dev
     sandbox's Account data has been a moving target and doesn't reliably
     reflect the real universe of production Accounts, which makes testing
     Build-AccountReconciliation.ps1 against it a weak proxy for how the real
