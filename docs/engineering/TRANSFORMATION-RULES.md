@@ -2003,6 +2003,88 @@ the `field-meta.xml` would leave dangling `<field>` entries that break the next 
 components — so a field removal means sweeping `layouts/`, `permissionsets/` and `reportTypes/` too.
 `grep -rl <fieldName> sfdx/force-app` finds them all.
 
+### Partner portal team — the source was in a table nobody was pulling
+
+**Added 2026-08-13.** `LDGCRM_P3_Partner_Portal_Team_Name__c` and `LDGCRM_P3_Team_UUID__c` were
+recorded in this document, twice, as having **no Airtable source at all** — "confirmed by searching
+every Airtable column name for `revenue`/`uuid`/`team`/`portal`." That conclusion was wrong, and the
+reason it was wrong is the transferable part:
+
+> **The search covered every column of the Applications table. The data was in a different table —
+> one that `Get-AirtableExport.ps1` did not pull, so it was invisible to any amount of careful
+> searching of the exports on disk.**
+
+`Issuer Strings` (`tbl8XAxD4G5uBEPMk`, 901 rows) carries `Team Name` and `Team UUID`, and was added
+to the export by PR #1. **When a Salesforce field looks sourceless, check the base's full table list
+(`GET /v0/meta/bases/{baseId}/tables`) before concluding it is populated by another system** — the
+exports on disk are a subset of the base by construction, and "not in any export" is a much weaker
+statement than "not in Airtable." The same caution applies to Partner Accounts' `Escalated User
+Support Cases`, still an open question for exactly this reason.
+
+**Airtable models this one level down from where Salesforce wants it.** Salesforce puts the team on
+the Application; Airtable records it on each **issuer string**, and an Application has many. So the
+value has to be collapsed upward, which only works if an Application's issuer strings agree.
+
+Measured across the 2026-08-13 export (901 issuer strings → 887 distinct Applications):
+
+| Outcome | Applications | Handling |
+| --- | --- | --- |
+| Exactly one Team UUID across all its issuer strings | **696** | Migrated. |
+| No Team UUID on any issuer string | 182 | Both fields left blank. |
+| **Two different Team UUIDs** | **9** | Both fields left blank + review CSV. |
+
+The 9 are a genuine source defect — one Airtable Application whose issuer strings belong to two
+portal teams, typically a dev/test string under one team and a prod string under another. **There is
+no defensible tie-break** (first-wins would silently pick whichever issuer string sorted first), so
+both fields are skipped and reported, per the standing rule against inventing values to improve a
+count.
+
+Two shape facts worth keeping:
+- **`#N/A` is a literal string in this table**, not an Airtable empty — 136 Team Names and 137 Team
+  UUIDs carry it. Unfiltered it would write the text `#N/A` into Salesforce as if it were a team.
+  `Get-CleanIssuerStringValue` strips it. It is unambiguous: every `#N/A` is 4 characters against a
+  real UUID's 36, and the length histogram has exactly two buckets (4 and 36) with nothing between.
+- **Team UUID ↔ Team Name is exactly 1:1** across all 368 distinct UUIDs — 0 violations in either
+  direction — so the pair resolves together. The field help text says to trust the UUID when they
+  disagree ("The name can be modified"); in this data they never do, so that rule is a guard, not a
+  live code path.
+
+#### ⚠️ `unique=true` on both fields blocks the load, and it cannot be fixed from this repo
+
+Both fields are `unique=true` in the org (confirmed live via describe, not just from the retrieved
+metadata). That models **one portal team owning at most one Application**, and the source data flatly
+contradicts it: a team owns many by design. Across the 696 resolvable Applications, **104 Team UUIDs
+are shared by 2+ Applications, covering 442 of them** — `DOI - FWS - ECOS` alone owns 54,
+`DOI - IBC - Quicktime` 39, `Education ICAM Team` 20. Writing these columns as-is fails the majority
+of the load with `DUPLICATE_VALUE`.
+
+**Flipping `unique` is a metadata change, so it goes in a CHANGE SET** — a CLI deploy is sanctioned
+only for *deleting* incorrect metadata (see CLAUDE.md). The script therefore **adapts to the org
+rather than failing the whole Application load over two columns nothing else depends on**: it reads
+both fields' definitions at run time via `Get-SalesforceFieldMetadata` and, while either is unique,
+**omits the two columns from the CSV entirely** and prints what the change set needs.
+
+Omitted, not blanked — deliberately. An empty column in an upsert file **clears** whatever is already
+in the org, so writing empty strings would actively destroy data the Partner Portal may have put
+there.
+
+**For the change set:** set `Unique = false` on `LDGCRM_P3_Partner_Portal_Team_Name__c` and
+`LDGCRM_P3_Team_UUID__c` on `LDGCRM_application__c`. Neither is an External ID and nothing keys on
+them. After it lands, a plain re-run populates both — no code change, same contract as the Opportunity
+lookup.
+
+One further metadata ask, lower priority and independent of the above: **8 team names exceed the
+50-char field length** (longest 75). Those load with a UUID and a blank name rather than a truncated
+one — a truncated team name reads as real while not matching the portal. Widening the field fixes it.
+
+#### `LDGCRM_PP_Issuer_Strings__c` is still not migrated, and now for measured reasons
+
+Pulling the table did **not** unblock the issuer-string field itself. It is `Text(40)`, single-valued
+and unique, against a source where **776 of 899 issuer strings exceed 40 characters** (longest 130)
+and **847 Applications have more than one**. Its own help text describes it as a field the OEs
+maintain by hand against ZenDesk/GitHub. Three independent reasons, any one sufficient — this is now
+a measured exclusion rather than the earlier assumption-based one.
+
 ### Fields with no destination — the full inventory (as requested)
 
 Every Airtable column not covered above, and why:
@@ -2025,9 +2107,12 @@ this document): `Notes` (a literal Notes column — the strongest possible candi
 `IdV Upgrade Notes`.
 
 **No Salesforce field found at all — genuinely unmapped, not just deferred:**
-- `Issuer Strings` — **confirmed not migrated** (user-explicit decision). Links to a table this
-  migration doesn't pull, and the Salesforce target (`LDGCRM_PP_Issuer_Strings__c`) is a plain
-  `Text(40)`, not a Lookup, so a raw linked-record ID wouldn't be meaningful there anyway.
+- `Issuer Strings` — the **issuer-string values** are still not migrated, now for measured rather
+  than assumed reasons (`Text(40)` single-valued against 776 over-length and 847 multi-valued rows;
+  OE-maintained by hand) — see "Partner portal team" above. ⚠️ **Superseded in part 2026-08-13:** the
+  linked table *is* now pulled, and `Team Name` / `Team UUID` from it **do** migrate onto the
+  Application. The old note that this "links to a table this migration doesn't pull" is no longer
+  true.
 - `Pilots` — short categorical values (`No Pilots` 754, `IPP` 23, `Unemployment Insurance Pilot` 8,
   `FCC Pilot` 3, `Biometric` 3, `Disaster Pilot` 1). No dedicated field exists. **User-confirmed
   (2026-08-13): not migrating this field** — closed, not just deferred.
@@ -2043,15 +2128,15 @@ this document): `Notes` (a literal Notes column — the strongest possible candi
   named Airtable source columns already mapped above). **User-confirmed (2026-08-13): does not need
   to transfer** — closed, not just deferred.
 
-**Salesforce fields on this object with no Airtable source at all — not yet confirmed either way:**
-`LDGCRM_Annual_Revenue_Amount__c`, `LDGCRM_P3_Partner_Portal_Team_Name__c`,
-`LDGCRM_P3_Team_UUID__c`. Presumed populated by the Partner Portal application directly rather than
-this migration (no Airtable column resembling `revenue`/`uuid`/`team name` exists), but that's an
-assumption, not a confirmed fact the way the four items above are — worth a explicit check with
-whoever owns the Partner Portal integration before treating it as settled.
+**Salesforce fields with no Airtable source at all:** `LDGCRM_Annual_Revenue_Amount__c` only. No
+Airtable column resembling `revenue` exists on any pulled table; presumed populated by another system.
+That remains an assumption rather than a confirmed fact — worth checking with whoever owns the Partner
+Portal integration before treating it as settled.
 
-**Salesforce fields with no Airtable source at all** (confirmed by searching every Airtable column
-name for `revenue`/`uuid`/`team`/`portal` — only `Partner Portal Admin` and `Migrated to the partner
-portal` matched, neither of which populates these): `LDGCRM_Annual_Revenue_Amount__c`,
-`LDGCRM_P3_Partner_Portal_Team_Name__c`, `LDGCRM_P3_Team_UUID__c`. Left unset by this migration —
-likely populated by a different system (the Partner Portal application itself) rather than Airtable.
+> ⚠️ **Corrected 2026-08-13.** This inventory previously listed
+> `LDGCRM_P3_Partner_Portal_Team_Name__c` and `LDGCRM_P3_Team_UUID__c` here too — twice, once as
+> "not yet confirmed" and once as "confirmed by searching every Airtable column name." **Both do have
+> an Airtable source**, in the `Issuer Strings` table, which simply wasn't being exported. The search
+> that produced the wrong answer only ever covered the Applications table's own columns. See
+> "Partner portal team — the source was in a table nobody was pulling" above; the lesson is to check
+> the base's table list, not just the exports on disk, before declaring a field sourceless.

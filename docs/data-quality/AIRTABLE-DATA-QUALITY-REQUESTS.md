@@ -281,6 +281,100 @@ Values `"Q1 - FY'23"` and `"146"` don't match any real Ramp Up Approach (`Gradua
 is optional, so these two records will migrate fine with it left blank), but worth a quick fix in
 Airtable if there's a real value that belongs there.
 
+### Issuer Strings: 273 Team Name / Team UUID cells contain the literal text `#N/A` — 🔴 OPEN
+
+**New 2026-08-13**, from the first review of the **Issuer Strings** table (now part of the migration —
+see the note at the bottom of this document, which used to say this table wasn't needed).
+
+136 `Team Name` cells and 137 `Team UUID` cells hold the four-character text **`#N/A`** rather than
+being empty. This is a spreadsheet artifact — the kind of value Excel writes when a lookup fails —
+that got saved as ordinary text when the column was populated.
+
+The migration treats `#N/A` as blank, so nothing incorrect reaches Salesforce and **nothing is
+blocked**. Raising it because it's invisible in Airtable's own views (a cell with `#N/A` in it looks
+filled in) and because it makes the table read as 92% complete when the real figure is **77%**.
+
+**What we need:** clear those cells so they're genuinely empty, and ideally find out what the failed
+lookup was meant to produce — a team that's missing here is a team that can't migrate. Low urgency,
+but the sooner it's fixed the less it spreads.
+
+### Issuer Strings: 9 Applications belong to two different partner-portal teams at once — 🔴 OPEN
+
+**New 2026-08-13.** Salesforce records **one** partner-portal team per Application. Airtable records
+the team on each **issuer string** instead, and an Application usually has several — so for this to
+migrate, all of an Application's issuer strings have to name the same team.
+
+**They almost always do: 696 of the 705 Applications that have any team at all are consistent.** These
+9 are the exceptions — each has issuer strings split across two genuinely different teams:
+
+| Application's issuer strings are split between | and |
+| --- | --- |
+| `z_inactive` | `formsgov_production` |
+| `SDSFIE` | `CWBI` |
+| `CISA OKTA PRO` | `Partner Preview Test` |
+| `RAM Vetting Service` | `Sunil Kumar` |
+| `DOI - FWS - ECOS` | `DOI-FWS-ECOSphere` |
+| `Made In America Production` | `MIAO_formio` |
+| `USA Learning` | `USAP_TEAM` |
+| `PRIMIS-IAS` | `PRIMIS-IAC` |
+| `IAM Team` | `NSF-LoginGov Integration` |
+
+The usual shape is a **test/dev issuer string owned by one team and a production one owned by
+another**, filed under a single Application row. Two look like they may just be the same team recorded
+under two spellings (`DOI - FWS - ECOS` / `DOI-FWS-ECOSphere`, and possibly `PRIMIS-IAS` /
+`PRIMIS-IAC`), which would be the easiest kind to fix. One (`Sunil Kumar`) is a **person's name in a
+team field**, which is likely just wrong.
+
+**We are not guessing which team wins.** Both fields are left blank on these 9 Applications rather
+than picking whichever issuer string happened to sort first. Full detail, including every issuer
+string involved, is in `logs/data-migration/Application-portal-team-conflicts-*.csv`.
+
+**What we need:** for each of the 9, either confirm which team is correct (and move the other issuer
+strings to the Application they actually belong to), or confirm the Application should be split into
+one record per team. Where it's the same team spelled two ways, just make the spelling consistent.
+
+**Also worth a look:** **7 issuer strings aren't linked to any Application at all**, so whatever team
+they name can't reach Salesforce. And 182 Applications have no team recorded on any of their issuer
+strings — that may be entirely legitimate, but it's a quarter of the table, so it's worth confirming
+it's expected rather than a gap.
+
+### Issuer Strings: 8 partner-portal team names are too long for Salesforce — 🔴 OPEN
+
+**New 2026-08-13.** The Salesforce field holds 50 characters. These 8 team names are longer (up to
+75), so **the team name is left blank on those Applications**. The Team UUID still migrates, so the
+team is still correctly identified — just not labelled.
+
+We're deliberately **not truncating** these. A cut-off team name would look like a real one while not
+matching what the partner portal actually shows, which is worse than an empty field.
+
+Examples: `USACE - ERDC - MRSI (MILCON Requirements, Standardization, and Integration)` (75),
+`GSA Financial Multiple Shared Tenant Application (MSA) - Momentum` (65),
+`GSA Financial Management Services - Payment, WebVendors, Fedpay` (63).
+
+**What we need:** either a shorter name for these teams in the partner portal, or a decision from the
+Salesforce config owner to widen the field — it's a plain text field and extending it is
+straightforward, unlike the Application Name limit above, which is a platform cap we can't change.
+
+### Applications: the Partner Portal Team fields can't be loaded yet — a Salesforce setting blocks them — 🔴 OPEN
+
+**New 2026-08-13. Not an Airtable problem — no action needed from the Airtable data owners.** Recorded
+here so the status of this data is visible in one place alongside everything else.
+
+The Airtable side is ready: **696 Applications have a clean, unambiguous partner-portal team**. But
+both Salesforce fields — Partner Portal Team Name and Partner Portal Team UUID — are currently set to
+**Unique**, meaning no two Applications may share a value.
+
+That's the wrong setting for what this data is. **A portal team legitimately owns many Applications**
+— `DOI - FWS - ECOS` owns 54 of them, `DOI - IBC - Quicktime` 39, `Education ICAM Team` 20. With
+Unique switched on, **442 of the 696 would be rejected** as duplicates.
+
+The migration therefore **leaves both fields out of the load entirely** rather than failing most of
+the Application records over them; everything else about those Applications migrates normally.
+
+**What we need:** whoever owns the Salesforce configuration to switch **Unique off** on both fields.
+Neither is an External ID and nothing matches records on them, so nothing depends on the setting.
+Once it's changed, the data loads on the next run with no code change.
+
 ### Opportunities: 28 records have no Status, so they can't migrate
 
 Salesforce requires every Opportunity to have a stage, and there's no sensible default to invent, so
@@ -562,7 +656,7 @@ Accounts, noted above), `GSA-IAE` and `GSA-OIT` (each show one more than their A
 ## Open questions — need a decision, not just a fix
 
 - **"Escalated User Support Cases" column on Partner Accounts** links to records that aren't in any
-  of the 9 Airtable tables this migration currently pulls from — is there a separate Cases/Support
+  of the 10 Airtable tables this migration currently pulls from — is there a separate Cases/Support
   Tickets table that should be included in the migration, or is this column safe to ignore?
 - **Partner Accounts' "Goals" column** — short repeated values (`Add Identity Verification`,
   `Increase Adoption`, etc.) with no destination on the Salesforce side yet. Not blocking anything,
@@ -584,5 +678,12 @@ to the full item above, which is kept in place rather than deleted.
 
 - Applications' `Pilots`, `Usage Tracker Application Name`, and `Vital Update %` columns: confirmed
   not needed in Salesforce, won't be migrated.
-- Applications' `Issuer Strings` column: confirmed not needed in Salesforce.
+- Applications' `Issuer Strings` column: **the issuer string values themselves** are still not
+  migrated — Salesforce's Issuer Strings field holds a single 40-character value, and 776 of the 899
+  issuer strings are longer than that (the longest is 130), while 847 Applications have more than one.
+  The field's own help text also describes it as one the OEs maintain by hand against ZenDesk and
+  GitHub, so it isn't the migration's to fill.
+  **Superseded in part, 2026-08-13:** the **Issuer Strings table** *is* now pulled from Airtable and
+  *is* part of the migration — it is the only place `Team Name` and `Team UUID` are recorded, and
+  those two do migrate onto the Application. See the three Issuer Strings items above.
 - Partner Accounts' `Migrated to the partner portal` column: not migrating for now (not permanent).

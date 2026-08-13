@@ -261,6 +261,13 @@ records but sacrifices the non-revert property on re-runs. That is a real tradeo
         totals. Deleted rows do **not** disappear from Salesforce on their own: an upsert never
         deletes, so anything already loaded and since removed from Airtable stays until someone
         removes it deliberately — out of scope here, but do not mistake it for a load failure.
+      - **The pull now covers TEN tables, not nine** — `Issuer Strings` was added 2026-08-13 (PR #1).
+        It is the only source of the partner-portal Team Name / Team UUID that §4e puts on the
+        Application, so an export missing it makes `Build-ApplicationLoad.ps1` fail with a clear
+        "no Airtable export found for 'Issuer Strings'". Row counts from the 2026-08-13 pull, for
+        reference when re-baselining: Accounts 747, Partner Accounts 99, Applications 1,056,
+        Contacts 1,535, Opportunities 904, Opportunity Contacts 520, Impediments 40, Market Segments
+        7, Meetings 1,848, **Issuer Strings 901**.
 - [ ] Confirm `logs/` and `data/` are still gitignored — both carry applicant PII.
 
 ---
@@ -620,11 +627,30 @@ Market Segment (already loaded - do not touch)
 
 ### 4e. `LDGCRM_application__c`
 
-- [ ] Run `Build-ApplicationLoad.ps1`. Expect **688 ready**, 359 withheld, **511 owner-inherited /
-      177 fallback**. Must run *after* Partner Account and Opportunity are loaded, or it withholds
-      far more.
-- [ ] Load (upsert). Expect 688/688.
+- [ ] Run `Build-ApplicationLoad.ps1`. **Re-baselined 2026-08-13 against the re-pulled export**
+      (1,056 Airtable rows): expect **689 ready**, 8 withheld for no Partner Account in Airtable +
+      359 for a Partner Account not loaded, **360 owner-inherited / 329 fallback**. Must run *after*
+      Partner Account and Opportunity are loaded, or it withholds far more.
+      *(The pre-re-pull figures were 688 ready and 511/177 on ownership. The ownership split moved a
+      long way on the same underlying rule — re-baseline, don't read it as a regression.)*
+- [ ] Load (upsert). Expect 689/689.
 - [ ] Verify Market Segment came from the Flow; no formula field was written.
+- [ ] ℹ️ **Partner Portal Team Name / Team UUID will be ABSENT from the CSV, and that is expected.**
+      The transform reads both fields' definitions from the org it is pointed at and **withholds the
+      two columns while `Unique` is switched on**, because one portal team legitimately owns many
+      Applications — 442 of the 696 resolvable Applications would fail with `DUPLICATE_VALUE`. The run
+      prints a red `PARTNER PORTAL TEAM COLUMNS WITHHELD` block naming what the change set needs.
+      - The columns are **omitted, not blanked** — an empty column on an upsert would clear whatever
+        is already in the org.
+      - **Once a change set sets `Unique = false` on both fields, re-run — no code change.** Expect
+        the block to be replaced by `Partner Portal Team resolved`, ~422 of 689 loaded Applications
+        carrying a team (696 resolve, but only those whose Application is loadable get written), and
+        **2 with a UUID but a blank name** (team name over the 50-char field limit).
+      - This is a Salesforce-config item, not an Airtable one — see
+        [the data-quality doc](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md#applications-the-partner-portal-team-fields-cant-be-loaded-yet--a-salesforce-setting-blocks-them---open).
+- [ ] Review `logs/data-migration/Application-portal-team-conflicts-*.csv`: expect **9 Applications**
+      whose issuer strings name two different portal teams. Both fields are deliberately left blank on
+      those — there is no defensible tie-break. Needs an Airtable fix, not a code change.
 ### 4e-bis. `LDGCRM_application__c` — Broker App Parent SECOND PASS
 
 - [ ] ⚠️ **Load `LDGCRM_application__c-broker-parent-upsert.csv`, and only AFTER 4e.** It is written

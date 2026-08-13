@@ -28,10 +28,13 @@
         Salesforce rejects direct writes to them outright. They compute
         themselves from fields this script does set (checkboxes, URLs, the
         Opportunity lookup).
-      - LDGCRM_Annual_Revenue_Amount__c, LDGCRM_P3_Partner_Portal_Team_Name__c,
-        LDGCRM_P3_Team_UUID__c, LDGCRM_PP_Issuer_Strings__c: no Airtable source
-        found (Issuer Strings links to a table this migration doesn't pull;
-        user-confirmed not migrated).
+      - LDGCRM_Annual_Revenue_Amount__c: no Airtable source found.
+      - LDGCRM_PP_Issuer_Strings__c: deliberately NOT migrated even though the
+        Issuer Strings table is now pulled. The field is Text(40) and holds one
+        value; 776 of 899 issuer strings exceed 40 characters (longest 130) and
+        847 Applications have more than one. It is also described in its own
+        help text as a field the OEs maintain by hand against ZenDesk/GitHub,
+        so it is theirs, not the migration's. See TRANSFORMATION-RULES.md.
       - LDGCRM_Broker_App_Parent__c: a self-Lookup (Application -> Application).
         Deliberately NOT in the main upsert file - a first real load attempt
         (2026-08-12) confirmed Bulk API 2.0 does not resolve external-ID
@@ -42,6 +45,14 @@
         (LDGCRM_application__c-broker-parent-upsert.csv) automatically, so there
         is no extra script to remember - but that file must be LOADED AFTER the
         main one. See the "SECOND PASS" block below.
+
+    LDGCRM_P3_Partner_Portal_Team_Name__c / LDGCRM_P3_Team_UUID__c DO migrate,
+    sourced from the Issuer Strings table (added to Get-AirtableExport.ps1 by
+    PR #1). Airtable models Application -> Issuer Strings as 1:N with the team
+    recorded on each issuer string rather than on the Application, so the value
+    is collapsed up: see Get-PortalTeamByApplication below for the rules, and
+    the UNIQUE-CONSTRAINT PREFLIGHT block for why the columns may be withheld
+    from the CSV altogether pending a change set.
 
     Rows with no linked Partner Account are skipped (required field) and
     written to a review CSV, same pattern as every other required-lookup
@@ -248,6 +259,164 @@ function Resolve-DateValue {
     return ""
 }
 
+function Get-CleanIssuerStringValue {
+    <#
+        Normalises one Team Name / Team UUID cell.
+
+        "#N/A" is a LITERAL STRING in this table, not an Airtable empty - 136
+        Team Names and 137 Team UUIDs carry it (2026-08-13 export). It is a
+        spreadsheet artifact from however this table was populated, and every
+        "#N/A" Team UUID is exactly 4 characters against a real UUID's 36, so
+        there is no chance of a real value being caught by this. Treating it as
+        text would write the string "#N/A" into Salesforce as if it were a team.
+    #>
+    param([object]$Value)
+
+    if ($null -eq $Value) { return $null }
+
+    $Text = ([string]$Value).Trim()
+
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    if ($Text -eq "#N/A") { return $null }
+
+    return $Text
+}
+
+function Get-PortalTeamByApplication {
+    <#
+        Collapses the Issuer Strings table's per-issuer-string Team Name / Team
+        UUID up to one value per Application, returning a hashtable keyed by
+        Airtable Application record ID.
+
+        WHY THIS NEEDS RULES AT ALL: Airtable records the partner-portal team on
+        each ISSUER STRING, and an Application has many issuer strings. The
+        migration needs one value per Application, so the set has to agree.
+        Verified against the 2026-08-13 export (901 issuer strings, 887 distinct
+        Applications):
+          - 696 Applications resolve to exactly one Team UUID.
+          - 182 have no Team UUID on any of their issuer strings.
+          -   9 carry two DIFFERENT Team UUIDs across their issuer strings.
+
+        Those 9 are a genuine source-data defect, not a shape this script should
+        paper over: they are single Airtable Application rows whose issuer
+        strings belong to two different portal teams (typically a dev/test
+        string owned by one team and a prod string owned by another). There is
+        no defensible tie-break - "first wins" would silently pick whichever
+        issuer string sorted first - so BOTH fields are left blank and the
+        Application is written to a review CSV for the Airtable owners. Same
+        rule as everywhere else in this pipeline: skip and report, never invent
+        a value to make a number look better.
+
+        Team UUID is the authority when the two disagree, per the Salesforce
+        field's own help text ("The name can be modified, so trust the Team
+        UUID"). In this export they never do disagree - Team UUID <-> Team Name
+        is exactly 1:1 across all 368 distinct UUIDs, 0 violations either
+        direction - so the pair is resolved together and the check below is a
+        guard against that changing, not a live code path.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$IssuerStringRows,
+
+        # Not [Parameter(Mandatory)] - these are always passed, but a Mandatory
+        # collection parameter REJECTS an empty list, and both of these start
+        # empty on every run. Same shape as Resolve-UrlValue's $ReviewList.
+        [System.Collections.Generic.List[object]]$ConflictList,
+
+        [System.Collections.Generic.List[object]]$OverLengthList,
+
+        [Parameter(Mandatory = $true)]
+        [int]$MaxTeamNameLength
+    )
+
+    # Application record ID -> list of the team values seen on its issuer strings.
+    $Observations = @{}
+    $OrphanIssuerStrings = 0
+
+    foreach ($IssuerRow in $IssuerStringRows) {
+        # Null-check before @() - the usual 1-element-array-of-null gotcha, and
+        # 7 issuer strings genuinely have no Application link at all.
+        $RawApplications = $IssuerRow.fields.'Applications'
+        if (-not $RawApplications) { $OrphanIssuerStrings++; continue }
+
+        $TeamName = Get-CleanIssuerStringValue $IssuerRow.fields.'Team Name'
+        $TeamUuid = Get-CleanIssuerStringValue $IssuerRow.fields.'Team UUID'
+
+        foreach ($ApplicationId in @($RawApplications)) {
+            if ([string]::IsNullOrWhiteSpace([string]$ApplicationId)) { continue }
+
+            $Key = [string]$ApplicationId
+
+            if (-not $Observations.ContainsKey($Key)) {
+                $Observations[$Key] = [System.Collections.Generic.List[object]]::new()
+            }
+
+            $Observations[$Key].Add([PSCustomObject]@{
+                IssuerStringRecordId = $IssuerRow.id
+                IssuerString         = $IssuerRow.fields.'Issuer String'
+                TeamName             = $TeamName
+                TeamUuid             = $TeamUuid
+            })
+        }
+    }
+
+    $Resolved = @{}
+
+    foreach ($Key in $Observations.Keys) {
+        $Seen = $Observations[$Key]
+
+        $DistinctUuids = @($Seen | ForEach-Object { $_.TeamUuid } |
+            Where-Object { $_ } | Select-Object -Unique)
+        $DistinctNames = @($Seen | ForEach-Object { $_.TeamName } |
+            Where-Object { $_ } | Select-Object -Unique)
+
+        if ($DistinctUuids.Count -eq 0) { continue }   # nothing to carry over
+
+        if ($DistinctUuids.Count -gt 1 -or $DistinctNames.Count -gt 1) {
+            $ConflictList.Add([PSCustomObject]@{
+                AirtableApplicationId = $Key
+                IssuerStringCount     = $Seen.Count
+                DistinctTeamUuids     = $DistinctUuids.Count
+                TeamUuids             = ($DistinctUuids -join " | ")
+                TeamNames             = ($DistinctNames -join " | ")
+                IssuerStrings         = (@($Seen | ForEach-Object { $_.IssuerString }) -join " | ")
+                Reason                = "This Application's issuer strings belong to more than one partner-portal team, so there is no single Team UUID to migrate. Both Partner Portal Team Name and Team UUID are left BLANK for this Application. Needs a decision in Airtable: either the issuer strings are on the wrong Application, or the Application should be split per team."
+            })
+            continue
+        }
+
+        $ResolvedName = $null
+        if ($DistinctNames.Count -eq 1) { $ResolvedName = $DistinctNames[0] }
+
+        # Text(50) in Salesforce; 8 team names in the 2026-08-13 export are
+        # longer (up to 75). Blank the NAME rather than truncate it, and keep
+        # the UUID - the UUID is the field that identifies the team, and a
+        # truncated display name would read as a real one while quietly not
+        # matching what the partner portal shows. Reported for review either way.
+        if ($ResolvedName -and $ResolvedName.Length -gt $MaxTeamNameLength) {
+            $OverLengthList.Add([PSCustomObject]@{
+                AirtableRecordId = $Key
+                Field            = "Team Name (from Issuer Strings)"
+                OriginalValue    = $ResolvedName
+                AppliedValue     = ""
+                Reason           = "Partner Portal Team Name is $($ResolvedName.Length) chars against LDGCRM_P3_Partner_Portal_Team_Name__c's $MaxTeamNameLength-char limit. Left BLANK rather than truncated - a truncated team name would not match the partner portal. The Team UUID still migrated. Needs either a shorter name in the portal or a longer Salesforce field."
+            })
+            $ResolvedName = $null
+        }
+
+        $Resolved[$Key] = [PSCustomObject]@{
+            TeamName = $ResolvedName
+            TeamUuid = $DistinctUuids[0]
+        }
+    }
+
+    return [PSCustomObject]@{
+        ByApplicationId     = $Resolved
+        ApplicationsSeen    = $Observations.Keys.Count
+        OrphanIssuerStrings = $OrphanIssuerStrings
+    }
+}
+
 try {
 
 Write-Host "============================================================" -ForegroundColor Cyan
@@ -360,8 +529,90 @@ $UpsertRows = [System.Collections.Generic.List[object]]::new()
 $SkippedRows = [System.Collections.Generic.List[object]]::new()
 $OverLengthRows = [System.Collections.Generic.List[object]]::new()
 $UnmappedRampUpRows = [System.Collections.Generic.List[object]]::new()
+$PortalTeamConflictRows = [System.Collections.Generic.List[object]]::new()
 $DroppedDemographicTagCount = 0
 $UnresolvedOpportunityCount = 0
+
+# ============================================================
+# PARTNER PORTAL TEAM (from the Issuer Strings table)
+# ============================================================
+Write-Host ""
+Write-Host "Loading Airtable Issuer Strings export..." -ForegroundColor Cyan
+$AirtableIssuerStrings = Import-AirtableTable -Label "Issuer Strings"
+Write-Host "$($AirtableIssuerStrings.Count) Airtable Issuer String rows loaded."
+
+# Read the two target fields' real definitions instead of trusting the
+# committed metadata - QA can trail Dev by a change set, and the whole point of
+# the preflight below is that it must reflect the org being loaded.
+$ApplicationFields = Get-SalesforceFieldMetadata `
+    -ObjectApiName "LDGCRM_application__c" -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+
+$TeamNameField = $ApplicationFields["LDGCRM_P3_Partner_Portal_Team_Name__c"]
+$TeamUuidField = $ApplicationFields["LDGCRM_P3_Team_UUID__c"]
+
+if (-not $TeamNameField -or -not $TeamUuidField) {
+    throw ("LDGCRM_P3_Partner_Portal_Team_Name__c and/or LDGCRM_P3_Team_UUID__c do not exist on " +
+           "LDGCRM_application__c in $OrgAlias. Both are needed to migrate the partner-portal team. " +
+           "They exist in Dev - if this is QA, the field is waiting on a change set (metadata is " +
+           "promoted by CHANGE SET only; see CLAUDE.md).")
+}
+
+$PortalTeam = Get-PortalTeamByApplication `
+    -IssuerStringRows $AirtableIssuerStrings `
+    -ConflictList $PortalTeamConflictRows `
+    -OverLengthList $OverLengthRows `
+    -MaxTeamNameLength ([int]$TeamNameField.length)
+
+$PortalTeamByApplicationId = $PortalTeam.ByApplicationId
+
+Write-Host ("$($PortalTeam.ApplicationsSeen) Applications are referenced by an issuer string; " +
+            "$($PortalTeamByApplicationId.Count) resolve to a single partner-portal team.")
+if ($PortalTeam.OrphanIssuerStrings -gt 0) {
+    Write-Host ("$($PortalTeam.OrphanIssuerStrings) issuer string(s) link to no Application at all - " +
+                "they carry no team to anywhere and are ignored.") -ForegroundColor Yellow
+}
+if ($PortalTeamConflictRows.Count -gt 0) {
+    Write-Host ("$($PortalTeamConflictRows.Count) Application(s) have issuer strings from MORE THAN ONE " +
+                "portal team - both fields left blank, see the review CSV.") -ForegroundColor Yellow
+}
+
+# ---------- UNIQUE-CONSTRAINT PREFLIGHT ----------
+# Both fields are currently unique=true in the org. That models one portal team
+# owning at most one Application, and the source data flatly contradicts it: a
+# team owns many Applications by design (e.g. "DOI - FWS - ECOS" owns 54).
+# Across the Applications that resolve cleanly, 104 Team UUIDs are shared by 2+
+# Applications, covering 442 of them - so writing these columns against a
+# unique field would fail the majority of the load with DUPLICATE_VALUE.
+#
+# This CANNOT be fixed from here: flipping unique to false is a metadata change,
+# and metadata promotion is by CHANGE SET only (CLAUDE.md) - a CLI deploy is
+# sanctioned solely for DELETING incorrect metadata. So the script adapts to the
+# org instead of failing the whole Application load over two columns that
+# everything else does not depend on: it withholds them and says exactly what
+# needs to go in the change set. Once that lands, a plain re-run picks them up
+# with no code change - same contract as the Opportunity lookup above.
+$PortalTeamFieldsBlocked = ($TeamNameField.unique -or $TeamUuidField.unique)
+$PortalTeamCollisionCount = 0
+
+if ($PortalTeamFieldsBlocked) {
+    $UuidGroups = $PortalTeamByApplicationId.Values | Group-Object TeamUuid
+    $PortalTeamCollisionCount = (@($UuidGroups | Where-Object { $_.Count -gt 1 }) |
+        Measure-Object -Property Count -Sum).Sum
+    if (-not $PortalTeamCollisionCount) { $PortalTeamCollisionCount = 0 }
+
+    Write-Host ""
+    Write-Host "  !! PARTNER PORTAL TEAM COLUMNS WITHHELD FROM THIS LOAD !!" -ForegroundColor Red
+    Write-Host ("     LDGCRM_P3_Team_UUID__c unique=$($TeamUuidField.unique), " +
+                "LDGCRM_P3_Partner_Portal_Team_Name__c unique=$($TeamNameField.unique) in $OrgAlias.") -ForegroundColor Yellow
+    Write-Host ("     One portal team legitimately owns many Applications, so $PortalTeamCollisionCount of " +
+                "$($PortalTeamByApplicationId.Count) resolved Applications would fail with DUPLICATE_VALUE.") -ForegroundColor Yellow
+    Write-Host "     CHANGE SET NEEDED: set Unique = false on both fields (they are not External IDs" -ForegroundColor Yellow
+    Write-Host "     and nothing keys on them). Then re-run this script - no code change." -ForegroundColor Yellow
+    Write-Host ""
+}
+else {
+    Write-Host "Partner-portal team columns will be written (both fields are non-unique)." -ForegroundColor Green
+}
 
 foreach ($Row in $AirtableApplications) {
     $RecId = $Row.id
@@ -534,6 +785,20 @@ foreach ($Row in $AirtableApplications) {
         $OutputRow[$Pair.Sf] = Get-PresenceBool $Row.fields.($Pair.Airtable)
     }
 
+    # Partner-portal team, collapsed up from this Application's issuer strings.
+    # Omitted entirely (not blanked) while the unique constraint stands, so the
+    # CSV has no column at all rather than an empty one - an empty column on an
+    # upsert would CLEAR any value already in the org.
+    if (-not $PortalTeamFieldsBlocked) {
+        $Team = $null
+        if ($PortalTeamByApplicationId.ContainsKey($RecId)) {
+            $Team = $PortalTeamByApplicationId[$RecId]
+        }
+
+        $OutputRow["LDGCRM_P3_Partner_Portal_Team_Name__c"] = if ($Team -and $Team.TeamName) { $Team.TeamName } else { "" }
+        $OutputRow["LDGCRM_P3_Team_UUID__c"]                = if ($Team) { $Team.TeamUuid } else { "" }
+    }
+
     $UpsertRows.Add([PSCustomObject]$OutputRow)
 }
 
@@ -639,6 +904,7 @@ $BrokerSkippedFile = Join-Path $LogDir "Application-broker-parent-skipped-$Times
 $SkippedFile = Join-Path $LogDir "Application-skipped-$Timestamp.csv"
 $UnmappedRampUpFile = Join-Path $LogDir "Application-unmapped-rampup-$Timestamp.csv"
 $OverLengthFile = Join-Path $LogDir "Application-overlength-$Timestamp.csv"
+$PortalTeamConflictFile = Join-Path $LogDir "Application-portal-team-conflicts-$Timestamp.csv"
 
 if ($UpsertRows.Count -gt 0) {
     Export-DataLoaderCsv -InputObject $UpsertRows.ToArray() -Path $UpsertFile
@@ -664,6 +930,10 @@ if ($OverLengthRows.Count -gt 0) {
     $OverLengthRows | Export-Csv -LiteralPath $OverLengthFile -NoTypeInformation -Encoding UTF8
 }
 
+if ($PortalTeamConflictRows.Count -gt 0) {
+    $PortalTeamConflictRows | Export-Csv -LiteralPath $PortalTeamConflictFile -NoTypeInformation -Encoding UTF8
+}
+
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host " APPLICATION PREP COMPLETE" -ForegroundColor Green
@@ -684,6 +954,17 @@ Write-Host ("{0,-48} {1,8:N0}" -f "Owner = fallback ($FallbackOwnerEmail)", @($U
 Write-Host ("{0,-48} {1,8:N0}" -f "Unmapped Ramp Up Approach (left blank)", $UnmappedRampUpRows.Count)
 Write-Host ("{0,-48} {1,8:N0}" -f "Demographic Served tags dropped (stale category)", $DroppedDemographicTagCount)
 Write-Host ("{0,-48} {1,8:N0}" -f "Name/URL/date values corrected or blanked", $OverLengthRows.Count)
+Write-Host ""
+if ($PortalTeamFieldsBlocked) {
+    Write-Host ("{0,-48} {1,8}" -f "Partner Portal Team columns", "WITHHELD") -ForegroundColor Red
+    Write-Host ("{0,-48} {1,8:N0}" -f "  ...Applications ready once unique is off", $PortalTeamByApplicationId.Count)
+    Write-Host ("{0,-48} {1,8:N0}" -f "  ...of those, would collide on unique=true", $PortalTeamCollisionCount)
+}
+else {
+    Write-Host ("{0,-48} {1,8:N0}" -f "Partner Portal Team resolved", @($UpsertRows | Where-Object { $_.LDGCRM_P3_Team_UUID__c }).Count)
+    Write-Host ("{0,-48} {1,8:N0}" -f "  ...Team Name blank (over length limit)", @($UpsertRows | Where-Object { $_.LDGCRM_P3_Team_UUID__c -and -not $_.LDGCRM_P3_Partner_Portal_Team_Name__c }).Count)
+}
+Write-Host ("{0,-48} {1,8:N0}" -f "Applications w/ conflicting portal teams", $PortalTeamConflictRows.Count)
 Write-Host ""
 Write-Host ("{0,-48} {1,8:N0}" -f "Broker App Parent links (SECOND PASS file)", $BrokerParentRows.Count)
 Write-Host ("{0,-48} {1,8:N0}" -f "  ...waiting on a missing side", $BrokerSkippedRows.Count)
@@ -721,6 +1002,11 @@ if ($UnmappedRampUpRows.Count -gt 0) {
 if ($OverLengthRows.Count -gt 0) {
     Write-Host "Name/URL/date values needing human review:" -ForegroundColor Yellow
     Write-Host $OverLengthFile
+}
+
+if ($PortalTeamConflictRows.Count -gt 0) {
+    Write-Host "Applications whose issuer strings span two portal teams (Airtable fix needed):" -ForegroundColor Yellow
+    Write-Host $PortalTeamConflictFile
 }
 
 }

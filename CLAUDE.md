@@ -246,6 +246,7 @@ value map, etc.) — this section is the short cross-object summary.
 | Impediments × Opportunities (`Opportunities blocked` / `Opportunities requested` columns) | `LDGCRM_Opportunity_Impediment__c` | one junction row per Opportunity in each list; `Opportunities blocked` → `LDGCRM_Severity__c = "Blocker"`, `Opportunities requested` → `"Impediment"` |
 | Market Segments | `LDGCRM_Market_Segment__c` | *(already migrated — see above)* |
 | Meetings | Activity, as an **Event** (`LDGCRM_Meeting_Type__c` from `Meeting Type`) | `Opportunity Record ID` if present, else `Accounts Record ID`, → `WhatId` |
+| Issuer Strings | *(no object of its own)* — collapses up onto `LDGCRM_application__c` | `Applications` → the Application whose `LDGCRM_P3_Partner_Portal_Team_Name__c` / `LDGCRM_P3_Team_UUID__c` it supplies. **Airtable records the team per issuer string, Salesforce per Application**, so the value only migrates where all of an Application's issuer strings agree — see below |
 
 Meetings only carry a single `Date` column (no start/end time) — loading them as Event means
 synthesizing `StartDateTime`/`EndDateTime` (e.g. a fixed default duration off that date), since
@@ -359,6 +360,25 @@ Opportunity lookup pending the Opportunity load — both resolve on a plain re-r
 purely offline transform) to skip rows whose parent Partner Account doesn't exist rather than
 submitting guaranteed failures. **`LDGCRM_Broker_App_Parent__c` is deliberately not loaded** — a
 self-referential lookup can't resolve within its own upsert batch and needs a second pass (not built).
+
+**Partner portal team on Application (added 2026-08-13, BLOCKED on a change set).**
+`LDGCRM_P3_Partner_Portal_Team_Name__c` / `LDGCRM_P3_Team_UUID__c` are sourced from the **Issuer
+Strings** table — documented here twice as having "no Airtable source" until PR #1 pulled the table.
+The source column search that produced that wrong answer only covered the *Applications* table's own
+columns: **"not in any export" is far weaker than "not in Airtable" — check
+`GET /v0/meta/bases/{baseId}/tables` before declaring a Salesforce field sourceless.** Airtable
+records the team on each issuer string and Salesforce wants one per Application, so the value is
+collapsed upward: 696 of 887 Applications agree, 182 have no team, and **9 carry two different teams
+and are left blank + reported** rather than tie-broken. `#N/A` is a literal string in that table (273
+cells) and must be filtered.
+**Both fields are `unique=true`, which is wrong for this data** — a portal team owns many
+Applications (one owns 54), so 442 of 696 would fail `DUPLICATE_VALUE`. **CHANGE SET NEEDED: set
+`Unique = false` on both** (neither is an External ID; nothing keys on them). Until then
+`Build-ApplicationLoad.ps1` reads the live field definitions and **omits the two columns** — omitted,
+not blanked, because an empty column in an upsert *clears* the org's value. A plain re-run picks them
+up once the change set lands. Also pending: 8 team names exceed the 50-char field.
+`LDGCRM_PP_Issuer_Strings__c` stays unmigrated — `Text(40)` against 776 over-length values, 847
+Applications with more than one, and it is OE-maintained by hand.
 
 **Current sandbox state (rebuilt 2026-08-13 — see `docs/engineering/ARCHITECTURE.md`'s "Production Account seed"
 section for the full rebuild):** the Account/Partner Account chain was deliberately hard-deleted
@@ -489,7 +509,7 @@ Current scripts:
   **overwriting** the previous pull each run (a timestamped transcript + `pull-summary-<timestamp>.csv`
   still land in `logs/data-migration/` via `Common.ps1`, so run history isn't lost, just the data
   itself isn't duplicated per run). See "Airtable API" above for auth/connection details. `-Tables`
-  limits the pull to a subset; defaults to all nine tables in the "Airtable table → Salesforce object"
+  limits the pull to a subset; defaults to all ten tables in the "Airtable table → Salesforce object"
   mapping above.
 - `scripts/data-migration/Build-*.ps1` — one transform per object, each reading the Airtable JSON
   (and, where it has lookups, querying gsa-peo read-only) and writing a load-ready CSV to

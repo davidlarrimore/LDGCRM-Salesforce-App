@@ -347,6 +347,60 @@ function Invoke-SalesforceQuery {
     return $JsonResult.result.records
 }
 
+function Get-SalesforceFieldMetadata {
+    <#
+        Describes an object and returns a hashtable keyed by field API name,
+        each value the field's describe entry (.type, .length, .unique,
+        .createable, .updateable, .picklistValues, ...).
+
+        Exists so a transform can ADAPT to the org it is pointed at instead of
+        hard-coding what the metadata is assumed to be. QA can trail Dev by a
+        change set (CLAUDE.md), so "the field is Text(50) and unique" is a fact
+        about one org on one day, not about the pipeline.
+
+        Read-only. Note the standing caveat from CLAUDE.md: describe reflects
+        FIELD-level truth only - it does NOT report record-type picklist
+        restrictions, and it HIDES inactive picklist values. For those two
+        questions the retrieved metadata file is the authority, not this.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ObjectApiName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OrgAlias,
+
+        [string]$ApiVersion = "67.0"
+    )
+
+    $RawResult = & sf sobject describe `
+        --sobject $ObjectApiName `
+        --target-org $OrgAlias `
+        --api-version $ApiVersion `
+        --json
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Salesforce CLI describe failed (exit $LASTEXITCODE) for $ObjectApiName."
+    }
+
+    $JsonResult = $RawResult | ConvertFrom-Json
+
+    if ($JsonResult.status -ne 0) {
+        $ErrorMessage = $JsonResult.message
+        if ([string]::IsNullOrWhiteSpace($ErrorMessage)) {
+            $ErrorMessage = "Unknown Salesforce CLI error."
+        }
+        throw $ErrorMessage
+    }
+
+    $ByName = @{}
+    foreach ($Field in @($JsonResult.result.fields)) {
+        if ($Field.name) { $ByName[$Field.name] = $Field }
+    }
+
+    return $ByName
+}
+
 function Resolve-SalesforceOwnerIds {
     <#
         Resolves a set of Airtable owner email addresses to Salesforce User
