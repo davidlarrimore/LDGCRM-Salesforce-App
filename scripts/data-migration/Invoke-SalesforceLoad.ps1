@@ -41,7 +41,14 @@ param(
 
     [string]$OrgAlias = "gsa-peo",
     [string]$ApiVersion = "67.0",
-    [int]$WaitMinutes = 30
+    [int]$WaitMinutes = 30,
+
+    <#
+        Name of a TriggerControls__c custom-setting record to switch OFF for
+        the duration of this load, then switch back on. See the big
+        "TRIGGER BYPASS" comment block below before using it.
+    #>
+    [string]$DisableTriggerControl = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,6 +57,83 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
 
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Invoke-SalesforceLoad-$ObjectApiName"
+
+# =============================================================================
+# TRIGGER BYPASS (-DisableTriggerControl) - READ THIS BEFORE USING IT
+# =============================================================================
+# WHAT IT IS
+#   gsa-peo hosts an unrelated app, FCIC, whose Apex trigger
+#   GSA_FCIC_ContactTrigger fires on EVERY Contact insert/update. Its
+#   before-insert path calls getContactsWithBlankAccounts() and then
+#   createAccount(), which creates a brand-new Account - named after the
+#   person and hard-coded to the FCIC_Individual Account record type - for
+#   every Contact inserted with a blank AccountId. It also runs a
+#   dedupContact() routine over the inserted rows.
+#
+# WHY THAT MATTERS TO THIS MIGRATION
+#   371 of the 1,487 migrated Contacts have no resolvable Account (most
+#   because their Airtable Account is one of the unreconciled duplicates - see
+#   docs/AIRTABLE-DATA-QUALITY-REQUESTS.md). Loading them with the trigger
+#   active creates 371 junk Accounts in an org where Account counts are already
+#   a moving target and where this migration's own Account reconciliation
+#   depends on those counts being meaningful. A 18-row test batch created 4
+#   such Accounts (org total 1,346 -> 1,350), which is how this was found.
+#
+# WHY A BYPASS IS THE RIGHT ANSWER AND NOT A HACK
+#   The FCIC app ships its own kill switch for exactly this: a TriggerControls__c
+#   custom setting keyed by object name, and the trigger's first statement is
+#   `if(contactTriggersAreOn)`. Using it is the supported, intended mechanism -
+#   not a workaround. Records are: Task, Case, Contact, LiveChatTranscript.
+#
+# THE RULES
+#   1. This flips a setting owned by ANOTHER APP. Only use it with explicit
+#      human sign-off for the specific load (user-confirmed 2026-08-13 for
+#      Contact).
+#   2. The original value is captured first and restored in a `finally` block,
+#      so it is restored even if the load throws or the CLI dies mid-job.
+#   3. The restore is VERIFIED by re-querying, not assumed. If verification
+#      fails the script screams - leaving FCIC's trigger disabled would
+#      silently break the other app for everyone else using this sandbox.
+#   4. It is OFF by default. Never make it the default.
+#
+# WHAT IT DOES NOT COVER
+#   The other active Contact trigger, purecloud.ContactWebHookv1, belongs to an
+#   installed MANAGED package (Genesys PureCloud). Its body is hidden, it can't
+#   be retrieved, and it has no equivalent kill switch. It still fires. It was
+#   user-confirmed inert in this sandbox on 2026-08-13; re-confirm before any
+#   production run, because a webhook on Contact insert is an outward-facing
+#   side effect this pipeline cannot inspect.
+# =============================================================================
+
+function Get-TriggerControlState {
+    param([string]$ControlName, [string]$Org, [string]$Version)
+
+    $Rows = @(Invoke-SalesforceQuery `
+        -Soql "SELECT Id, Name, On__c FROM TriggerControls__c WHERE Name = '$ControlName'" `
+        -OrgAlias $Org -ApiVersion $Version)
+
+    if ($Rows.Count -ne 1) {
+        throw "Expected exactly 1 TriggerControls__c record named '$ControlName', found $($Rows.Count). Refusing to guess which one to change."
+    }
+    return $Rows[0]
+}
+
+function Set-TriggerControlState {
+    param([string]$RecordId, [bool]$On, [string]$Org)
+
+    $Value = if ($On) { "true" } else { "false" }
+    $Result = & sf data update record `
+        --sobject TriggerControls__c `
+        --record-id $RecordId `
+        --values "On__c=$Value" `
+        --target-org $Org `
+        --json
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host $Result -ForegroundColor Red
+        throw "Failed to set TriggerControls__c $RecordId On__c=$Value."
+    }
+}
 
 function Invoke-SalesforceCliJson {
     param(
@@ -125,6 +209,14 @@ Write-Host ""
 # ============================================================
 
 Write-Host "This will write $($Rows.Count) record(s) to $ObjectApiName in $OrgAlias." -ForegroundColor Yellow
+
+if ($DisableTriggerControl) {
+    Write-Host ""
+    Write-Host "It will ALSO temporarily disable the '$DisableTriggerControl' TriggerControls__c" -ForegroundColor Yellow
+    Write-Host "custom setting (a switch owned by the unrelated FCIC app) and restore it" -ForegroundColor Yellow
+    Write-Host "afterwards. See the TRIGGER BYPASS block in this script for why." -ForegroundColor Yellow
+}
+
 $Confirmation = Read-Host "Type LOAD to continue"
 
 if ($Confirmation -cne "LOAD") {
@@ -139,6 +231,26 @@ if ($Confirmation -cne "LOAD") {
 
 $LogDir = Get-LogDirectory -Category "data-migration"
 $ResultFile = Join-Path $LogDir "Load-$ObjectApiName-$Timestamp.json"
+
+# Capture the pre-load state BEFORE touching anything, so the restore below
+# puts back what was actually there rather than assuming it was "on".
+$TriggerControl = $null
+$TriggerControlOriginalOn = $null
+if ($DisableTriggerControl) {
+    $TriggerControl = Get-TriggerControlState -ControlName $DisableTriggerControl -Org $OrgAlias -Version $ApiVersion
+    $TriggerControlOriginalOn = [bool]$TriggerControl.On__c
+    Write-Host ""
+    Write-Host "TriggerControls__c '$DisableTriggerControl' is currently On__c=$TriggerControlOriginalOn (Id $($TriggerControl.Id))." -ForegroundColor Yellow
+
+    if ($TriggerControlOriginalOn) {
+        Write-Host "Disabling it for the duration of this load..." -ForegroundColor Yellow
+        Set-TriggerControlState -RecordId $TriggerControl.Id -On $false -Org $OrgAlias
+        Write-Host "Disabled." -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "Already off - leaving it alone (and leaving it off afterwards)." -ForegroundColor Yellow
+    }
+}
 
 # "Insert" maps to the `data import bulk` command (not `data insert bulk` -
 # the CLI names pure-insert bulk loads "import"); Upsert/Update map directly
@@ -199,5 +311,37 @@ Write-Host $ResultFile
 
 }
 finally {
+    # RESTORE THE TRIGGER CONTROL NO MATTER WHAT.
+    # This lives in `finally` deliberately: if the load throws, the CLI dies,
+    # or the operator interrupts, leaving FCIC's Contact trigger disabled would
+    # silently break another team's app in a shared sandbox, with nothing to
+    # indicate why. Restoring is more important than reporting the load result,
+    # which is why this runs before Stop-ScriptLog.
+    if ($DisableTriggerControl -and $TriggerControl -and $TriggerControlOriginalOn) {
+        Write-Host ""
+        Write-Host "Restoring TriggerControls__c '$DisableTriggerControl' to On__c=true..." -ForegroundColor Cyan
+        try {
+            Set-TriggerControlState -RecordId $TriggerControl.Id -On $true -Org $OrgAlias
+
+            # VERIFY - never assume the write landed.
+            $Verify = Get-TriggerControlState -ControlName $DisableTriggerControl -Org $OrgAlias -Version $ApiVersion
+            if ([bool]$Verify.On__c) {
+                Write-Host "Restored and verified: On__c=true." -ForegroundColor Green
+            }
+            else {
+                Write-Host "!!! RESTORE VERIFICATION FAILED - On__c is still FALSE !!!" -ForegroundColor Red
+                Write-Host "!!! The FCIC app's Contact trigger is DISABLED in $OrgAlias.  !!!" -ForegroundColor Red
+                Write-Host "!!! Fix manually: Setup > Custom Settings > TriggerControls > Contact > On = true" -ForegroundColor Red
+                Write-Host "!!! Or: sf data update record --sobject TriggerControls__c --record-id $($TriggerControl.Id) --values `"On__c=true`" --target-org $OrgAlias" -ForegroundColor Red
+            }
+        }
+        catch {
+            Write-Host "!!! FAILED TO RESTORE TriggerControls__c '$DisableTriggerControl' !!!" -ForegroundColor Red
+            Write-Host "!!! $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "!!! The FCIC app's Contact trigger is DISABLED in $OrgAlias - restore it manually:" -ForegroundColor Red
+            Write-Host "!!! sf data update record --sobject TriggerControls__c --record-id $($TriggerControl.Id) --values `"On__c=true`" --target-org $OrgAlias" -ForegroundColor Red
+        }
+    }
+
     Stop-ScriptLog
 }

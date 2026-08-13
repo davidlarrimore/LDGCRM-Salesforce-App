@@ -554,6 +554,136 @@ Re-running `Build-ApplicationLoad.ps1` afterward dropped its blank-Opportunity-l
 
 ---
 
+## Contact
+
+**Source:** Airtable `Contacts` table (1,599 rows, 47 columns as of 2026-08-13).
+**Target:** `Contact`, **`Federal`** record type — or **`GSA`** for anyone with an `@gsa.gov` address
+(98 contacts). User-confirmed: this migration creates only those two; the `FCIC_Duplicate`,
+`FCIC_Individual` and `TTS_Individual` record types belong to other apps and are never used.
+**Script:** `Build-ContactLoad.ps1`. **Mode: upsert on `LDGCRM_External_ID__c`.**
+**Loaded 2026-08-13: 1,483 of 1,487 submitted rows succeeded.**
+
+### Rows are MERGED, not 1:1 — Airtable is missing a junction
+
+This is the only object so far where one Airtable row does not become one Salesforce record.
+
+Airtable has no person↔Application junction, so **the same human is entered once per association**:
+one row carries their name and roles, the others are stubs with a blank `Name` and a different
+`Applications` list. 47 of the 61 duplicate-email groups differ precisely by that list:
+
+```
+drucker.scott.d@dol.gov  (4 rows)
+  recWvXp8co…  name=[Scott Drucker]  Apps=0   roles=Program/Technical/Exec POC
+  recaDs5hbl…  name=[]               Apps=51  roles=Technical POC/Partner Portal Admin
+  rec0NtgOi1…  name=[]               Apps=1   roles=[]
+  recjUTf9Zw…  name=[]               Apps=1   roles=[]
+```
+
+Salesforce **has** that junction (`LDGCRM_Application_Contact__c`), so migrating 1:1 would import a
+workaround the target schema doesn't need and split one person into up to four Contacts. Rows sharing
+a cleaned email are therefore merged: **1,599 rows → 1,532 Contacts**, and merging alone recovers a
+real name for 34 rows that had none.
+
+Two groups are deliberately **not** merged:
+- **Name conflicts (12 rows).** Where a shared email carries two different names, auto-merging would
+  silently discard an identity. Three are the same person spelled differently (`Bennet Lohr` /
+  `Bennett Lohre`; `Moye Xzavier` / `Xzavier Moye`), but two are **genuinely shared mailboxes serving
+  different teams** — `enterpriseservicedesk@dol.gov` is both "EBSA Lost & Found Help Desk
+  Information" and "ENT BPMS Contact Center". Left separate and flagged.
+- **Rows with no usable email** — nothing to match on.
+
+**The merge logic lives in `Get-AirtableContactGroups` in `Common.DataMigration.ps1`, not in this
+script.** That is deliberate: the Application-Contact junction chunk must map *every* Airtable
+Contact record ID onto whichever Contact actually got created. If it re-derived the grouping itself
+the two implementations could drift and the junction would point at Contacts that don't exist. The
+script also emits `data/salesforce-loads/Contact-identity-map.csv` (every source record ID → its
+surviving Contact) as a direct input to that chunk.
+
+### `LastName` is required and mostly absent — a documented waterfall
+
+Only 491 of 1,599 rows have a `Name`. The waterfall (user-confirmed 2026-08-13):
+
+| Step | Result |
+| --- | --- |
+| 1. Airtable `Name` (including a merged sibling's) | 481 |
+| 2. `FirstName`/`LastName` from an existing Salesforce Contact matched on email | 8 |
+| 3. The email address itself as `LastName` | 998 |
+| 4. Neither name nor email → **skipped** | 45 |
+
+Step 2 recovers almost nothing in gsa-peo (it had 3 Contacts) but is the behaviour **production**
+needs, where real Contacts already exist. Step 3 is deliberately ugly so it is obvious in the UI
+which records still need a real name; every step-2 and step-3 row goes to
+`Contact-name-review-<ts>.csv`.
+
+Names split on the **last** space, keeping multi-word forenames intact (`Krishna-Priya Mandala` →
+`Krishna-Priya` / `Mandala`); the 12 single-token names go entirely into `LastName`, the required side.
+
+### Account linkage matters more here than usual — it suppresses junk Accounts
+
+Normally an unresolvable optional lookup is just blanked. On Contact it has a side effect: the
+unrelated **FCIC Apex trigger creates a junk `FCIC_Individual` Account for every Contact inserted
+with a blank `AccountId`** (see `CLAUDE.md`'s Operational gotchas). So every Account link recovered
+is one less polluted Account.
+
+Airtable's `Account` column covers most rows. Where it's missing or points at an unreconciled
+duplicate Account, the script falls back through the contact's Applications —
+**Application → Partner Account → Account** — which is not a guess but a real chain already present
+in the source data:
+
+| Account link source | Contacts |
+| --- | --- |
+| Airtable `Account` column | 971 |
+| Recovered via Application → Partner Account → Account | **145** |
+| None — FCIC trigger would spawn an Account | 371 |
+
+The fallback cut junk-Account exposure from 516 to 371. Of the remaining 371, roughly 233 *do* have
+an Airtable Account link that simply isn't reconciled — **fixing the duplicate-Account data quality
+issue fixes these Contacts too, for free, on a re-run.**
+
+The real load used `-DisableTriggerControl "Contact"` and created **zero** junk Accounts (org total
+held at 1,350).
+
+### Field mapping
+
+| Airtable field | Salesforce field | Rule |
+| --- | --- | --- |
+| `Contact Record ID` (`id`) | `LDGCRM_External_ID__c` | The surviving row's ID for a merged group. |
+| `Name` | `FirstName` / `LastName` | Split on last space; waterfall above. |
+| `Email` | `Email` | Cleaned — see below. |
+| `Phone` | `Phone` | Passthrough, capped at 40. |
+| `Title` | `Title` | Passthrough, capped at 128. |
+| `Notes` | `Description` | Passthrough (LongTextArea, 32,000). |
+| `Account` | `AccountId` (`Account.LDGCRM_External_ID__c`) | With the Application fallback above. |
+| `Partner Account Record ID` | `LDGCRM_Partner_Account__c` | Blanked if unresolvable. |
+| `Subscription Type` | `LDGCRM_Subscription_Type__c` | Restricted multiselect — see below. |
+| *(derived from email)* | `RecordTypeId` | `GSA` for `@gsa.gov`, else `Federal`. |
+| `Roles` | *(not written)* | Describes a person's relationship to an Application → belongs on `LDGCRM_Application_Contact__c`. |
+
+**`Email` needed real cleaning** (`Get-CleanContactEmail`, shared): 285 values carry stray
+whitespace, 28 embed a name and/or phone alongside the address
+(`Dave Martin (David.Martin@onrr.gov -303.231.3797)`), 3 look like two addresses, and 2 carry a
+trailing non-ASCII character. The cleaned lower-cased address doubles as the merge key.
+
+**`Subscription Type` is mostly unmappable — deliberately.** `LDGCRM_Subscription_Type__c` allows
+only `Newsletter Recipient` and `Technical POC`. Airtable's dominant value **`Technical Emails`
+(716 rows)** matches neither and is **not** auto-mapped onto `Technical POC`: a subscription
+preference and a role are different concepts, and guessing would invent role data. Dropped and logged
+for a human decision.
+
+**Only one formula field exists** (`Source_Detail_Formula__c`) and it is excluded. Unlike Opportunity
+and Partner Account there are **no Flows on Contact**, so no field is Flow-owned — but see the
+Operational gotchas about what *is* there instead.
+
+### The 4 failures: an org-level duplicate rule
+
+`DUPLICATES_DETECTED` on First + Last name, from a duplicate rule that is **not in this repo** (same
+blind spot as the triggers). All four are data-quality tells rather than migration bugs — two have a
+`LastName` that doesn't match their email (`Charagundla` on `zhijun.wang@…`, `Mundy` on
+`christine.zagrobelny@…`), one is the `HELP DESK` shared mailbox, one genuinely duplicates an
+existing Contact. Written up for the data owners.
+
+---
+
 ## Impediment
 
 **Source:** Airtable `Impediments` table (41 rows as of 2026-08-12).

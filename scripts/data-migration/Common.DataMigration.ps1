@@ -147,3 +147,141 @@ function Invoke-SalesforceQuery {
     # it can't be double-applied by mistake.
     return $JsonResult.result.records
 }
+
+function Get-CleanContactEmail {
+    <#
+        Airtable's Contacts.Email column is dirty in three ways that all have
+        to be handled before the value can be used as a match key or written to
+        Salesforce's Email field:
+          - 285 values carry leading/trailing whitespace
+          - 28 embed a name and/or phone alongside the address, e.g.
+            "Dave Martin (David.Martin@onrr.gov -303.231.3797)"
+          - 2 carry a trailing non-ASCII character
+        Returns the bare address in lower case, or "" if none can be found.
+        Lower-cased deliberately: this doubles as the identity key for merging
+        duplicate Contact rows, and Salesforce external-ID matching is
+        case-insensitive anyway.
+    #>
+    param($Value)
+
+    if (-not $Value) { return "" }
+
+    $Text = "$Value".Trim()
+    # Strip characters that are never part of an address but do appear
+    # wrapped around one in this data.
+    $Text = $Text -replace '[<>()]', ' '
+
+    # First token that looks like an address wins.
+    if ($Text -match '([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})') {
+        return $Matches[1].Trim().ToLower()
+    }
+
+    return ""
+}
+
+function Get-AirtableContactGroups {
+    <#
+        Collapses Airtable Contact rows into one group per real person.
+
+        WHY THIS EXISTS AND WHY IT'S SHARED: Airtable has no person-to-
+        Application junction, so the same human is entered once per
+        association - one row carries their name and roles, the others are
+        stubs with a blank name and a different Applications list. 47 of the
+        61 duplicate-email groups differ precisely by that Applications list.
+        Salesforce HAS the junction (LDGCRM_Application_Contact__c), so
+        migrating 1:1 would import a workaround the target schema doesn't need
+        and split one person into up to 4 Contacts.
+
+        This lives in the shared module rather than in Build-ContactLoad.ps1
+        because the Application-Contact junction chunk must map EVERY Airtable
+        Contact record ID onto whichever Contact actually got created. If that
+        chunk re-derived the grouping itself, the two implementations could
+        drift and the junction would point at Contacts that don't exist.
+
+        Rows are NOT merged when:
+          - there's no usable email (nothing to match on), or
+          - the group holds two or more DIFFERENT non-empty names, which means
+            either a typo'd duplicate or a genuinely shared mailbox (e.g.
+            enterpriseservicedesk@dol.gov is used by both "EBSA Lost & Found
+            Help Desk Information" and "ENT BPMS Contact Center"). Auto-merging
+            those would silently discard one identity, so they stay separate
+            and get flagged for a human.
+
+        Returns an array of PSCustomObjects:
+          ExternalId      - the Airtable rec... ID chosen to represent the group
+                            (the row carrying a Name when there is one, so the
+                            surviving record is the most complete)
+          MemberRecordIds - every Airtable rec... ID folded into this group
+          Rows            - the underlying Airtable records
+          NameConflict    - $true when the group was left unmerged because its
+                            names disagree
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        $Records
+    )
+
+    $ByEmail = @{}
+    $NoEmail = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($Row in $Records) {
+        $Email = Get-CleanContactEmail $Row.fields.Email
+        if (-not $Email) {
+            $NoEmail.Add($Row)
+            continue
+        }
+        if (-not $ByEmail.ContainsKey($Email)) {
+            $ByEmail[$Email] = [System.Collections.Generic.List[object]]::new()
+        }
+        $ByEmail[$Email].Add($Row)
+    }
+
+    $Groups = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($Email in $ByEmail.Keys) {
+        $Rows = $ByEmail[$Email]
+
+        $DistinctNames = @($Rows | ForEach-Object { $_.fields.Name } |
+            Where-Object { $_ } | ForEach-Object { "$_".Trim() } | Sort-Object -Unique)
+
+        if ($DistinctNames.Count -gt 1) {
+            # Ambiguous identity - keep every row as its own Contact.
+            foreach ($Row in $Rows) {
+                $Groups.Add([PSCustomObject]@{
+                    ExternalId      = $Row.id
+                    MemberRecordIds = @($Row.id)
+                    Rows            = @($Row)
+                    NameConflict    = $true
+                })
+            }
+            continue
+        }
+
+        # Prefer the row that actually carries a Name as the survivor.
+        $Primary = $Rows | Where-Object { $_.fields.Name } | Select-Object -First 1
+        if (-not $Primary) { $Primary = $Rows | Sort-Object id | Select-Object -First 1 }
+
+        $Groups.Add([PSCustomObject]@{
+            ExternalId      = $Primary.id
+            MemberRecordIds = @($Rows | ForEach-Object { $_.id })
+            Rows            = @($Rows)
+            NameConflict    = $false
+        })
+    }
+
+    foreach ($Row in $NoEmail) {
+        $Groups.Add([PSCustomObject]@{
+            ExternalId      = $Row.id
+            MemberRecordIds = @($Row.id)
+            Rows            = @($Row)
+            NameConflict    = $false
+        })
+    }
+
+    # CALLER CONTRACT: wrap the call site in @(), same as Invoke-SalesforceQuery
+    # above. Returning normally (not Write-Output -NoEnumerate) is deliberate -
+    # -NoEnumerate emits the whole array as ONE object, so an @() caller gets a
+    # nested 1-element array. That exact bug was written here first and caught
+    # only because the group count came back as 1 against 1,599 input rows.
+    return $Groups.ToArray()
+}

@@ -114,9 +114,12 @@ for the field-by-field mapping rules and every data-quality gotcha found per obj
 non-developer-facing list of Airtable data issues blocking the migration — that's the file to hand to
 whoever maintains the Airtable base.
 
-**Loaded into `gsa-peo` so far:** Market Segment, Account (588 reconciled of 1,346), Partner Account
-(74), Impediment (39), Application (688), Opportunity (742). Contact, the junction objects,
+**Loaded into `gsa-peo` so far:** Market Segment, Account (588 reconciled of 1,350), Partner Account
+(74), Impediment (39), Application (688), Opportunity (742), Contact (1,483). The junction objects,
 Meetings, and the Notes chunk are not built yet — see `docs/README.md` for per-script build status.
+
+⚠️ **Loading Contact temporarily disables another app's Apex trigger** (`-DisableTriggerControl`) —
+read "Loading Contact" in [docs/README.md](docs/README.md) before running it.
 
 ```powershell
 # Pull every table straight from the Airtable REST API into data/airtable-exports/<Table>.json

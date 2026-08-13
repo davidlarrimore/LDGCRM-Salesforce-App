@@ -283,6 +283,80 @@ a separate Airtable table that isn't part of the nine this migration reads, so w
 to the vendor names Salesforce expects. Same open question as Partner Accounts'
 `Escalated User Support Cases` below.
 
+### Contacts: 1,087 of 1,599 have no name — the single biggest data gap found
+
+Salesforce requires a last name on every contact. Only 491 Airtable contacts have a `Name` filled in.
+For the rest we currently load **the email address in the last-name field** as a visible placeholder,
+so they're easy to find and fix later. 45 contacts have neither a name nor an email and can't be
+loaded at all.
+
+Roughly 116 of the nameless ones look like **service or shared mailboxes** (`help`, `support`,
+`desk`, `info`, `admin` in the address) rather than people — for example
+`enterpriseservicedesk@dol.gov`, `warcit@usgs.gov`, `FEMA-EMI-LCMS@fema.dhs.gov`. The other ~971 look
+like real individuals whose name simply wasn't recorded.
+
+**What we need — two separate decisions:**
+1. **For real people:** names filled in, ideally as a first/last convention rather than one free-text
+   field. This is the single highest-value cleanup on this list: it affects ~971 contacts.
+2. **For service/shared mailboxes:** a decision on whether they should be Contacts at all. A shared
+   help-desk address isn't a person, and forcing it into a Contact record (with a person's first/last
+   name) will always look wrong. Options worth discussing: a dedicated record type, a naming
+   convention, or storing them somewhere other than Contact entirely.
+
+Full list in `logs/data-migration/Contact-name-review-*.csv`.
+
+### Contacts: the same person is entered multiple times (61 email addresses appear on 2+ rows)
+
+**This looks like a limitation of how Contacts are set up in Airtable, not careless data entry.**
+Airtable has no way to link one person to several Applications, so the same person is entered again
+for each association: one row carries their name and roles, the extra rows have a blank name and a
+different Applications list. 47 of the 61 duplicated addresses differ in exactly that way.
+
+Salesforce *does* have a proper link between contacts and applications, so the migration merges rows
+sharing an email into a single contact (1,599 rows → 1,532 contacts) and will record the individual
+application relationships separately. **No action needed for the migration** — but worth knowing that
+Airtable's contact count overstates the number of real people, and that adding a proper
+contacts↔applications link in Airtable would remove the need for the duplicates.
+
+Three cases need a human eye because the duplicate rows disagree about the person's name:
+`Bennet Lohr` vs `Bennett Lohre`, `Moye Xzavier` vs `Xzavier Moye`, and one row where the name field
+holds an email address. Two more are **genuinely shared mailboxes used by two different teams** and
+were deliberately left as separate contacts: `enterpriseservicedesk@dol.gov` ("EBSA Lost & Found Help
+Desk Information" *and* "ENT BPMS Contact Center") and `warcit@usgs.gov` ("HELP DESK" *and* "USGS
+WARC IT").
+
+### Contacts: 4 records were rejected as duplicates of existing Salesforce contacts
+
+Salesforce has a rule blocking two contacts with the same first and last name. Four records hit it,
+and each looks like a genuine data issue:
+
+| Last name loaded | Email | Concern |
+| --- | --- | --- |
+| `Charagundla` | `zhijun.wang@associates.cbp.dhs.gov` | name and email don't match each other |
+| `Mundy` | `christine.zagrobelny@maryland.gov` | name and email don't match each other |
+| `DESK` | `warcit@usgs.gov` | shared mailbox ("HELP DESK"), not a person |
+| `McClain` | `andrea.d.mcclain@dea.gov` | duplicates a contact already in Salesforce |
+
+**What we need:** for the first two, confirm which is right — the name or the email. For the last,
+confirm whether it's the same person already in Salesforce.
+
+### Contacts: "Technical Emails" isn't a valid subscription type
+
+716 contacts have `Subscription Type = "Technical Emails"`, but Salesforce only offers
+`Newsletter Recipient` and `Technical POC`. We are **not** assuming "Technical Emails" means
+"Technical POC" — a mailing-list preference and a point-of-contact role are different things, and
+guessing would invent role data on 716 records. The value is currently dropped.
+
+**What we need:** either confirm that "Technical Emails" should map to "Technical POC", or add a
+matching subscription option in Salesforce, or confirm it isn't needed.
+
+### Contacts: 371 have no usable Account link
+
+Most are the **same unmatched-Account problem** described at the top of this document — the contact
+points at an Airtable Account that doesn't match a Salesforce one, so fixing those Accounts fixes
+these contacts automatically. The migration already recovers 145 more by tracing the contact's
+Applications back to an Account, so no separate action is needed for those.
+
 ## Recommended cleanup — not blocking, but worth doing
 
 - **Impediments: 2 completely empty rows** (`recA9LjxxE56gV73J`, `recXyF5tOHJh07laz`) — no Name,

@@ -221,6 +221,16 @@ picklist's restricted values or a TextArea's real length before trusting a field
 appearance — see `docs/TRANSFORMATION-RULES.md`'s General Principle #7 and the
 Application section's dedicated note for the full example.
 
+**Contact is loaded as of 2026-08-13: 1,483 records** (1,483 of 1,487 submitted; 4 rejected by an
+org-level duplicate rule). 1,115 carry an Account and 933 a Partner Account. Record types:
+**Federal for partner-agency contacts, GSA for anyone with an `@gsa.gov` address** (user-confirmed —
+this migration creates only those two, never the FCIC/TTS record types). **1,599 Airtable rows became
+1,532 Contacts**: rows sharing an email are merged, because Airtable has no person↔Application
+junction and enters the same person once per association. The merge logic lives in
+`Get-AirtableContactGroups` (`Common.DataMigration.ps1`), shared so the Application-Contact junction
+chunk maps every Airtable Contact ID onto the surviving Contact. **Loaded with
+`-DisableTriggerControl "Contact"`** — see Operational gotchas.
+
 **Opportunity is loaded as of 2026-08-13: 742 records** (742/742 succeeded). All 742 have their
 Account lookup resolved and Market Segment populated by the before-save Flow; 467 compute a non-zero
 revenue. 186 rows withheld (142 unreconciled Accounts, 28 no Status, 16 no Account link). Two
@@ -345,6 +355,35 @@ Run from inside `sfdx/`:
   JS, `sfdx-lwc-jest --bail --findRelatedTests --passWithNoTests` on `lwc` changes).
 
 ## Operational gotchas
+
+- **The repo's metadata is NOT a complete picture of what fires in this org — always check the live
+  org for Apex triggers, duplicate rules and flows before loading a new object.** `manifest/package.xml`
+  is deliberately LDGCRM-scoped, so automation belonging to the other apps sharing this sandbox was
+  never retrieved and is invisible to any amount of careful reading of `sfdx/force-app`. Loading
+  Contact surfaced three such things at once, none of them in the repo:
+  - **`GSA_FCIC_ContactTrigger`** (unmanaged, the FCIC app) fires on every Contact insert and creates
+    a junk Account — named after the person, hard-coded to the `FCIC_Individual` Account record type —
+    for **every Contact inserted with a blank `AccountId`**. An 18-row test batch created 4 Accounts.
+    It also runs a `dedupContact()` routine over inserted rows.
+  - **`purecloud.ContactWebHookv1`** (installed **managed** package, Genesys PureCloud) also fires on
+    Contact insert. Its body returns `(hidden)` and it cannot be retrieved, so **what it does is
+    unknowable from here**, and it has no kill switch. A webhook on Contact insert is an
+    outward-facing side effect this pipeline cannot inspect — user-confirmed inert in gsa-peo
+    (2026-08-13), but **re-confirm before any production run**.
+  - An **org-level duplicate rule** on Contact (First + Last name) that rejected 4 records with
+    `DUPLICATES_DETECTED`. Also not in the repo.
+
+  Useful live-org checks before a first load of any object:
+  `sf data query --use-tooling-api -q "SELECT Name, Status, TableEnumOrId FROM ApexTrigger WHERE TableEnumOrId = '<Object>'"`
+  and read any unmanaged trigger's `Body` the same way (managed ones return `(hidden)`).
+- **The FCIC app ships a supported kill switch, and `Invoke-SalesforceLoad.ps1` uses it.** The
+  `TriggerControls__c` custom setting has one record per object (`Task`, `Case`, `Contact`,
+  `LiveChatTranscript`) with an `On__c` flag the trigger checks first. Passing
+  `-DisableTriggerControl "Contact"` captures the current value, switches it off for the load, and
+  restores it in a `finally` block with a **verifying re-query** — so it is restored even when the
+  load throws (which it did, on the real Contact load, and the restore still ran and verified).
+  Read the `TRIGGER BYPASS` comment block in that script before using it. It is off by default, it
+  flips config owned by another app, and it needs explicit human sign-off per load.
 
 - **Any `sf project deploy validate` (or a `deploy start` that runs tests) currently fails org-wide**
   due to a pre-existing Apex compile error unrelated to this app: `GSA_FCIC_AC_Manual_InitialBatch`

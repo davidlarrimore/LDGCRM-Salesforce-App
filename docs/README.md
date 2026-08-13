@@ -139,7 +139,7 @@ script's skipped/unmapped review CSVs should feed into this list as they're foun
 | `Build-ImpedimentLoad.ps1` | Prep — Impediment (independent parent, straight upsert) | Built |
 | `Build-PartnerAccountLoad.ps1` | Prep — Partner Account (Master-Detail to Account, requires Account loaded first) | Built |
 | `Build-OpportunityLoad.ps1` | Prep — Opportunity (needs Account **and Partner Account** loaded first) | Built and **loaded 2026-08-13: 742/742 succeeded**, including the `LDGCRM_Partner_Account__c` lookup (66 linked). Required a Login_gov record-type picklist fix found by a test batch (see `TRANSFORMATION-RULES.md`) and an `LDGCRM_App_Description__c` LongTextArea deploy. 186 rows withheld (142 unreconciled Accounts, 28 no Status, 16 no Account link). |
-| `Build-ContactLoad.ps1` | Prep — Contact (independent parent, no Account dependency) | Not built |
+| `Build-ContactLoad.ps1` | Prep — Contact (independent parent; optional Account/Partner Account lookups) | Built and **loaded 2026-08-13: 1,483 of 1,487** (4 rejected by an org duplicate rule). **Merges rows sharing an email** (1,599 → 1,532) since Airtable lacks a person↔Application junction; also emits `Contact-identity-map.csv` for the junction chunk. Loaded with `-DisableTriggerControl "Contact"` — see "Loading Contact" below. |
 | `Build-ApplicationLoad.ps1` | Prep — Application, needs Partner Account **and Opportunity** loaded first (see "Load order") | Built and **loaded 2026-08-13: 688/688 succeeded, 0 failures**. Took three attempts — the first failed 1,045 of 1,047 rows — which drove six fixes (Service Level array unwrap, Broker App Parent moved to a second pass, Name/URL platform-limit handling across *all* Url fields, out-of-range date check, live Partner Account/Opportunity preflight, plus an `Invoke-SalesforceQuery` array bug). 359 rows remain skipped pending Airtable Account fixes; 92 Opportunity links pending the Opportunity load. See `TRANSFORMATION-RULES.md`'s Application section for the full 55-field mapping and the failure post-mortem. |
 | `Build-OpportunityImpedimentLoad.ps1`, `Build-ApplicationContactLoad.ps1` | Prep — dependent/junction objects | Not built |
 | `Build-OpportunityContactRoleLoad.ps1` | Prep — blocked on an `sfdx-metadata-sync` fix (`OpportunityContactRole.LDGCRM_External_ID__c` needs `externalId=true`) | Not built |
@@ -196,6 +196,7 @@ scripts\data-migration\Build-AccountReconciliation.ps1
 scripts\data-migration\Build-ImpedimentLoad.ps1
 scripts\data-migration\Build-PartnerAccountLoad.ps1
 scripts\data-migration\Build-OpportunityLoad.ps1
+scripts\data-migration\Build-ContactLoad.ps1
 scripts\data-migration\Build-ApplicationLoad.ps1
 
 # Actually load a prepped CSV into gsa-peo (prompts "Type LOAD to continue"):
@@ -224,6 +225,53 @@ scripts\data-migration\Invoke-SalesforceLoad.ps1 `
     -ObjectApiName "LDGCRM_application__c" `
     -CsvFile "data\salesforce-loads\LDGCRM_application__c-upsert.csv"
 ```
+
+### ⚠️ Loading Contact requires disabling another app's Apex trigger
+
+**Contact is the one object whose load flips a setting owned by a different application. Read this
+before running it.**
+
+gsa-peo is shared with the unrelated FCIC app, whose `GSA_FCIC_ContactTrigger` fires on every Contact
+insert. Its before-insert path creates a **junk Account** — named after the person, hard-coded to the
+`FCIC_Individual` Account record type — for **every Contact inserted with a blank `AccountId`**. None
+of this is visible in `sfdx/force-app`: the manifest is LDGCRM-scoped, so other apps' automation was
+never retrieved. It was found only because an 18-row test batch silently created 4 Accounts.
+
+371 of the migrated Contacts have no resolvable Account (mostly the unmatched-Account data-quality
+issue), so a normal load would create 371 junk Accounts in an org where Account counts are already a
+moving target *and* where this migration's own Account reconciliation depends on those counts being
+meaningful.
+
+The FCIC app ships a supported kill switch — a `TriggerControls__c` custom setting the trigger checks
+first — so `Invoke-SalesforceLoad.ps1` uses it via `-DisableTriggerControl`:
+
+```powershell
+scripts\data-migration\Invoke-SalesforceLoad.ps1 `
+    -ObjectApiName "Contact" `
+    -CsvFile "data\salesforce-loads\Contact-upsert.csv" `
+    -DisableTriggerControl "Contact"
+```
+
+What that flag does, and the guarantees around it:
+1. Reads and **records the current value** before changing anything (it does not assume "on").
+2. Switches it off, runs the load.
+3. **Restores it in a `finally` block** — so it is restored even if the load throws, the CLI dies, or
+   the operator interrupts. This is not theoretical: the real Contact load *did* exit non-zero (4
+   duplicate-rule rejections) and the restore still ran.
+4. **Verifies the restore with a re-query** and prints a loud, explicit manual-fix command if it
+   fails. Leaving FCIC's trigger disabled would silently break another team's app.
+5. It is **off by default** and should stay that way. It changes config another app owns, so it needs
+   explicit human sign-off per load.
+
+Confirmed after the real load: **zero junk Accounts created** (org total held at 1,350) and
+`TriggerControls__c.Contact.On__c` back to `true`.
+
+**Not covered by any of this:** the *other* active Contact trigger, `purecloud.ContactWebHookv1`,
+belongs to an installed **managed** package (Genesys PureCloud). Its body is hidden, it cannot be
+retrieved, and it has no kill switch — so it fires on every Contact insert and **what it does is
+unknowable from this repo**. It was user-confirmed inert in gsa-peo (2026-08-13). **Re-confirm before
+any production run**: a webhook on Contact insert is an outward-facing side effect this pipeline
+cannot inspect.
 
 `Build-AccountReconciliation.ps1` is read-only against Salesforce (a single SOQL query) and only
 writes local files:
@@ -284,6 +332,19 @@ Re-running it is the intended way to pick up newly-fixed data: rows skipped for 
 and Opportunity links blanked because Opportunity wasn't loaded yet, both resolve on a later run with
 no code change. **Demonstrated 2026-08-13**: loading Opportunity and re-running this script dropped
 the blank-Opportunity-link count from 92 to 7 with no edits.
+
+`Build-ContactLoad.ps1` queries Salesforce (record types, existing Contacts, Accounts, Partner
+Accounts) and writes:
+
+- `data/salesforce-loads/Contact-upsert.csv` — one row per **merged** Contact, not per Airtable row.
+- `data/salesforce-loads/Contact-identity-map.csv` — **an input to the Application-Contact junction
+  chunk, not a review file.** Maps every Airtable Contact record ID to the Contact that survived the
+  merge. The junction chunk must use this rather than re-deriving the grouping, or the two can drift.
+- `logs/data-migration/Contact-name-review-<ts>.csv` — every Contact whose name was recovered from an
+  existing Salesforce Contact or replaced with its email address as a placeholder.
+- `logs/data-migration/Contact-no-account-<ts>.csv` — Contacts with no resolvable Account (each one
+  would spawn a junk FCIC Account if the trigger weren't bypassed).
+- `logs/data-migration/Contact-value-review-<ts>.csv` — dropped `Subscription Type` values.
 
 `Build-OpportunityLoad.ps1` queries Salesforce for the Login_gov RecordTypeId and the reconciled
 Account set (read-only), then writes:
