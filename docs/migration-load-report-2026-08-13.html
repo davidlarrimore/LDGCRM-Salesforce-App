@@ -608,6 +608,19 @@
           cannot be created in Salesforce.</span>
       </div>
       <div class="ask">
+        <span class="who">Decision</span>
+        <span class="what"><b>Confirm the record ownership rules</b>
+          Which account should own records whose Airtable owner has no Salesforce account; whether
+          applications and contacts should take their account's owner; and whether existing accounts'
+          ownership should be left alone. See “Record ownership” above.</span>
+      </div>
+      <div class="ask">
+        <span class="who">Provisioning</span>
+        <span class="what"><b>Four opportunity leads have no Salesforce account</b>
+          Covering 285 opportunities between them. Two are already on this list from the partner
+          account review, so resolving them fixes ownership in both places.</span>
+      </div>
+      <div class="ask">
         <span class="who">Clarify</span>
         <span class="what"><b>Does “Technical Emails” mean “Technical POC”?</b>
           716 contacts carry this subscription value, which has no Salesforce equivalent. We did not
@@ -622,8 +635,120 @@
   </section>
 
   <section>
+    <h2>Building the automated loading process</h2>
+    <p class="lede">The goal is a repeatable process the team can re-run, not a one-time copy of the
+      data. That distinction matters when reading the table above: a data set can be fully automated
+      and still be mostly unloaded, because it is waiting on source data rather than on engineering.
+      Applications is exactly that — built, tested and proven, but only 65% loaded.</p>
+
+    <p>Each data set moves through four stages. <em>Pull</em> reads Airtable directly through its API.
+      <em>Transform</em> converts it and checks it against what Salesforce will actually accept.
+      <em>Load</em> writes it. <em>Verified</em> means we confirmed the result in Salesforce rather
+      than trusting the load report.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Data set</th>
+            <th class="num">Pull</th>
+            <th class="num">Transform</th>
+            <th class="num">Load</th>
+            <th class="num">Verified</th>
+            <th class="why">Automation notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="obj">Accounts</td>
+            <td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td>
+            <td class="why">Matches existing accounts rather than creating them, and writes anything it can't match confidently to a review file instead of guessing.</td></tr>
+          <tr><td class="obj">Partner Accounts</td>
+            <td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td>
+            <td class="why">Re-runs pick up newly-resolved accounts automatically.</td></tr>
+          <tr><td class="obj">Contacts</td>
+            <td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td>
+            <td class="why">Consolidates duplicate people across both source tables as part of the transform.</td></tr>
+          <tr><td class="obj">Opportunities</td>
+            <td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td>
+            <td class="why">Required two Salesforce configuration changes, both applied.</td></tr>
+          <tr><td class="obj">Applications</td>
+            <td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td>
+            <td class="why">Fully automated; the gap is source data, not the process.</td></tr>
+          <tr><td class="obj">Impediments</td>
+            <td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td>
+            <td class="why">Complete apart from two blank source rows.</td></tr>
+          <tr><td class="obj">Application ↔ Contact links</td>
+            <td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td>
+            <td class="why">Re-running can't create duplicates, by design.</td></tr>
+          <tr><td class="obj">Impediment ↔ Opportunity links</td>
+            <td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td>
+            <td class="why">The “None” exclusion is a setting, not a code change.</td></tr>
+          <tr><td class="obj">Opportunity contact roles</td>
+            <td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td><td class="num">&check;</td>
+            <td class="why">Cannot use the usual matching key, so it compares against existing records instead. Re-running is still safe.</td></tr>
+          <tr><td class="obj">Meetings</td>
+            <td class="num">&check;</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
+            <td class="why">Data pulls fine; the transform is blocked on the meeting-duration decision below.</td></tr>
+          <tr><td class="obj">Notes</td>
+            <td class="num">&check;</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
+            <td class="why">Deliberately last — a note must attach to a record that already exists.</td></tr>
+          <tr><td class="obj">Record ownership</td>
+            <td class="num">&check;</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
+            <td class="why">Not yet built. See below.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <span class="label">What "automated" buys you</span>
+      <p>Every step re-reads Airtable and re-checks Salesforce each time it runs. That means the
+        cleanup items on this page don't need an engineer to act on them individually — correcting the
+        source data and re-running is enough to bring the newly-valid records across. Nothing has to be
+        re-keyed by hand, and re-running cannot duplicate what is already loaded.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Record ownership</h2>
+    <p class="lede">Raised by the Partnerships team and not yet built. Worth calling out separately
+      because it affects who can see what, not just how reports read.</p>
+
+    <p>Every record the migration created is currently owned by the person who ran the load. Accounts
+      are the exception — they were matched to records that already existed, so their original owners
+      survived.</p>
+    <p>That matters more than it might appear: these objects use owner-based sharing, so the owner
+      determines visibility, not just the “Owner” column on a report.</p>
+
+    <div class="decision">
+      <h4>Proposed rule</h4>
+      <p>Where Airtable records an owner and that person has a Salesforce account, assign the record to
+        them. Where they don't, fall back to a single default owner.</p>
+      <p>This never leaves a record unowned and never invents an owner. Applied to today's data:</p>
+      <ul>
+        <li><strong>Opportunities</strong> — 15 named leads. 11 have Salesforce accounts, covering
+          <strong>541 opportunities</strong>. The other 4 cover 285, which would fall back.</li>
+        <li><strong>Partner Accounts</strong> — 5 of 7 owners resolve, covering 62 records.</li>
+        <li><strong>Applications</strong> — 5 of 7 resolve, covering 847 records.</li>
+        <li><strong>Accounts and Contacts</strong> — Airtable records no owner at all, so these need a
+          decision rather than a rule.</li>
+      </ul>
+      <p class="verdict"><b>Note:</b> the four Opportunity leads without Salesforce accounts include
+        two people already flagged on this list for the same reason — the same missing accounts block
+        ownership in two places, so provisioning them fixes both.</p>
+    </div>
+
+    <p>Four questions before this can be built: which account should be the fallback owner; whether
+      Applications should take their account's owner (Airtable has no application-specific owner);
+      whether Contacts should do the same; and whether the migration should change ownership of
+      accounts that already existed in Salesforce, or leave those untouched.</p>
+  </section>
+
+  <section>
     <h2>Still to come</h2>
     <ul>
+      <li><strong>Record ownership</strong> — assigning owners from the Airtable data rather than
+        leaving everything with the person who ran the load. Rules proposed above; needs four
+        decisions before it can be built.</li>
       <li><strong>Meetings (1,845 records)</strong> — Airtable records only a date, with no start or
         end time. Salesforce calendar events need both, so we need an agreed default duration before
         loading.</li>
