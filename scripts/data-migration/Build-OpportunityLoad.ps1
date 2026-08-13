@@ -44,10 +44,15 @@
       - priority_type__c: DO NOT WRITE. Labelled "Priority Type" - identical to
         the Airtable column name - but un-prefixed and owned by TTS OTCRM. The
         label match is a trap, not evidence. See the block below.
-      - LDGCRM_Existing_Identity_Platforms__c / LDGCRM_Alternative_Identity_Platforms__c:
-        the Airtable columns hold rec... IDs pointing at a table this migration
-        doesn't pull, while the Salesforce fields are multipicklists of vendor
-        names. Unresolvable without that table.
+    LDGCRM_Existing_Identity_Platforms__c / LDGCRM_Alternative_Identity_Platforms__c
+    ARE migrated as of 2026-08-13. They used to be blocked: the Airtable columns
+    held rec... IDs pointing at a table this migration doesn't pull. Airtable has
+    since converted both to plain multi-selects holding the vendor names
+    directly, which is what the Salesforce multipicklists wanted all along. The
+    per-value counts are unchanged by the conversion (272 / 181 tags), so no data
+    was lost in it. See $IdentityPlatformMap below for the three values whose
+    spelling still differs, and Assert-IdentityPlatformsResolved for why a stale
+    export is a hard failure rather than 453 silently dropped tags.
     LDGCRM_Partner_Account__c is set here, but is derived from the APPLICATIONS
     export rather than the Opportunities one - the Airtable Opportunities table
     has no Partner Account column at all. Do NOT source it from the Partner
@@ -145,6 +150,133 @@ $DemographicMap = @{
     "Veterans"                        = "Veterans"
     "Non-USC"                         = "Non-USC"
     "Gov?t Employees"                 = "Gov't Employees"
+}
+
+# Airtable's two identity-platform columns were linked-record fields pointing at
+# a table this migration doesn't pull; they are now plain multi-selects holding
+# vendor names, so they finally line up with Salesforce's two restricted
+# multipicklists (25 values each, all 25 allowed on the Login_gov record type -
+# checked in recordTypes/Login_gov.recordType-meta.xml, not just the field
+# metadata, per the record-type lesson this object taught).
+#
+# Airtable offers 17 choices on Existing and 8 on Alternative; 22 of the 25
+# distinct names match Salesforce exactly. Only these three don't, and every one
+# of them is a Salesforce-side or cosmetic problem rather than bad Airtable data:
+#
+#   "Ping / Forgerock"    -> "Ping/Foregerock"      6 tags. Spacing differs AND
+#                            Salesforce's value misspells the vendor (ForgeRock,
+#                            which Ping Identity acquired). Mapped so the data
+#                            lands now; the Salesforce value should be corrected
+#                            to "Ping/Forgerock" separately, after which this
+#                            entry becomes an identity mapping.
+#   "Sign-in with Google" -> "Sign-In with Google"  1 tag. Capital I only.
+#   "CLEAR"               -> (no Salesforce value)  2 tags. Deliberately NOT
+#                            mapped onto a near-neighbour - CLEAR is a real,
+#                            distinct IdV vendor and there is nothing it belongs
+#                            in. The tag is dropped and flagged for review until
+#                            "CLEAR" is added to both picklists (and to the
+#                            Login_gov record type).
+#
+# Salesforce also defines 8 values Airtable no longer uses at all (Google
+# CiviForm, ManTech, Granicus, Shibboleth, Exostar, Jakobsen Id, Mattr, Idemia) -
+# leftovers from the old linked table. Harmless; nothing is written to them.
+#
+# Both fields share one map: the value sets are identical in Salesforce, and
+# Alternative's 8 Airtable choices are a subset of Existing's plus CLEAR.
+$IdentityPlatformMap = @{
+    "None"                    = "None"
+    "Homegrown (placeholder)" = "Homegrown (placeholder)"
+    "AWS"                     = "AWS"
+    "Socure"                  = "Socure"
+    "Okta"                    = "Okta"
+    "Azure"                   = "Azure"
+    "Oracle AM"               = "Oracle AM"
+    "Ping / Forgerock"        = "Ping/Foregerock"
+    "Keycloak"                = "Keycloak"
+    "LexisNexis"              = "LexisNexis"
+    "1Kosmos"                 = "1Kosmos"
+    "ID.me"                   = "ID.me"
+    "Microsoft Power Pages"   = "Microsoft Power Pages"
+    "Salesforce"              = "Salesforce"
+    "Experian"                = "Experian"
+    "Sign-in with Google"     = "Sign-In with Google"
+    "Max.gov"                 = "Max.gov"
+}
+
+function Assert-IdentityPlatformsResolved {
+    <#
+        Fails the run if the Airtable export predates the linked-record ->
+        multi-select conversion.
+
+        A stale export carries rec... IDs in these two columns. Those match
+        nothing in $IdentityPlatformMap, so without this check the run would
+        "succeed" while dropping all 453 tags into the value-review CSV as
+        unmapped junk - the failure mode would look like a data-quality problem
+        in Airtable rather than an out-of-date file on disk. Re-pulling is the
+        fix, so say so.
+    #>
+    param([object[]]$Rows)
+
+    $Stale = 0
+    foreach ($Row in $Rows) {
+        foreach ($Field in @("Existing Identity Platforms", "Alternative Identity Platforms")) {
+            foreach ($Value in @($Row.fields.$Field)) {
+                if ("$Value" -match '^rec[A-Za-z0-9]{14}$') { $Stale++ }
+            }
+        }
+    }
+
+    if ($Stale -gt 0) {
+        throw ("$Stale identity-platform values are still Airtable rec... IDs, so this export " +
+            "predates the linked-record -> multi-select conversion of 'Existing Identity Platforms' " +
+            "and 'Alternative Identity Platforms'. Re-pull before building: " +
+            "scripts/data-migration/Get-AirtableExport.ps1 -Tables Opportunities")
+    }
+}
+
+function Resolve-IdentityPlatforms {
+    <#
+        Maps one identity-platform multi-select to its Salesforce multipicklist
+        string. Unmapped tags are dropped and flagged rather than passed through
+        - both target fields are restricted, so an unknown value fails the whole
+        ROW at the Bulk API, not just the field.
+    #>
+    # NOTE: no [Parameter(Mandatory)] on $ReviewList, matching
+    # Resolve-OpportunityUrl above. Mandatory implies ValidateNotNullOrEmpty on a
+    # collection, so an empty List - which is exactly its state on the first row -
+    # fails to bind.
+    param(
+        $Value,
+        [string]$AirtableField,
+        [string]$RecordId,
+        [System.Collections.Generic.List[object]]$ReviewList
+    )
+
+    $Tags = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($Element in @($Value)) {
+        if (-not $Element) { continue }
+        $Key = "$Element".Trim()
+        if (-not $Key) { continue }
+
+        if ($IdentityPlatformMap.ContainsKey($Key)) {
+            if (-not $Tags.Contains($IdentityPlatformMap[$Key])) {
+                $Tags.Add($IdentityPlatformMap[$Key])
+            }
+        }
+        else {
+            $script:DroppedIdentityPlatformCount++
+            $ReviewList.Add([PSCustomObject]@{
+                AirtableRecordId = $RecordId
+                Field            = $AirtableField
+                OriginalValue    = $Key
+                AppliedValue     = ""
+                Reason           = "No matching value in the restricted picklist - tag dropped. Add it in Salesforce (field AND the Login_gov record type) to migrate it."
+            })
+        }
+    }
+
+    return ($Tags -join ";")
 }
 
 function ConvertTo-SalesforceRichText {
@@ -328,7 +460,10 @@ $ValueReviewRows = [System.Collections.Generic.List[object]]::new()
 $CloseDateFallbackRows = [System.Collections.Generic.List[object]]::new()
 $UnresolvedOwnerRows = [System.Collections.Generic.List[object]]::new()
 $DroppedDemographicCount = 0
+$DroppedIdentityPlatformCount = 0
 $UnresolvedPartnerAccountCount = 0
+
+Assert-IdentityPlatformsResolved -Rows @($AirtableOpportunities)
 
 foreach ($Row in $AirtableOpportunities) {
     $RecId = $Row.id
@@ -436,6 +571,12 @@ foreach ($Row in $AirtableOpportunities) {
         }
     }
 
+    # --- Identity platforms: two multi-selects -> two restricted multipicklists ---
+    $ExistingPlatforms = Resolve-IdentityPlatforms -Value $Row.fields.'Existing Identity Platforms' `
+        -AirtableField "Existing Identity Platforms" -RecordId $RecId -ReviewList $ValueReviewRows
+    $AlternativePlatforms = Resolve-IdentityPlatforms -Value $Row.fields.'Alternative Identity Platforms' `
+        -AirtableField "Alternative Identity Platforms" -RecordId $RecId -ReviewList $ValueReviewRows
+
     # --- Technical Readiness: 1-element array, exact-match picklist ---
     $TechnicalReadiness = ""
     if ($Row.fields.'Technical Readiness') {
@@ -521,6 +662,8 @@ foreach ($Row in $AirtableOpportunities) {
         LDGCRM_Technical_Readiness__c               = $TechnicalReadiness
         LDGCRM_Estimate_Source__c                   = $Row.fields.'Estimate source'
         LDGCRM_Demographic_Served__c                = ($DemographicTags -join ";")
+        LDGCRM_Existing_Identity_Platforms__c       = $ExistingPlatforms
+        LDGCRM_Alternative_Identity_Platforms__c    = $AlternativePlatforms
         LDGCRM_Estimated_Go_Live_Date__c            = (Get-DatePart $Row.fields.'Est. Go Live')
         LDGCRM_Est_Annual_Idv_Users__c              = $Row.fields.'Est. Annual IdV Users (fully ramped)'
         LDGCRM_Est_Annual_Auth_Only_Users__c        = $Row.fields.'Est. Annual Auth-only Users (fully ramped)'
@@ -585,6 +728,9 @@ Write-Host ("{0,-50} {1,8:N0}" -f "Owner set from Pod Opportunity Lead", @($Upse
 Write-Host ("{0,-50} {1,8:N0}" -f "Owner = fallback ($FallbackOwnerEmail)", @($UpsertRows | Where-Object { $_.OwnerId -eq $FallbackOwnerId }).Count)
 Write-Host ("{0,-50} {1,8:N0}" -f "CloseDate came from a fallback field", $CloseDateFallbackRows.Count)
 Write-Host ("{0,-50} {1,8:N0}" -f "Demographic tags dropped (unmapped)", $DroppedDemographicCount)
+Write-Host ("{0,-50} {1,8:N0}" -f "Existing Identity Platforms populated", @($UpsertRows | Where-Object { $_.LDGCRM_Existing_Identity_Platforms__c }).Count)
+Write-Host ("{0,-50} {1,8:N0}" -f "Alternative Identity Platforms populated", @($UpsertRows | Where-Object { $_.LDGCRM_Alternative_Identity_Platforms__c }).Count)
+Write-Host ("{0,-50} {1,8:N0}" -f "Identity platform tags dropped (unmapped)", $DroppedIdentityPlatformCount)
 Write-Host ("{0,-50} {1,8:N0}" -f "Other values blanked for review", $ValueReviewRows.Count)
 Write-Host ""
 

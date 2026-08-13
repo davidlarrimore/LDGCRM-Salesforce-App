@@ -41,6 +41,33 @@ Writes/deletes against `Prod` need the org alias typed at an extra guard
 (`Assert-LdgcrmProductionConsent`) on top of the script's own confirmation. See `docs/engineering/ARCHITECTURE.md`,
 "Environments and org aliases", for the authorization runbook for a new sandbox.
 
+**QA (`peodv15dvn`) is authorized on this machine as of 2026-08-13** (`dave.larrimore@gsa.gov.peo.peodv15dvn`),
+so `-Environment QA` works. It can trail Dev by a change set — **never assume Dev's metadata state
+applies to QA**; verify against the org you are actually loading. Confirmed example: `priority_type__c`
+exists in Dev and **does not exist in QA at all**.
+
+## ⚠️ Metadata promotion is by CHANGE SET only
+
+**Do not promote metadata between orgs with `sf project deploy`.** Outbound/inbound change sets are
+the only sanctioned path, and the rule is strict (user, 2026-08-13). From this repo, a CLI deploy is
+permitted for exactly one purpose: **DELETING corrupted or incorrect metadata.** Anything additive —
+a new field, a new picklist value, a new record-type assignment — goes in a change set, even when the
+change is obviously correct and even when it is only going to a sandbox.
+
+Practical consequences when a load is blocked by missing metadata: **write down what needs adding and
+hand it to whoever builds the change set.** Do not "just deploy it to Dev to unblock testing" — Dev is
+the source org for change sets, so anything deployed there silently becomes part of the next
+promotion whether or not it was reviewed.
+
+Two `sf` behaviours to know before touching picklists:
+- **A metadata deploy cannot delete a picklist value — it deactivates it** (`isActive=false`). The
+  value survives in the value set. Only a Setup "Del" removes it. `sf sobject describe` **hides
+  inactive values**, so it will report the field as clean; the retrieved metadata file is the
+  authority.
+- **Renaming a value via `<fullName>` does not rename in place** — it adds the new value and
+  deactivates the old one. Check usage first
+  (`SELECT <field>, COUNT(Id) FROM <Object> GROUP BY <field>`); a rename is only safe at zero.
+
 See [README.md](README.md) for human-facing setup/quick-start steps (auth, prerequisites, common
 commands). This file focuses on conventions and architecture for working in the code.
 
@@ -128,6 +155,17 @@ into `data/airtable-exports/<Table>.json` (one file per table, overwritten each 
 below). This replaced an earlier manual CSV/XLSX export-zip workflow; don't recreate that structure —
 the JSON pull is the only source of truth for Airtable data in this repo now.
 
+**An export can go stale in ways that change a column's SHAPE, not just its values** — Airtable
+converted Opportunities' `Existing Identity Platforms` / `Alternative Identity Platforms` from linked
+records (`rec...` IDs) to plain multi-selects (vendor names). A transform written for one shape reads
+the other as garbage. `Build-OpportunityLoad.ps1` therefore **hard-fails** rather than silently
+dropping the 453 affected values (`Assert-IdentityPlatformsResolved`), telling you to re-pull. Treat
+that as the pattern to copy: when a column's shape is load-bearing, assert it and fail loudly, because
+"453 tags quietly missing" is invisible in a load that otherwise reports success. As of 2026-08-13 the
+committed export (2026-08-12) **predates that conversion**, so Opportunity cannot build until
+`Get-AirtableExport.ps1` is re-run — and re-running shifts every documented count, so re-baseline
+rather than treating the old figures as pass/fail targets.
+
 **Authentication:** a Personal Access Token (PAT), not the old-style API key — Airtable removed
 `key...` API keys in Feb 2024, so a token must start with `pat...`. Create/manage one in the Airtable
 Builder hub (profile avatar → Builder hub → Personal access tokens); it needs the **`data.records:read`**
@@ -212,6 +250,18 @@ value map, etc.) — this section is the short cross-object summary.
 Meetings only carry a single `Date` column (no start/end time) — loading them as Event means
 synthesizing `StartDateTime`/`EndDateTime` (e.g. a fixed default duration off that date), since
 Airtable has no time-of-day to carry over.
+
+**Before mapping a column, confirm the target field is even OURS — check the `LDGCRM_` prefix, not
+the label.** This sandbox hosts TTS OTCRM and FCIC, which label their fields in the same business
+vocabulary, so a Salesforce field whose **label** matches an Airtable column name is not evidence of
+anything. Opportunity carries both `priority_type__c` (labelled "Priority Type", un-prefixed, owned by
+TTS OTCRM, assigned to the `TTS_OTCRM_Opportunity` record type) and `LDGCRM_Level_of_Priority__c`
+(ours). Airtable's column is called `Priority Type`, so the exact label match points straight at the
+wrong field — and it was mapped that way on 2026-08-13 before the user caught it. **If the best label
+match is un-prefixed, stop and ask** rather than treating the match as a discovery; writing another
+app's field is worse than migrating nothing. A related coupling to watch: the three `LDGCRM_`
+permission sets grant FLS on `priority_type__c`, which **does not exist in QA** — so that reference
+will fail a change set into any org lacking the field, independent of the migration.
 
 **Not every Airtable column is a simple same-name mapping.** `States + DC/PR` looks like it might
 hold a state name but is actually a plain checkbox distinguishing state/DC/territory government
@@ -341,6 +391,23 @@ Contact → Opportunity → `LDGCRM_application__c` → `LDGCRM_Opportunity_Impe
 
 ## Scripts
 
+### ⚠️ PowerShell is the language of this repo. Do not reach for Python.
+
+**Everything here is built in PowerShell — automation, transforms, one-off analysis, throwaway
+checks. There is no Python in this project and none is wanted.** Do not go looking for a Python
+interpreter, do not write a `.py` helper "just for this bit", and do not shell out to `python`/`py`
+to parse JSON or crunch a CSV. If you need to inspect an Airtable export, count picklist values, or
+diff two lists, write it in PowerShell — `ConvertFrom-Json`, `Import-Csv`, `Group-Object`,
+`Compare-Object` and a `foreach` cover essentially every case this repo has needed.
+
+This is a hard convention, not a preference. The operators who inherit this pipeline (GSA IT
+Operations included) have `sf` and Windows PowerShell and nothing else guaranteed; a Python
+dependency would be a tool they cannot install. It also keeps one language across `scripts/`, so
+there's a single set of helpers, one logging convention, and one confirmation-gate pattern.
+
+The same goes for **ad-hoc analysis during a session**: use PowerShell inline rather than a scratch
+Python script, so anything worth keeping can be lifted straight into `scripts/` unchanged.
+
 All scripts are PowerShell, **targeting Windows PowerShell 5.1+** (this repo's dev machines don't have
 PowerShell 7/`pwsh` installed, and installing it is blocked by Group Policy on at least one of them —
 so `#Requires -Version 5.1` at the top of every script, not 7.0). Avoid syntax that only exists in
@@ -348,6 +415,29 @@ PowerShell 6+ (`??`, `?.`, ternary `?:`, `ConvertFrom-Json -AsHashtable`, `ForEa
 multi-argument `Join-Path`) — stick to `Join-Path`/`Split-Path` with the classic two-argument form, as
 the existing scripts do. Scripts still run fine under `pwsh` 7+ if a machine happens to have it; they
 just don't require it.
+
+**PowerShell 5.1 traps that have actually cost time here** — all of these fail *quietly* or blame the
+wrong thing:
+
+- **Never redirect a native command's stderr** (`2>&1`, `2>$null`) — on `sf`, `git`, `powershell`.
+  PS 5.1 wraps each stderr line in an ErrorRecord, so the CLI's harmless "update available" banner
+  becomes a `NativeCommandError` that kills the script, and the error points at the line that ran the
+  command rather than at the redirect. `sf`'s output is captured anyway; just don't redirect.
+- **`Export-Csv -Encoding UTF8` writes a BOM**, and the Bulk API rejects the file with
+  *"Found unescaped quote"* — the BOM lands in front of the first `"`. Use `Export-DataLoaderCsv`
+  (`Common.DataMigration.ps1`), which writes UTF-8 **no-BOM**, for anything Salesforce will read.
+  Its parameter is `-InputObject`, not `-Rows`.
+- **Never count CSV records with `Get-Content`/`Measure-Object -Line`.** Rich-text fields contain
+  newlines and are legally quoted across multiple physical lines, so line count wildly overstates —
+  it reported Partner Account as 1,017 records when the real figure was 94. Use
+  `@(Import-Csv $path).Count`.
+- **`$json.records` on an array of pages returns 928 nulls, not 928 records.** Member enumeration
+  over an array whose elements lack the property yields `$null` per element, so `.Count` looks
+  right and `[0]` is null. Inspect the actual shape (`$j[0].PSObject.Properties.Name`) before
+  trusting a count — see [[powershell-array-return-gotchas]] and the `@()` convention.
+- **A here-string (`@'…'@`) does not reliably bind as a single argument to a native command.**
+  `git commit -m @'…'@` split on the apostrophe in "Airtable's" and turned the message body into
+  pathspecs. For multi-line commit messages write the message to a file and use `git commit -F`.
 
 Every script dot-sources `scripts/common/Common.ps1` and uses its helpers rather than writing output
 next to the script or inventing new log locations:
@@ -411,11 +501,15 @@ Current scripts:
 - `scripts/data-migration/Invoke-SalesforceLoad.ps1` — wraps `sf data upsert bulk` /
   `sf data update bulk` / `sf data import bulk` (`-Operation Upsert|Update|Insert`) against any
   object/CSV, with preflight counts and a typed confirmation gate.
-- **Still to build:** `Build-ContactLoad.ps1`, the junction objects
-  (`LDGCRM_Opportunity_Impediment__c`, `LDGCRM_Application_Contact__c`), `OpportunityContactRole`
-  (blocked on an `externalId` metadata fix), Meetings, an Application **second pass** for the
-  `LDGCRM_Broker_App_Parent__c` self-lookup, and the final Notes chunk. See `docs/engineering/ARCHITECTURE.md` for
-  per-script status.
+- **Built since:** `Build-ContactLoad.ps1`, both junctions (`Build-OpportunityImpedimentLoad.ps1`,
+  `Build-ApplicationContactLoad.ps1`), `Build-OpportunityContactRoleLoad.ps1` (insert + read-then-diff,
+  *not* blocked on an `externalId` fix — that fix is impossible, see the mapping section), the
+  Application second pass for `LDGCRM_Broker_App_Parent__c`, and the Notes chunk
+  (`Build-NotesLoad.ps1` + `Invoke-NotesLoad.ps1`, which loads over REST because `ContentNote.Content`
+  is binary and Bulk 2.0 CSV refuses it). Plus `Invoke-FullMigrationLoad.ps1` (orchestrator) and
+  `Invoke-MigrationRollback.ps1`.
+- **Still to build:** Meetings (Activity/Event). See `docs/engineering/ARCHITECTURE.md` for per-script status —
+  **that file, not this one, is the authority on build status**; this list goes stale fastest.
 
 ## sfdx/ commands
 
@@ -477,6 +571,13 @@ Run from inside `sfdx/`:
 - **`sf project retrieve start` requires running from inside `sfdx/`** (or passing paths relative to
   it) — it needs `sfdx-project.json` in the working directory. Running it from the repo root fails
   with `InvalidProjectWorkspaceError`.
+- **A targeted `-m "RecordType:<Object>.<RT>"` retrieve is LOSSY — always retrieve
+  `-m "CustomObject:<Object>"` instead.** Retrieving the record type on its own returned **4 of 33**
+  `<picklistValues>` blocks and would have silently deleted the other 29 from `force-app/` had it been
+  committed. Nothing warns you; the file just gets shorter. After any metadata retrieve, check
+  `git diff --stat` and confirm the change is confined to what you expected. To inspect another org
+  without touching `force-app/`, retrieve to a scratch dir instead:
+  `--target-metadata-dir <scratch> --unzip`.
 - **Retrieving a Salesforce Outbound Change Set's contents:** Change Sets have no direct Metadata/
   Tooling API or `sf` support for listing/querying them, but a change set's **Name** (not its Setup
   URL ID) works as an unmanaged package name for retrieval: `sf project retrieve start --package-name
@@ -510,6 +611,20 @@ one rather than growing this file or `docs/README.md`:
 | `logs/README.md` | Anyone reading run output | What each kind of run leaves behind |
 
 `docs/README.md` is an **index only** — it routes by audience and holds no content of its own.
+
+### Tracking what's been resolved (standing convention, user-requested 2026-08-13)
+
+**When something is fixed, record it — don't just delete the item.** Two documents move together:
+
+- `docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md` — mark the item 🔴 Open / 🟡 Partially
+  resolved / ✅ Resolved **in place**, and add a row to its **Resolved log** (date, what changed,
+  **who fixed it**, effect). Resolved items are never removed: the Airtable data owners read this doc
+  and have no other way to see their work landed, and deleting a closed item invites someone to
+  re-raise it. 🟡 is a real state — say exactly which part is done and what remains.
+- `docs/operations/RELOAD-QA-CHECKLIST.md` — update the matching expectation **in the same change**.
+  A resolved item usually invalidates a row count, an "expect N skipped", a known-empty field, or
+  makes an optional step mandatory. A checklist saying "expect 142 blocked" must not outlive the fix
+  that unblocked them.
 
 ## Skills
 

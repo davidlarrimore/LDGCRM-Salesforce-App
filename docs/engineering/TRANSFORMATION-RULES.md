@@ -869,6 +869,8 @@ plain text into them loses data two ways:
 | `Technical Readiness` | `LDGCRM_Technical_Readiness__c` (restricted) | `@(...)[0]` — a 1-element array. All 7 distinct values match the picklist exactly. |
 | `Estimate source` | `LDGCRM_Estimate_Source__c` (restricted) | Passthrough — both values match exactly. |
 | `Demographic Served` | `LDGCRM_Demographic_Served__c` (multiselect) | Array whose elements are themselves semicolon-joined (`"General Population; Gov?t Employees"`) — split on `;`, map, re-join. See the apostrophe note below. **No picklist expansion needed**, unlike Application: all 6 Airtable values map to the field's existing 6. |
+| `Existing Identity Platforms` | `LDGCRM_Existing_Identity_Platforms__c` (multiselect, restricted) | Explicit map, `;`-joined. Was blocked as a linked-record column; Airtable converted it to a multi-select. See below. |
+| `Alternative Identity Platforms` | `LDGCRM_Alternative_Identity_Platforms__c` (multiselect, restricted) | Same map as Existing — the two Salesforce value sets are identical. See below. |
 | `Est. Go Live` | `LDGCRM_Estimated_Go_Live_Date__c` | Passthrough of the genuine estimate (distinct from CloseDate). |
 | `Est. Annual IdV Users (fully ramped)` | `LDGCRM_Est_Annual_Idv_Users__c` | Passthrough. |
 | `Est. Annual Auth-only Users (fully ramped)` | `LDGCRM_Est_Annual_Auth_Only_Users__c` | Passthrough. |
@@ -889,6 +891,46 @@ plain text into them loses data two ways:
 - `LDGCRM_application__c`'s Global Value Set uses **`Gov't Employees (Contractors)`** — a different
   string again. **Do not share a Demographic mapping table between Application and Opportunity.**
 
+### Identity platforms: a blocked column that unblocked itself, and the stale-export trap
+
+Both columns used to hold `rec...` IDs pointing at an Airtable table this migration doesn't pull, so
+they were documented as unresolvable. **Airtable has since converted both to plain multi-selects**
+holding vendor names, which is what the two Salesforce restricted multipicklists wanted all along.
+The conversion was lossless — the per-value counts are byte-identical before and after (272 tags on
+Existing, 181 on Alternative), which is what confirmed the `rec...` IDs and the names are the same
+data rather than a re-entry.
+
+**The transferable lesson is that a "blocked, needs upstream work" finding has a shelf life.** This
+one resolved itself with no code change on our side and no notification — it was only found by
+re-reading the base schema. `GET /v0/meta/bases/{baseId}/tables` reports each field's `type`, so
+re-checking it is cheap; a column that was `multipleRecordLinks` when a rule was written may not be
+one now. Worth doing before writing a workaround for any column this file calls blocked.
+
+**22 of the 25 distinct vendor names match Salesforce exactly. The three that don't are all
+Salesforce-side problems, not Airtable data quality:**
+
+| Airtable | Salesforce | Tags | Handling |
+| --- | --- | --- | --- |
+| `Ping / Forgerock` | `Ping/Foregerock` | 6 | Mapped. Spacing differs *and* the Salesforce value misspells ForgeRock (the vendor Ping Identity acquired). Correct the Salesforce value, after which this becomes a pass-through. |
+| `Sign-in with Google` | `Sign-In with Google` | 1 | Mapped. Capitalisation only. |
+| `CLEAR` | *(no value)* | 2 | **Dropped and flagged**, deliberately not filed under a near-neighbour — CLEAR is a distinct IdV vendor. Needs adding to both fields *and* the `Login_gov` record type. |
+
+451 of 453 tags migrate. Salesforce also defines 8 values Airtable no longer offers (`Google
+CiviForm`, `ManTech`, `Granicus`, `Shibboleth`, `Exostar`, `Jakobsen Id`, `Mattr`, `Idemia`) —
+leftovers from the old linked table. Nothing writes to them; harmless.
+
+Both fields are restricted, so an unmapped tag fails the **whole row** at the Bulk API, not just the
+field — hence dropping rather than passing through. All 25 values were verified present on the
+`Login_gov` record type, not just on the field, per this object's own record-type lesson.
+
+**`Assert-IdentityPlatformsResolved` fails the build against a pre-conversion export.** A stale
+`Opportunities.json` still holds `rec...` IDs, which match nothing in the map — so without the guard
+the run would "succeed" while quietly dumping all 453 tags into the value-review CSV, and the failure
+would read as an Airtable data problem rather than an out-of-date file on disk. The guard detects the
+`rec` + 14-char shape and names the fix (`Get-AirtableExport.ps1 -Tables Opportunities`). This is the
+general pattern for any transform whose source column changed type: **make the old shape a loud
+failure, not a silent zero.**
+
 ### A metadata fix that WAS ours to make (unlike Name/Url)
 
 `LDGCRM_App_Description__c` was `TextArea` with no `<length>` — the 255-char trap, hit for the third
@@ -907,7 +949,6 @@ matching an HTML-tag pattern are all angle-bracket-wrapped URLs (`<https://…>`
 | `LDGCRM_Status_Summary_Modified_Datetime__c` | Owned by a before-save Flow that stamps it whenever `LDGCRM_Current_Status_Summary__c` changes. Any migrated value is stomped on the next update touching the summary, so writing it produces a misleading timestamp. |
 | `LDGCRM_Days_Since_Last_Activity__c`, `LDGCRM_Est_Annual_Revenue_fully_ramped__c`, `LDGCRM_Est_First_Year_Revenue__c`, `LDGCRM_Status_Summary_Indicator__c` | Formula fields. The two revenue ones compute *from* the estimate fields this script does set, so Airtable's own revenue columns aren't migrated — they recompute themselves. |
 | `priority_type__c` | **Do not write this field.** Un-prefixed, owned by TTS OTCRM, and shared with the `TTS_OTCRM_Opportunity` record type. Its *label* is "Priority Type", identical to the Airtable column name — which is exactly what makes it a trap. Airtable's Priority Type belongs in `LDGCRM_Level_of_Priority__c`; see below. |
-| `LDGCRM_Existing_Identity_Platforms__c`, `LDGCRM_Alternative_Identity_Platforms__c` | The Airtable columns hold `rec...` IDs pointing at a table this migration doesn't pull, while the Salesforce fields are multipicklists of vendor names. Unresolvable without that table — same open question as Partner Accounts' `Escalated User Support Cases`. |
 | `LDGCRM_Partner_Account__c` | **Structural mismatch — deliberately left blank pending a team decision, not an oversight.** See the dedicated analysis below. |
 | `Requested Features`, `Current Blockers`, `Opportunity Status Changes`, `Meetings`, `Opportunity Contacts`, `Applications` | Linked-record arrays that drive other objects/chunks (Meetings, OpportunityContactRole) or reference untracked tables. |
 | `Market Segment`, `Market Segment (from Account Name)`, `(c) *` rollups, `Created By`, `Updated?`, `Months in Status`, `Meeting Count`, `(legacy data) *` | Airtable-side rollups/computed/system columns, or superseded by the Flow-derived Market Segment. |

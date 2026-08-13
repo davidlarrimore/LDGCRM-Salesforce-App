@@ -19,6 +19,28 @@ migration into Salesforce.
 **This list grows as more tables get migrated** (Contacts, Opportunities, and a few others haven't
 been reviewed yet as of 2026-08-13) — it isn't the final/complete list, just everything found so far.
 
+### How to read the status on each item
+
+Items are **never deleted from this document when they're fixed** — they're marked resolved and kept,
+so you can see what's already been done and nobody re-raises something that's closed. Every item
+carries one of:
+
+| Status | Meaning |
+| --- | --- |
+| 🔴 **Open** | Nothing has changed yet. Still blocking or still worth doing. |
+| 🟡 **Partially resolved** | Some of it is done; the item says exactly what's left and who owns it. |
+| ✅ **Resolved** | Done. Kept for the record, with the date and what changed. |
+
+**A resolved item does not mean the records have loaded yet.** Fixing the data unblocks a record; it
+still migrates on the next run. The [Resolved log](#-resolved-log) at the bottom is the short version
+— every closure in date order.
+
+Progress against a specific load attempt is tracked separately, in
+[`docs/operations/RELOAD-QA-CHECKLIST.md`](../operations/RELOAD-QA-CHECKLIST.md). **The two are kept
+in step:** when an item here is resolved, the corresponding expectation in that checklist (row counts,
+"expect N skipped", known-empty fields) is updated in the same change, so a checklist that says
+"expect 142 blocked" never outlives the fix that unblocked them.
+
 ## Blocking — these records can't migrate until fixed
 
 Salesforce requires certain fields to always have a value (e.g. every Partner Account must be linked
@@ -306,7 +328,11 @@ correct `Gov't Employees` on load, so nothing is blocked.
 **What we need:** fix the value in Airtable so it stops propagating. It likely came from a paste out
 of a system that couldn't handle the apostrophe.
 
-### Opportunities: the "Priority Type" field can't be migrated yet
+### Opportunities: the "Priority Type" field can't be migrated yet — 🟡 PARTIALLY RESOLVED
+
+**Status: 🟡 Partially resolved.** Done on 2026-08-13: a malformed Salesforce picklist value (all six
+labels concatenated into one string) was deleted, and the correct target field was identified as
+Level of Priority. Still outstanding: that field has no values to receive the data.
 
 **Still open, and still not an Airtable problem — no action needed from the Airtable data owners.**
 Airtable's Priority Type values (`Strategic`, `High Volume`, `IdV Upgrade`, `Leadership Escalation`,
@@ -323,12 +349,40 @@ different thing (how important an opportunity is) than Priority Type does (why i
 Until then this field isn't migrated. **564 Airtable records have a value**, 462 of them on
 Opportunities already loaded and waiting to receive it.
 
-### Opportunities: identity-platform columns point at an untracked table
+### Opportunities: identity-platform columns point at an untracked table — ✅ RESOLVED 2026-08-13
 
-`Existing Identity Platforms` (259 records) and `Alternative Identity Platforms` (176 records) link to
-a separate Airtable table that isn't part of the nine this migration reads, so we can't resolve them
-to the vendor names Salesforce expects. Same open question as Partner Accounts'
-`Escalated User Support Cases` below.
+**Status: ✅ Resolved. Thank you — this one is done and needs nothing further from you.**
+
+`Existing Identity Platforms` (259 records) and `Alternative Identity Platforms` (176 records) used to
+link to a separate Airtable table that isn't part of the nine this migration reads, so we couldn't
+resolve them to the vendor names Salesforce expects.
+
+**Both columns have since been converted to plain multi-selects** holding the vendor names directly,
+which is exactly what the Salesforce fields wanted. The per-value counts came through the conversion
+unchanged (272 and 181 tags), so no data was lost doing it. Both fields now migrate.
+
+**451 of the 453 selections migrate.** Two vendor names are spelled differently on the two sides and
+the migration maps those explicitly rather than asking you to change them, so **no Airtable edit is
+needed**. The remaining gap is Salesforce configuration, for the config owner rather than the
+Airtable owners:
+
+- **`CLEAR`** (2 records, on `Alternative Identity Platforms`) has no matching Salesforce value at
+  all, so those two selections are dropped. We deliberately did *not* file it under a similar-looking
+  vendor — CLEAR is its own company. **Add `CLEAR`** to both fields to migrate them, remembering the
+  Login.gov record type as well as the field itself (a value the record type omits is rejected at
+  load even when the field defines it).
+- **`Ping / Forgerock`** (6 records) migrates today, but into a Salesforce value spelled
+  **`Ping/Foregerock`** — an extra "e" misspelling ForgeRock, the vendor Ping Identity acquired.
+  Airtable's spelling is the correct one; **worth correcting in Salesforce**, after which the mapping
+  becomes a straight pass-through.
+
+Salesforce also still defines eight vendors Airtable no longer offers — Google CiviForm, ManTech,
+Granicus, Shibboleth, Exostar, Jakobsen Id, Mattr and Idemia — left over from the old linked table.
+Nothing migrates into them; harmless, but worth a look when these picklists are next tidied.
+
+> **One note for the migration team, not for Airtable:** this only works from an export pulled
+> *after* the conversion. The transform now refuses to run against an older export rather than
+> silently dropping the 453 affected values — see the Resolved log entry below.
 
 ### Contacts: 1,087 of 1,599 have no name — the single biggest data gap found
 
@@ -514,6 +568,17 @@ Accounts, noted above), `GSA-IAE` and `GSA-OIT` (each show one more than their A
   `Increase Adoption`, etc.) with no destination on the Salesforce side yet. Not blocking anything,
   but if this data matters going forward, it needs either a dedicated field or a decision to leave it
   out.
+
+## ✅ Resolved log
+
+Closed items in date order — the short version of what's already been fixed. Nothing here needs
+action; it exists so progress is visible and closed items don't get re-raised. Each entry links back
+to the full item above, which is kept in place rather than deleted.
+
+| Date | Item | What changed | Who fixed it | Effect |
+| --- | --- | --- | --- | --- |
+| 2026-08-13 | [Opportunities: identity-platform columns](#opportunities-identity-platform-columns-point-at-an-untracked-table---resolved-2026-08-13) | `Existing Identity Platforms` and `Alternative Identity Platforms` converted from linked records to plain multi-selects holding vendor names | **Airtable data owners** | Both fields now migrate. 272 + 181 tags, none lost in the conversion. 3 spelling differences mapped in code, no Airtable edit needed. ⚠️ Requires an Airtable export pulled *after* the conversion — the 2026-08-12 export predates it, and `Build-OpportunityLoad.ps1` now **fails loudly** rather than dropping the 453 stale values silently. |
+| 2026-08-13 | [Opportunities: "Priority Type"](#opportunities-the-priority-type-field-cant-be-migrated-yet---partially-resolved) *(partial)* | Deleted the malformed picklist value that was all six labels concatenated into one string; confirmed the correct target field is Level of Priority, not the identically-labelled TTS OTCRM field | Salesforce config owner | Unblocks the *analysis*, not the data. Still needs the seven values added to Level of Priority before any of the 462 rows can load. |
 
 ## Already decided, listed here for visibility (not asks)
 

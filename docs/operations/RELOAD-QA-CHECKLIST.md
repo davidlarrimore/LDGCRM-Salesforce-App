@@ -212,10 +212,55 @@ records but sacrifices the non-revert property on re-runs. That is a real tradeo
         *promotion* and goes through outbound/inbound change sets. CLI deploys from this repo are
         limited to **deleting** corrupted or incorrect metadata. Note QA can trail Dev by a change
         set, so confirm against the environment you are actually loading.
-- [ ] **Decide whether to re-pull Airtable.** `Get-AirtableExport.ps1` **overwrites**
-      `data/airtable-exports/` in place. A fresh pull reflects today's Airtable but shifts every count
-      below. To keep this run comparable to the figures here, **do not re-pull**. Current export:
-      2026-08-12.
+      - ℹ️ **To check what a change set actually carries, retrieve it by name** — a change set's Name
+        works as an unmanaged package name, and this is the only way to see its contents (change sets
+        have no query API). Read-only, and `--target-metadata-dir` keeps it out of the source tree:
+        ```
+        cd sfdx
+        sf project retrieve start --package-name "LDGCRM_Sprint_1_12" --target-org <alias> --target-metadata-dir <scratch> --unzip
+        ```
+        Components land in metadata format (`objects/Opportunity.object`, one file per object with
+        its fields and record types inline) — **not** the `force-app` source layout. Expect the record
+        type here to carry **fewer** `<picklistValues>` blocks than a full object retrieve (13 vs 33
+        for `Login_gov`): a change set only carries the fields it actually includes, so the other
+        apps' picklists are absent. That is correct, not lossy — unlike the targeted `RecordType:`
+        retrieve warned about above.
+      - ✅ **Checked 2026-08-13 — `LDGCRM_Sprint_1_12` carries both identity-platform fields
+        completely.** `LDGCRM_Existing_Identity_Platforms__c` and
+        `LDGCRM_Alternative_Identity_Platforms__c` are both present (`MultiselectPicklist`,
+        `restricted=true`, 25 values each) **and** the `Login_gov` record type in the same change set
+        assigns all 25 values to each. No promotion gap — these two fields do not need change-set work
+        before a QA/Full/Prod load. **This is the state to re-verify, not to assume**, if the change
+        set is regenerated.
+      - ⚠️ **The two identity-platform config fixes below are NOT in any change set yet.** The change
+        set carries `Ping/Foregerock` (the ForgeRock misspelling) and has **no `CLEAR` value at all**.
+        Both fixes are picklist-value changes, so both are change-set promotions. If they land,
+        `$IdentityPlatformMap` in `Build-OpportunityLoad.ps1` must change in the same cut — see §4d.
+- [ ] ⚠️ **Re-pull Airtable — this is no longer optional for Opportunity.** `Get-AirtableExport.ps1`
+      **overwrites** `data/airtable-exports/` in place, and a fresh pull shifts every count below, so
+      this used to be a judgement call. It isn't any more: Airtable converted the two
+      identity-platform columns from linked records to multi-selects (see the
+      [resolved log](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md#-resolved-log)), and
+      **`Build-OpportunityLoad.ps1` now hard-fails against any export predating that conversion**
+      rather than silently dropping 453 values:
+      ```
+      453 identity-platform values are still Airtable rec... IDs, so this export predates the
+      linked-record -> multi-select conversion ... Re-pull before building
+      ```
+      The 2026-08-12 export **predates it**. Re-pull, then treat every count in this checklist as
+      needing re-baselining against the new export rather than as a pass/fail target:
+      `.\scripts\data-migration\Get-AirtableExport.ps1`
+      This is a deliberate hard failure, not a bug to work around — the whole point is that a stale
+      export can no longer produce a quietly incomplete load.
+      - ⚠️ **The re-pull moves more than the identity columns, so re-baseline before judging any
+        number.** Measured 2026-08-13: Airtable is down to **904 Opportunity rows from the export's
+        928 — 24 deleted** since 2026-08-12, on top of whatever changed in the other ~70 columns.
+        Every Opportunity figure in §4d was derived from the 928-row export, so **"742 ready" will not
+        reproduce, and a lower number is not evidence of a regression.** Record the new baseline as
+        you go, and diff *transform behaviour* (skip reasons, dropped-tag counts) rather than absolute
+        totals. Deleted rows do **not** disappear from Salesforce on their own: an upsert never
+        deletes, so anything already loaded and since removed from Airtable stays until someone
+        removes it deliberately — out of scope here, but do not mistake it for a load failure.
 - [ ] Confirm `logs/` and `data/` are still gitignored — both carry applicant PII.
 
 ---
@@ -546,6 +591,24 @@ Market Segment (already loaded - do not touch)
       19/19 once on record-type picklist narrowing that `sf sobject describe` does not reveal.
 - [ ] Verify Market Segment came from the before-save Flow, and revenue formulas computed (~467
       non-zero).
+- [ ] ✅ **Identity platforms now load** — newly unblocked, so this is the first reload that carries
+      them and the counts below are the *pre-load transform* figures, not yet proven post-load.
+      Both fields and their full 25-value `Login_gov` assignments are confirmed present in
+      `LDGCRM_Sprint_1_12` (checked 2026-08-13, see §1), so **no change set is needed to enable them**
+      — but re-verify in the environment you are loading, which may trail Dev by a change set.
+      Against the Airtable state of 2026-08-13: **259 Opportunities with Existing Identity Platforms,
+      175 with Alternative** (176 have a value; one row's only tag is `CLEAR`, which drops, leaving it
+      blank). Both are restricted multipicklists, so a bad tag fails the **whole row** — if this
+      object starts failing rows it did not fail before, suspect these two fields first.
+- [ ] ℹ️ **Expect exactly 2 dropped identity-platform tags, both `CLEAR`, in
+      `Opportunity-value-review-<ts>.csv`.** Salesforce has no `CLEAR` value. Not a bug and not an
+      Airtable problem — it needs adding to both fields **and** the `Login_gov` record type, by change
+      set. **More than 2 drops means Airtable added a vendor** the map doesn't know: read the review
+      CSV, add it to `$IdentityPlatformMap`, and confirm the Salesforce value exists before re-running.
+      A **hard failure** naming `rec...` IDs instead means the export is stale — re-pull, see §1.
+- [ ] ℹ️ Airtable's `Ping / Forgerock` lands as **`Ping/Foregerock`** — the Salesforce value misspells
+      ForgeRock. Expected (6 rows), mapped deliberately. Once the Salesforce value is corrected to
+      `Ping/Forgerock`, update `$IdentityPlatformMap` in the same change or those 6 rows start failing.
 - [ ] ℹ️ **Level of Priority will be EMPTY on every Opportunity. That is expected, not a bug.**
       Airtable's `Priority Type` (**462 of the 742** have a value) maps to
       `LDGCRM_Level_of_Priority__c`, which is `restricted=true` and currently defines only
