@@ -316,7 +316,7 @@ two teams.
 
 | # | Rule | Why |
 | --- | --- | --- |
-| 1 | We read `Team Name` and `Team UUID` **only** from this table. | It's the only place they're recorded. |
+| 1 | We read `Team Name`, `Team UUID` and `Partner Portal Admin Email` from this table. | The team is recorded nowhere else; the admin is also recorded on Contacts (rule 10). |
 | 2 | The Application is updated **once**, from the value its issuer strings agree on. | The team belongs to the Application; the per-issuer-string copies are duplication. |
 | 3 | **`#N/A` is treated as empty**, not as text. | It's a failed-lookup artifact. Loading it would put the literal text `#N/A` into Salesforce as if it were a team name. |
 | 4 | If the copies **all agree** → migrated. | Nothing to decide. **678 Applications.** |
@@ -325,7 +325,9 @@ two teams.
 | 7 | If **no** issuer string has a team → both fields left blank, not reported. | Nothing to migrate and nothing obviously wrong. **182 Applications.** |
 | 8 | A **team name over 50 characters** is left blank, but the Team UUID still migrates. | The Salesforce field holds 50. A cut-off team name would look real while not matching the portal. **6 teams, 8 Applications.** |
 | 9 | Issuer strings linked to **no Application** are ignored. | There's no record to put the team on. **7 rows.** |
-| 10 | **The issuer string values themselves are not migrated.** Only the team is. | See the note at the very bottom of this document — the Salesforce field is one 40-character value, and most issuer strings are longer than that. |
+| 10 | **`Partner Portal Admin Email` is read too**, and marks that person as a Partner Portal Admin on the Application. Matched to a contact by email address. | It's one of two places this is recorded — see the disagreement item below. |
+| 11 | If that admin **isn't already a contact on the Application**, the link is **created**. | A portal admin plainly is a contact on that application. **86 links** are created this way. |
+| 12 | **The issuer string values themselves are not migrated.** | See the note at the very bottom of this document — the Salesforce field is one 40-character value, and most issuer strings are longer than that. |
 
 Two consequences worth being explicit about, because they're easy to misread:
 
@@ -461,6 +463,46 @@ ignored (rule 9). Most have no usable team anyway, but two are worth a look:
 **Also worth confirming, though nothing looks wrong:** **182 Applications have no team on any of their
 issuer strings.** These are *not* reported individually — there's simply nothing to migrate. But it's
 a quarter of the table, so it's worth a sanity check that the gap is expected.
+
+### Issuer Strings: Partner Portal Admins are recorded in two places that disagree — 🔴 OPEN
+
+**New 2026-08-13.** Who administers an application in the partner portal is recorded **twice** in
+Airtable, and the two don't match:
+
+1. **`Roles` on the Contacts table** — a contact whose Roles include `Partner Portal Admin`.
+2. **`Partner Portal Admin Email` on the Issuer Strings table** — names the admin per issuer string.
+
+In Salesforce this is a single checkbox on the Application-Contact record, so both have to feed it.
+**We use both** — someone is marked an admin if *either* source says so, never only where they agree.
+Neither is treated as more correct than the other, because both were entered deliberately.
+
+| | Pairs |
+| --- | --- |
+| Both sources agree | **882** |
+| `Roles` says admin, Issuer Strings doesn't name them | **117** |
+| Issuer Strings names them, `Roles` doesn't say admin | **86** |
+
+**The 86 are the ones worth your attention.** In every one of those cases the person **isn't recorded
+as a contact on that application at all** — 34 people across 68 applications. For example
+`sockalingam.ramakrishnan@dol.gov` is named as the portal admin for *State of Alaska Unemployment
+Insurance*, but isn't listed among that application's contacts. We now create the missing
+application-contact link for them, since a portal admin plainly *is* a contact on that application —
+but the gap is real, and it means the Contacts table is missing 86 genuine relationships.
+
+**Good news:** all 239 admin email addresses match a contact that exists in Airtable, so nobody is
+lost. That's checked on every run and will be reported if it ever stops being true.
+
+**What we need — two things, neither urgent:**
+
+1. **Worth a spot-check of the 117**, where someone's Roles say Partner Portal Admin but they aren't
+   named as the admin on any of that application's issuer strings. Some will be people who *were* the
+   admin and have since handed it over — in which case the Role is stale and worth clearing.
+2. **Longer term, pick one place to record this.** Two sources for one fact will keep drifting apart.
+   The Issuer Strings column is the more precise of the two (it's per application; a Role applies to
+   every application on that contact row at once), but that's your call, not ours.
+
+Full per-flag detail, including which source asserted each one, is in
+`logs/data-migration/ApplicationContact-admin-source-*.csv`.
 
 ### Issuer Strings: 6 partner-portal team names are too long for Salesforce — 🔴 OPEN
 

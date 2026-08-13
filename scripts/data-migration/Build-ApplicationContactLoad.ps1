@@ -45,14 +45,36 @@
        second row for the same pair, so re-running is idempotent and the Flow
        never has a duplicate to reject. (35 chars against the field's 50 - fits.)
 
-    3. THE PARTNER PORTAL ADMIN FLAG COMES FROM Contacts.Roles, NOT FROM THE
-       APPLICATIONS TABLE. Applications has a "Partner Portal Admin" column
-       that looks like the obvious source, but it is a flattened roll-up of all
-       the linked contacts' Roles and is NOT positionally aligned with
-       "Contacts Record ID" - the two arrays differ in length on 709 of 875
-       rows, so there is no way to tell which contact a given entry refers to.
-       Using it would assign the flag essentially at random. Contacts.Roles on
-       the individual row is the real per-association source.
+    3. THE PARTNER PORTAL ADMIN FLAG HAS TWO REAL SOURCES, AND THEY ARE UNIONED.
+       Not the Applications table's "Partner Portal Admin" column, though - that
+       looks like the obvious source but is a flattened roll-up of all the linked
+       contacts' Roles, NOT positionally aligned with "Contacts Record ID" (the
+       arrays differ in length on 709 of 875 rows), so there is no way to tell
+       which contact an entry refers to. Using it would assign the flag
+       essentially at random. It stays excluded.
+
+       The two real sources:
+         a) Contacts.Roles on the individual Airtable row contains
+            "Partner Portal Admin". The original source; per-association,
+            because Airtable duplicates contact rows per association.
+         b) NEW 2026-08-13: the ISSUER STRINGS table's "Partner Portal Admin
+            Email" column, which names the admin per issuer string, and each
+            issuer string links to its Application(s).
+
+       Measured against the 2026-08-13 export, the two agree on 882 pairs but
+       each sees some the other doesn't - Roles-only 117, Issuer-Strings-only 86.
+       They are UNIONed (admin if EITHER says so) rather than intersected: both
+       are authored data, and dropping a flag because the other source is silent
+       would lose real information.
+
+       ** The 86 matter more than the count suggests: NONE of them had a junction
+       row at all. ** They are 34 people administering 68 Applications they are
+       not recorded as contacts on in the Contacts table (e.g. a DOL admin on
+       "State of Alaska Unemployment Insurance"). So Issuer Strings does not just
+       set a flag on existing pairs - it CREATES associations, and skipping it
+       would have lost the association entirely, not merely mislabelled it.
+       Per the project owner (2026-08-13): a Partner Portal Admin should be an
+       Application Contact with the checkbox checked.
 
     Fields NOT written, deliberately:
       - Name: the object's nameField is an AUTONUMBER. Supplying it fails.
@@ -159,15 +181,100 @@ foreach ($Row in $AirtableContacts) {
                 ContactExternalId     = $ContactExternalId
                 ApplicationExternalId = $ApplicationId
                 PartnerPortalAdmin    = $false
+                AdminFromRoles        = $false
+                AdminFromIssuerString = $false
+                FromIssuerStringOnly  = $false
                 SourceRowIds          = [System.Collections.Generic.List[string]]::new()
             }
         }
         # OR the flag across every source row that produced this pair: if any
         # of the merged rows says this person is a Partner Portal Admin on this
         # Application, the junction says so too.
-        if ($IsPartnerPortalAdmin) { $Pairs[$Key].PartnerPortalAdmin = $true }
+        if ($IsPartnerPortalAdmin) {
+            $Pairs[$Key].PartnerPortalAdmin = $true
+            $Pairs[$Key].AdminFromRoles = $true
+        }
         $Pairs[$Key].SourceRowIds.Add($Row.id)
     }
+}
+
+# Snapshot BEFORE the Issuer Strings pass. The merge-collision figure below is
+# derived as (raw pairs - distinct pairs), which is only meaningful against the
+# pairs the Contacts table produced; Issuer Strings adds pairs that had no raw
+# row at all, and counting those would silently understate the collisions.
+$PairsFromContactRows = $Pairs.Count
+
+# --- Second source: Issuer Strings' "Partner Portal Admin Email" -------------
+# See design point 3. This both SETS the flag on pairs that already exist and
+# CREATES pairs that the Contacts table never recorded - the latter is the
+# majority of what it contributes, so treating it as flag-only would silently
+# drop the associations.
+#
+# Matching is by EMAIL, through the same Get-CleanContactEmail used to build the
+# merged Contacts, so an address that is dirty in Airtable (embedded name/phone,
+# stray whitespace) resolves the same way on both sides instead of missing.
+Write-Host ""
+Write-Host "Loading Airtable Issuer Strings for Partner Portal Admins..." -ForegroundColor Cyan
+$AirtableIssuerStrings = Import-AirtableTable -Label "Issuer Strings"
+Write-Host "$($AirtableIssuerStrings.Count) Airtable Issuer String rows loaded."
+
+$ContactExternalIdByEmail = @{}
+foreach ($Row in $AirtableContacts) {
+    $Email = Get-CleanContactEmail $Row.fields.Email
+    if ($Email -and $RowToContactExternalId[$Row.id]) {
+        $ContactExternalIdByEmail[$Email] = $RowToContactExternalId[$Row.id]
+    }
+}
+
+$UnmatchedAdminEmails = @{}
+$AdminPairsFromIssuerStrings = 0
+
+foreach ($IssuerRow in $AirtableIssuerStrings) {
+    $RawApplications = $IssuerRow.fields.'Applications'
+    if (-not $RawApplications) { continue }                  # null-check before @()
+    if (-not $IssuerRow.fields.'Partner Portal Admin Email') { continue }
+
+    foreach ($RawEmail in @($IssuerRow.fields.'Partner Portal Admin Email')) {
+        $Email = Get-CleanContactEmail $RawEmail
+        if (-not $Email) { continue }
+
+        if (-not $ContactExternalIdByEmail.ContainsKey($Email)) {
+            # Currently 0 of 239 - but an admin who isn't a Contact at all can't
+            # be given a junction row, so it must be reported rather than assumed
+            # impossible.
+            $UnmatchedAdminEmails[$Email] = $true
+            continue
+        }
+
+        $ContactExternalId = $ContactExternalIdByEmail[$Email]
+
+        foreach ($ApplicationId in @($RawApplications)) {
+            if ([string]::IsNullOrWhiteSpace([string]$ApplicationId)) { continue }
+
+            $Key = "$ContactExternalId|$ApplicationId"
+            if (-not $Pairs.ContainsKey($Key)) {
+                $Pairs[$Key] = [PSCustomObject]@{
+                    ContactExternalId     = $ContactExternalId
+                    ApplicationExternalId = [string]$ApplicationId
+                    PartnerPortalAdmin    = $false
+                    AdminFromRoles        = $false
+                    AdminFromIssuerString = $false
+                    FromIssuerStringOnly  = $true      # no Contacts-table association at all
+                    SourceRowIds          = [System.Collections.Generic.List[string]]::new()
+                }
+                $AdminPairsFromIssuerStrings++
+            }
+
+            $Pairs[$Key].PartnerPortalAdmin = $true
+            $Pairs[$Key].AdminFromIssuerString = $true
+        }
+    }
+}
+
+Write-Host "$AdminPairsFromIssuerStrings association(s) exist ONLY because Issuer Strings names an admin."
+if ($UnmatchedAdminEmails.Count -gt 0) {
+    Write-Host ("$($UnmatchedAdminEmails.Count) Partner Portal Admin email(s) match no Airtable Contact - " +
+                "no junction row can be created for them. See the review CSV.") -ForegroundColor Yellow
 }
 
 $UpsertRows = [System.Collections.Generic.List[object]]::new()
@@ -207,11 +314,57 @@ $LogDir = Get-LogDirectory -Category "data-migration"
 
 $UpsertFile = Join-Path $LoadDir "LDGCRM_Application_Contact__c-upsert.csv"
 $SkippedFile = Join-Path $LogDir "ApplicationContact-skipped-$Timestamp.csv"
+$AdminSourceFile = Join-Path $LogDir "ApplicationContact-admin-source-$Timestamp.csv"
 
 if ($UpsertRows.Count -gt 0) { Export-DataLoaderCsv -InputObject $UpsertRows.ToArray() -Path $UpsertFile }
 if ($SkippedRows.Count -gt 0) { $SkippedRows | Export-Csv -LiteralPath $SkippedFile -NoTypeInformation -Encoding UTF8 }
 
+# Provenance for every admin flag. Written because the two sources disagree on a
+# few hundred pairs and the union hides which one asserted what - without this,
+# "why is this person an admin?" is unanswerable after the fact.
+$AdminSourceRows = [System.Collections.Generic.List[object]]::new()
+foreach ($Key in $Pairs.Keys) {
+    $Pair = $Pairs[$Key]
+    if (-not $Pair.PartnerPortalAdmin) { continue }
+
+    $Source = if ($Pair.AdminFromRoles -and $Pair.AdminFromIssuerString) { "BOTH" }
+              elseif ($Pair.AdminFromRoles) { "Contacts.Roles only" }
+              else { "Issuer Strings only" }
+
+    $AdminSourceRows.Add([PSCustomObject]@{
+        ContactExternalId     = $Pair.ContactExternalId
+        ApplicationExternalId = $Pair.ApplicationExternalId
+        AdminSource           = $Source
+        NewAssociation        = if ($Pair.FromIssuerStringOnly) { "YES - no Contacts-table link" } else { "no" }
+        Note                  = "Flag is the UNION of Contacts.Roles and Issuer Strings' Partner Portal Admin Email. 'Issuer Strings only' rows are ones Contacts.Roles does not call an admin; 'Contacts.Roles only' rows are ones Issuer Strings does not name. Both are authored data, so neither is dropped."
+    })
+}
+foreach ($Email in $UnmatchedAdminEmails.Keys) {
+    $AdminSourceRows.Add([PSCustomObject]@{
+        ContactExternalId     = "(none - email matched no Contact)"
+        ApplicationExternalId = ""
+        AdminSource           = "Issuer Strings only"
+        NewAssociation        = "NO - cannot be created"
+        Note                  = "Partner Portal Admin email '$Email' does not match any Airtable Contact, so no junction row can be created. Needs the person added as a Contact in Airtable."
+    })
+}
+if ($AdminSourceRows.Count -gt 0) {
+    $AdminSourceRows | Export-Csv -LiteralPath $AdminSourceFile -NoTypeInformation -Encoding UTF8
+}
+
 $PartnerPortalAdminCount = @($UpsertRows | Where-Object { $_.LGDCRM_P3_Partner_Portal_Admin__c -eq "true" }).Count
+$AdminBoth       = @($AdminSourceRows | Where-Object { $_.AdminSource -eq "BOTH" }).Count
+$AdminRolesOnly  = @($AdminSourceRows | Where-Object { $_.AdminSource -eq "Contacts.Roles only" }).Count
+$AdminIssuerOnly = @($AdminSourceRows | Where-Object { $_.AdminSource -eq "Issuer Strings only" -and $_.ApplicationExternalId }).Count
+
+# How many of the Issuer-Strings-only associations actually made the load - the
+# rest wait on their Application, same as any other skipped pair.
+$LoadedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+foreach ($Loaded in $UpsertRows) { $LoadedKeys.Add($Loaded.LDGCRM_External_ID__c) | Out-Null }
+$AdminIssuerOnlyLoaded = 0
+foreach ($Key in $Pairs.Keys) {
+    if ($Pairs[$Key].FromIssuerStringOnly -and $LoadedKeys.Contains($Key)) { $AdminIssuerOnlyLoaded++ }
+}
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
@@ -219,12 +372,32 @@ Write-Host " APPLICATION-CONTACT PREP COMPLETE" -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host ("{0,-54} {1,8:N0}" -f "Raw (Airtable row, Application) pairs", $RawPairCount)
-Write-Host ("{0,-54} {1,8:N0}" -f "Distinct (Contact, Application) pairs", $Pairs.Count)
-Write-Host ("{0,-54} {1,8:N0}" -f "  collisions collapsed by the Contact merge", ($RawPairCount - $Pairs.Count))
+Write-Host ("{0,-54} {1,8:N0}" -f "Distinct (Contact, Application) pairs", $PairsFromContactRows)
+Write-Host ("{0,-54} {1,8:N0}" -f "  collisions collapsed by the Contact merge", ($RawPairCount - $PairsFromContactRows))
+Write-Host ("{0,-54} {1,8:N0}" -f "  + associations added by Issuer Strings", $AdminPairsFromIssuerStrings)
+Write-Host ("{0,-54} {1,8:N0}" -f "Total distinct pairs", $Pairs.Count)
 Write-Host ("{0,-54} {1,8:N0}" -f "Ready for upsert (both sides loaded)", $UpsertRows.Count)
 Write-Host ("{0,-54} {1,8:N0}" -f "Skipped (a side isn't loaded yet)", $SkippedRows.Count)
-Write-Host ("{0,-54} {1,8:N0}" -f "  ...flagged Partner Portal Admin", $PartnerPortalAdminCount)
 Write-Host ""
+Write-Host ("{0,-54} {1,8:N0}" -f "Flagged Partner Portal Admin, IN THE LOAD", $PartnerPortalAdminCount)
+Write-Host ("{0,-54} {1,8:N0}" -f "  ...of which Issuer Strings added the association", $AdminIssuerOnlyLoaded)
+Write-Host ""
+# NOTE: this breakdown counts ALL admin pairs, including ones skipped above
+# because a side isn't loaded - so it does NOT sum to the in-the-load figure.
+# Said explicitly because two admin totals that don't reconcile look like a bug.
+Write-Host ("{0,-54} {1,8:N0}" -f "Admin flags across ALL pairs (incl. skipped)", ($AdminBoth + $AdminRolesOnly + $AdminIssuerOnly))
+Write-Host ("{0,-54} {1,8:N0}" -f "  ...asserted by BOTH sources", $AdminBoth)
+Write-Host ("{0,-54} {1,8:N0}" -f "  ...by Contacts.Roles only", $AdminRolesOnly)
+Write-Host ("{0,-54} {1,8:N0}" -f "  ...by Issuer Strings only", $AdminIssuerOnly)
+if ($UnmatchedAdminEmails.Count -gt 0) {
+    Write-Host ("{0,-54} {1,8:N0}" -f "  admin emails matching no Contact (lost)", $UnmatchedAdminEmails.Count) -ForegroundColor Yellow
+}
+Write-Host ""
+
+if ($AdminSourceRows.Count -gt 0) {
+    Write-Host "Partner Portal Admin provenance (which source asserted each flag):" -ForegroundColor Cyan
+    Write-Host $AdminSourceFile
+}
 
 if ($UpsertRows.Count -gt 0) {
     Write-Host "Upsert file (composite external ID = <contact>|<application>):" -ForegroundColor Cyan

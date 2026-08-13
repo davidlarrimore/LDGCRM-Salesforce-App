@@ -686,10 +686,25 @@ Market Segment (already loaded - do not touch)
 
 ### 4g. `LDGCRM_Application_Contact__c`
 
-- [ ] Expect **1,880/1,880**, keyed on the composite external ID `<contact>|<application>`.
+- [ ] Run `Build-ApplicationContactLoad.ps1`. **Re-baselined 2026-08-13** against the re-pulled export
+      *and* the new second admin source: expect **1,779 ready**, 1,048 skipped waiting on a side,
+      **573 flagged Partner Portal Admin**. (The pre-re-pull figure was 1,880 ready — re-baseline
+      rather than reading the drop as a regression; the Application count in the org moved too.)
+- [ ] Load (upsert). Expect 1,779/1,779, keyed on the composite external ID `<contact>|<application>`.
 - [ ] ⚠️ The duplicate-check Flow throws a hard error, fires only on Create, and **misses intra-batch
       duplicates** — it is not a safety net. Any duplicate error here means the composite key
       regressed.
+- [ ] ℹ️ **The Partner Portal Admin flag now has two sources, UNIONed** — `Contacts.Roles` and the
+      Issuer Strings table's `Partner Portal Admin Email`. Expect **86 associations that exist only
+      because Issuer Strings names an admin** (42 of them in the load; the rest wait on their
+      Application). These are *new junction rows*, not just flags — if the count is 0, the Issuer
+      Strings export is missing or the email match broke.
+- [ ] Review `logs/data-migration/ApplicationContact-admin-source-*.csv` — provenance per flag.
+      Expect **882 `BOTH` / 117 `Contacts.Roles only` / 86 `Issuer Strings only`**, and **0 admin
+      emails matching no Contact**. A non-zero count there means someone administers a portal team but
+      isn't a Contact in Airtable, so no junction row can be created for them.
+      - ⚠️ **This breakdown counts ALL pairs including skipped ones, so it does not sum to the 573 in
+        the load.** That is expected, not an inconsistency.
 
 ### 4i. Notes — LAST, after every other object
 

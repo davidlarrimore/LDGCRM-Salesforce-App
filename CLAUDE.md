@@ -325,6 +325,19 @@ as a safety net. The composite key makes one-row-per-pair structural instead. Tw
 respect: **`LDGCRM_contact__c`** (lower-case `c`) and **`LGDCRM_P3_Partner_Portal_Admin__c`**
 (transposed `LGDCRM_` prefix). `Name` is an AutoNumber — never supply it.
 
+**Partner Portal Admin has TWO sources and they are UNIONed (updated 2026-08-13).**
+`Contacts.Roles` containing `Partner Portal Admin` (999 pairs) *and* the **Issuer Strings** table's
+`Partner Portal Admin Email` (968 pairs), matched by email via `Get-CleanContactEmail`. They agree on
+882; Roles-only 117, Issuer-Strings-only 86. Union, never intersection — both are authored, so a
+silent source is not evidence of absence. **The 86 are the important part: none had a junction row at
+all** (34 people administering 68 Applications the Contacts table never links them to), so Issuer
+Strings *creates associations*, it doesn't just set a flag — reading it as flag-only would lose the
+association entirely. Per the project owner: a Partner Portal Admin should *be* an Application Contact
+with the box checked. Provenance per flag lands in
+`logs/data-migration/ApplicationContact-admin-source-*.csv`. **The Applications table's own
+`Partner Portal Admin` column stays excluded** — it's a roll-up not positionally aligned with
+`Contacts Record ID` (lengths differ on 709 of 875 rows), so it would assign the flag at random.
+
 **Contact is loaded as of 2026-08-13: 1,483 records** (1,483 of 1,487 submitted; 4 rejected by an
 org-level duplicate rule). 1,115 carry an Account and 933 a Partner Account. Record types:
 **Federal for partner-agency contacts, GSA for anyone with an `@gsa.gov` address** (user-confirmed —

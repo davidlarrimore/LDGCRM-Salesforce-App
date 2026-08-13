@@ -1286,12 +1286,12 @@ That merge is exactly what creates the duplicate risk: **2,797 raw (row, Applica
 to 2,764 distinct (Contact, Application) pairs — 33 collisions**, each of which would have been a
 Flow rejection. The Partner Portal Admin flag is OR-ed across every source row feeding a pair.
 
-### Partner Portal Admin comes from `Contacts.Roles`, NOT the Applications column
+### Partner Portal Admin has TWO sources, and one of them creates associations
 
-The Applications table has a `Partner Portal Admin` column (filled on 875 rows) that looks like the
-obvious source. **It is unusable.** It's a flattened roll-up of all the linked contacts' Roles and is
-*not positionally aligned* with `Contacts Record ID` — the two arrays differ in length on **709 of
-875 rows**:
+**The Applications table's `Partner Portal Admin` column is not one of them.** Filled on 875 rows, it
+looks like the obvious source and is **unusable**: a flattened roll-up of all the linked contacts'
+Roles, *not positionally aligned* with `Contacts Record ID` — the two arrays differ in length on
+**709 of 875 rows**:
 
 ```
 App rec09x50mFdLT5MI6 [SIMS]
@@ -1300,10 +1300,46 @@ App rec09x50mFdLT5MI6 [SIMS]
 ```
 
 There is no way to tell which contact a given entry refers to, so using it would assign the flag
-essentially at random. The real per-association source is `Contacts.Roles` on the individual Airtable
-row — which works precisely *because* Airtable duplicates contact rows per association. Same family
-of trap as the Partner Accounts `Opportunities` rollup (see the Opportunity section): **a
-linked-record column that looks authoritative but is derived.**
+essentially at random. Same family of trap as the Partner Accounts `Opportunities` rollup (see the
+Opportunity section): **a linked-record column that looks authoritative but is derived.**
+
+The two real sources:
+
+| Source | What it is | Pairs asserted |
+| --- | --- | --- |
+| **a)** `Contacts.Roles` contains `Partner Portal Admin` | Per-association, because Airtable duplicates contact rows per association. The original source. | 999 |
+| **b)** Issuer Strings' `Partner Portal Admin Email` | **Added 2026-08-13.** Names the admin per issuer string; each issuer string links to its Application(s). | 968 |
+
+They agree on **882** pairs. Each sees some the other doesn't — **117** Roles-only, **86**
+Issuer-Strings-only. **The flag is their UNION**, not their intersection: both are authored data, and
+dropping a flag because the other source is silent would discard real information on the strength of
+an inference. Provenance for every flag is written to
+`logs/data-migration/ApplicationContact-admin-source-*.csv` (`BOTH` / `Contacts.Roles only` /
+`Issuer Strings only`), because after a union nobody can otherwise answer "why is this person an
+admin?".
+
+#### The 86 matter far more than the number suggests
+
+**None of them had a junction row at all.** They are 34 people administering 68 Applications that the
+Contacts table never associates them with — e.g. a DOL admin on `State of Alaska Unemployment
+Insurance`. So source (b) does **not** merely set a flag on rows that already exist; it **creates
+associations**. Treating it as flag-only — the obvious reading of "the admin flag has a second
+source" — would have silently lost the association entirely rather than merely mislabelling it.
+
+Per the project owner (2026-08-13): a Partner Portal Admin **should be** an Application Contact with
+the checkbox checked. That makes creating the row the correct behaviour, not a liberty.
+
+Matching is by **email**, through the same `Get-CleanContactEmail` that built the merged Contacts, so
+an address that is dirty in Airtable (embedded name/phone, stray whitespace) resolves identically on
+both sides. All 239 admin emails currently match a Contact; any that don't are reported rather than
+dropped, since an admin who isn't a Contact can't be given a junction row at all.
+
+**Watch the collision arithmetic.** The summary derives "collisions collapsed by the Contact merge"
+as (raw pairs − distinct pairs). That is only meaningful against pairs the *Contacts* table produced,
+so the count is snapshotted **before** the Issuer Strings pass — otherwise the 86 added pairs
+understate the collisions. Likewise the admin breakdown covers *all* pairs including skipped ones, so
+it deliberately does **not** sum to the in-the-load figure; the summary says so, because two admin
+totals that don't reconcile otherwise read as a bug.
 
 ### Field mapping
 
@@ -2038,13 +2074,14 @@ owners are being asked to agree with.
 
 | # | Rule | Implemented by |
 | --- | --- | --- |
-| 1 | Team Name / Team UUID are read only from the Issuer Strings table. | `Import-AirtableTable -Label "Issuer Strings"` |
+| 1 | Team Name / Team UUID / Partner Portal Admin Email are read from the Issuer Strings table. | `Import-AirtableTable -Label "Issuer Strings"` |
 | 2 | The Application is written once, from the value its issuer strings agree on. | `Get-PortalTeamByApplication` returns one entry per Application |
 | 3 | `#N/A` is a value, not an empty — strip it before anything else. | `Get-CleanIssuerStringValue` |
 | 4–7 | Agreement handling — see the table below. | `Get-PortalTeamByApplication` |
 | 8 | Team name over the field's length → blank the name, keep the UUID, report. | length check against the **live** `describe` length, not a literal |
 | 9 | Issuer strings with no Application link are ignored and counted. | `$OrphanIssuerStrings` |
-| 10 | Issuer string values themselves are never written. | no `LDGCRM_PP_Issuer_Strings__c` column |
+| 10–11 | `Partner Portal Admin Email` marks the person an admin on the Application, **creating the junction row if absent**. | `Build-ApplicationContactLoad.ps1` — see the Application Contact section |
+| 12 | Issuer string values themselves are never written. | no `LDGCRM_PP_Issuer_Strings__c` column |
 
 Measured across the 2026-08-13 export (901 issuer strings → 887 distinct Applications):
 
