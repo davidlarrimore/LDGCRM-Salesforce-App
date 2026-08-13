@@ -87,16 +87,6 @@
         </columns>
         <columns>
             <checkedByDefault>false</checkedByDefault>
-            <field>LDGCRM_Est_Monthly_Active_Users__c</field>
-            <table>LDGCRM_application__c</table>
-        </columns>
-        <columns>
-            <checkedByDefault>false</checkedByDefault>
-            <field>LDGCRM_num_est_annual_idv__c</field>
-            <table>LDGCRM_application__c</table>
-        </columns>
-        <columns>
-            <checkedByDefault>false</checkedByDefault>
             <field>LDGCRM_Broker_Application__c</field>
             <table>LDGCRM_application__c</table>
         </columns>

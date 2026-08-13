@@ -297,11 +297,6 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>LDGCRM_application__c.LDGCRM_Est_Monthly_Active_Users__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
         <field>LDGCRM_application__c.LDGCRM_Estimated_Go_Live_Date__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -503,11 +498,6 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>LDGCRM_application__c.LDGCRM_UX_Meeting_Held__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>LDGCRM_application__c.LDGCRM_num_est_annual_idv__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

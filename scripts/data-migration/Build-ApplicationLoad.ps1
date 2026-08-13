@@ -286,26 +286,53 @@ Write-Host "Querying $OrgAlias for Partner Accounts that actually exist..." -For
 # INACTIVE user as an OwnerId - and this field was populated by an earlier
 # version of Build-PartnerAccountLoad.ps1 that did not filter on IsActive, so
 # stale inactive owners can genuinely be sitting in it.
+#
+# UserType is pulled for a DIFFERENT and less obvious reason, and it has to be
+# checked HERE rather than relying on Resolve-SalesforceOwnerIds. That resolver
+# now excludes non-Standard users, but it governs what goes INTO
+# LDGCRM_Partner_Account_Owner__c - and that field is an ordinary User LOOKUP,
+# which may legitimately point at a Chatter Free or portal user. Ownership is
+# the stricter operation: only UserType = 'Standard' can OWN a record.
+#
+# Reading the lookup and using it as an OwnerId without re-checking is exactly
+# what failed 150 of 688 rows on 2026-08-13 with
+# OP_WITH_INVALID_USER_TYPE_EXCEPTION - and it failed AGAIN after the resolver
+# was fixed, because this path never consulted the resolver at all. A value
+# that is valid in a lookup is not automatically valid as an owner.
 $LoadedPartnerAccounts = @(Invoke-SalesforceQuery `
     -Soql ("SELECT LDGCRM_External_ID__c, LDGCRM_Partner_Account_Owner__c, " +
-           "LDGCRM_Partner_Account_Owner__r.IsActive " +
+           "LDGCRM_Partner_Account_Owner__r.IsActive, " +
+           "LDGCRM_Partner_Account_Owner__r.UserType " +
            "FROM LDGCRM_Partner_Account__c WHERE LDGCRM_External_ID__c != null") `
     -OrgAlias $OrgAlias)
 
 $LoadedPartnerAccountIds = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
 $PartnerAccountOwnerById = @{}
+$OwnerIneligible = 0
 foreach ($Pa in $LoadedPartnerAccounts) {
     if ($Pa.LDGCRM_External_ID__c) {
         $LoadedPartnerAccountIds.Add($Pa.LDGCRM_External_ID__c) | Out-Null
 
-        if ($Pa.LDGCRM_Partner_Account_Owner__c -and $Pa.LDGCRM_Partner_Account_Owner__r.IsActive) {
+        if ($Pa.LDGCRM_Partner_Account_Owner__c -and
+            $Pa.LDGCRM_Partner_Account_Owner__r.IsActive -and
+            $Pa.LDGCRM_Partner_Account_Owner__r.UserType -eq "Standard") {
             $PartnerAccountOwnerById[$Pa.LDGCRM_External_ID__c] = $Pa.LDGCRM_Partner_Account_Owner__c
+        }
+        elseif ($Pa.LDGCRM_Partner_Account_Owner__c -and
+                $Pa.LDGCRM_Partner_Account_Owner__r.IsActive) {
+            # Active, but not a user type that can own a record. Counted
+            # separately so the summary says WHY these fell back, rather than
+            # silently merging them with "no owner recorded".
+            $OwnerIneligible++
         }
     }
 }
 Write-Host "$($LoadedPartnerAccountIds.Count) Partner Accounts present in $OrgAlias."
-Write-Host "$($PartnerAccountOwnerById.Count) of them carry an active owner to pass down to Applications."
+Write-Host "$($PartnerAccountOwnerById.Count) of them carry an owner eligible to pass down to Applications."
+if ($OwnerIneligible -gt 0) {
+    Write-Host "$OwnerIneligible have an ACTIVE owner who cannot own records (non-Standard UserType); those Applications take the fallback owner." -ForegroundColor Yellow
+}
 
 # Same problem, different severity, for the OPTIONAL Opportunity lookup.
 # "Optional" means the column may be blank - it does NOT mean it may point at
@@ -481,8 +508,19 @@ foreach ($Row in $AirtableApplications) {
         LDGCRM_Broker_Application__c                      = if ($BrokerApplication) { "true" } else { "false" }
         LDGCRM_Actual_Go_Live_Date__c                     = Resolve-DateValue -Value $Row.fields.'Actual Go-Live Date' -AirtableField "Actual Go-Live Date" -RecordId $RecId -ReviewList $OverLengthRows
         LDGCRM_Current_Go_Live_Date__c                    = Resolve-DateValue -Value $Row.fields.'Current Go Live Date' -AirtableField "Current Go Live Date" -RecordId $RecId -ReviewList $OverLengthRows
-        LDGCRM_num_est_annual_idv__c                      = $Row.fields.'# of Estimated Annual IdV Transactions'
-        LDGCRM_Est_Monthly_Active_Users__c                = $Row.fields.'# of Estimated Monthly Active Users'
+        # '# of Estimated Annual IdV Transactions' and '# of Estimated Monthly
+        # Active Users' are NOT migrated: their target fields
+        # (LDGCRM_num_est_annual_idv__c, LDGCRM_Est_Monthly_Active_Users__c)
+        # were deleted from the org on 2026-08-13 as no longer wanted, and the
+        # metadata was removed from this repo to match.
+        #
+        # Worth knowing how it surfaced, because the error is unhelpful: Bulk
+        # API rejected the WHOLE batch with
+        #   InvalidBatch : Field name not found : LDGCRM_num_est_annual_idv__c
+        # naming only the FIRST missing column, so fixing that one alone would
+        # have failed again on the second. When this happens, diff every CSV
+        # column against `sf sobject describe` rather than chasing the error
+        # one field at a time.
         LDGCRM_Completed_Customer_Support_Survey__c       = $UrlValues["LDGCRM_Completed_Customer_Support_Survey__c"]
         LDGCRM_Completed_Fraud_Survey__c                  = $UrlValues["LDGCRM_Completed_Fraud_Survey__c"]
         LDGCRM_Completed_Security_Survey_URL__c           = $UrlValues["LDGCRM_Completed_Security_Survey_URL__c"]

@@ -37,14 +37,6 @@
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
-                <field>LDGCRM_Est_Monthly_Active_Users__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>LDGCRM_num_est_annual_idv__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
                 <field>LDGCRM_Broker_Application__c</field>
             </layoutItems>
             <layoutItems>
