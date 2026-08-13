@@ -1,10 +1,32 @@
 #Requires -Version 5.1
 
 <#
+    ============================================================
+    SUPERSEDED 2026-08-13 by Invoke-AccountBootstrap.ps1. PREFER THAT.
+    ============================================================
+    This script seeds Account NAMES ONLY and deduplicates them by name.
+    Invoke-AccountBootstrap.ps1 does everything this does and also rebuilds the
+    parent hierarchy, in multiple passes, against any registered environment.
+
+    Keeping this file for the record, but be aware of what its name-dedupe
+    actually cost: production has 14 Account names borne by two or more
+    DISTINCT Accounts ("Office of the Inspector General" under four different
+    departments, and so on). Collapsing those to one record each means a later
+    hierarchy pass cannot tell which planned Account an existing record
+    represents - 31 rows in the first bootstrap dry run had to be reported as
+    unmappable for exactly this reason. A sandbox seeded by this script will
+    always carry that gap; one seeded by Invoke-AccountBootstrap.ps1 from empty
+    will not.
+
+    Kept, not deleted, because docs/README.md and TRANSFORMATION-RULES.md
+    record what it did on 2026-08-13 and those accounts of the rebuild should
+    stay checkable. Delete it once the bootstrap has been exercised in QA.
+    ============================================================
+
     One-time(ish) bootstrap step, not part of the regular Airtable pipeline
-    chunks - see docs/README.md for how this fits in. Purpose: gsa-peo's
-    Account data has been a moving target and doesn't reliably reflect the
-    real universe of production Accounts, which makes testing
+    chunks - see docs/README.md for how this fits in. Purpose: the Dev
+    sandbox's Account data has been a moving target and doesn't reliably
+    reflect the real universe of production Accounts, which makes testing
     Build-AccountReconciliation.ps1 against it a weak proxy for how the real
     production migration will behave. This script closes that gap by seeding
     gsa-peo with the actual production Account names first, so the
@@ -17,12 +39,15 @@
          set, to prove out the actual production reconciliation+backfill
          process.
 
-    Source: data/PEO PROD Accounts 07162026 (1).xls - a Salesforce report
-    export of production Account data. Despite the .xls extension this is
-    actually an HTML table (a browser "Export" from Salesforce, not a real
-    binary Excel file) - parsed accordingly. Contains real production Account
-    IDs/Names/Owners/hierarchy but, as expected pre-migration, no
-    LDGCRM_External_ID__c/Type/Market Segment.
+    Source: data/peo-prod-accounts-<yyyy-MM-dd>.xls (renamed 2026-08-13 from
+    "PEO PROD Accounts 07162026 (1).xls") - a Salesforce report export of
+    production Account data. Despite the .xls extension this is actually an
+    HTML table (a browser "Export" from Salesforce, not a real binary Excel
+    file). Parsed by the SHARED Import-ProdAccountExport in
+    Common.DataMigration.ps1, which also documents the two traps in the file -
+    notably that its "Account ID" column is misaligned and does NOT identify
+    the row. Contains real production Account Names/Owners/hierarchy but, as
+    expected pre-migration, no LDGCRM_External_ID__c/Type/Market Segment.
 
     Scope (user-confirmed 2026-08-13): Name only. Nothing in this migration's
     scripts reads Account.Owner or the Parent Account hierarchy - only
@@ -46,17 +71,28 @@
 #>
 
 param(
-    [string]$OrgAlias = "gsa-peo",
+    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [string]$Environment = "Dev",
+
+    # Empty = use the environment's registered alias (scripts/common/Common.Orgs.ps1).
+    # Set this only to reach an org that isn't in the registry; doing so skips
+    # the registry's identity checks.
+    [string]$OrgAlias = "",
     [string]$ApiVersion = "67.0",
-    # Two levels up from scripts/data-migration/ is the repo root - can't call
-    # Get-RepoRoot here since param defaults evaluate before dot-sourcing runs.
-    [string]$SourceFile = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "data\PEO PROD Accounts 07162026 (1).xls")
+
+    # Empty = newest data/peo-prod-accounts-<yyyy-MM-dd>.xls, resolved after
+    # dot-sourcing by Resolve-ProdAccountExportPath. (Param defaults evaluate
+    # before dot-sourcing, so it can't be resolved here.) The export was
+    # renamed from "PEO PROD Accounts 07162026 (1).xls" on 2026-08-13.
+    [string]$SourceFile = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\common\Common.ps1")
 . (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
+
+$OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-ProdAccountSeed"
 
@@ -70,64 +106,36 @@ function Get-NormalizedName {
     return $Name.Trim().ToLowerInvariant()
 }
 
-function ConvertFrom-HtmlEntities {
-    param([string]$Text)
-
-    if (-not $Text) { return $Text }
-
-    return $Text -replace '&amp;', '&' -replace '&lt;', '<' -replace '&gt;', '>' `
-                 -replace '&quot;', '"' -replace '&#39;', "'" -replace '&nbsp;', ' '
-}
-
 try {
 
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host " PRODUCTION ACCOUNT SEED PREP (production export -> gsa-peo)" -ForegroundColor Cyan
+Write-Host " PRODUCTION ACCOUNT SEED PREP (production export -> $OrgAlias)" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "This script is READ-ONLY against Salesforce. No records are written." -ForegroundColor Yellow
 Write-Host ""
 
-if (-not (Test-Path -LiteralPath $SourceFile)) {
-    throw "Production Account export not found: $SourceFile"
+if (-not $SourceFile) {
+    $SourceFile = Resolve-ProdAccountExportPath
+}
+
+if (-not $SourceFile) {
+    throw "No production Account export found. Expected data/peo-prod-accounts-<yyyy-MM-dd>.xls"
 }
 
 # ============================================================
 # PARSE THE SOURCE (HTML table saved with an .xls extension)
 # ============================================================
 
+# Parsing now goes through the SHARED Import-ProdAccountExport in
+# Common.DataMigration.ps1, which Invoke-AccountBootstrap.ps1 also uses. It
+# used to be a private copy here; two parsers over one quirky file is how the
+# two scripts end up disagreeing about what's in it.
 Write-Host "Parsing production Account export..." -ForegroundColor Cyan
-$Html = Get-Content -LiteralPath $SourceFile -Raw -Encoding UTF8
+Write-Host "  $SourceFile"
 
-$RowMatches = [regex]::Matches($Html, '<tr>(.*?)</tr>')
-$AllRows = [System.Collections.Generic.List[string[]]]::new()
-
-foreach ($RowMatch in $RowMatches) {
-    $CellMatches = [regex]::Matches($RowMatch.Groups[1].Value, '<t[hd][^>]*>(.*?)</t[hd]>')
-    $Cells = @($CellMatches | ForEach-Object { ConvertFrom-HtmlEntities ($_.Groups[1].Value.Trim()) })
-    $AllRows.Add($Cells)
-}
-
-if ($AllRows.Count -lt 2) {
-    throw "Expected a header row plus data rows in $SourceFile, found $($AllRows.Count) row(s) total."
-}
-
-$Header = $AllRows[0]
-$NameColumnIndex = [array]::IndexOf($Header, "Account Name")
-
-if ($NameColumnIndex -lt 0) {
-    throw "Couldn't find an 'Account Name' column in $SourceFile. Header found: $($Header -join ' | ')"
-}
-
-$ProdNames = [System.Collections.Generic.List[string]]::new()
-
-for ($i = 1; $i -lt $AllRows.Count; $i++) {
-    $Name = $AllRows[$i][$NameColumnIndex]
-
-    if (-not [string]::IsNullOrWhiteSpace($Name)) {
-        $ProdNames.Add($Name.Trim())
-    }
-}
+$ExportRows = @(Import-ProdAccountExport -Path $SourceFile)
+$ProdNames = @($ExportRows | ForEach-Object { $_.Name })
 
 Write-Host "$($ProdNames.Count) production Account rows parsed."
 
@@ -136,9 +144,9 @@ Write-Host "$($ProdNames.Count) production Account rows parsed."
 # ============================================================
 
 Write-Host ""
-Write-Host "Querying existing gsa-peo Account names..." -ForegroundColor Cyan
+Write-Host "Querying existing $OrgAlias Account names..." -ForegroundColor Cyan
 $ExistingAccounts = @(Invoke-SalesforceQuery -Soql "SELECT Name FROM Account" -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
-Write-Host "$($ExistingAccounts.Count) existing Account records found in gsa-peo."
+Write-Host "$($ExistingAccounts.Count) existing Account records found in $OrgAlias."
 
 $ExistingNames = [System.Collections.Generic.HashSet[string]]::new()
 foreach ($Account in $ExistingAccounts) {
@@ -150,7 +158,7 @@ Write-Host "Looking up the Federal record type ID for Account..." -ForegroundCol
 $RecordTypeResult = @(Invoke-SalesforceQuery -Soql "SELECT Id FROM RecordType WHERE SObjectType = 'Account' AND DeveloperName = 'Federal'" -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
 
 if ($RecordTypeResult.Count -ne 1) {
-    throw "Expected exactly one Account RecordType named 'Federal' in gsa-peo, found $($RecordTypeResult.Count)."
+    throw "Expected exactly one Account RecordType named 'Federal' in $OrgAlias, found $($RecordTypeResult.Count)."
 }
 
 $FederalRecordTypeId = $RecordTypeResult[0].Id
@@ -199,7 +207,7 @@ if ($InsertRows.Count -gt 0) {
 }
 else {
     Write-Host ""
-    Write-Host "No missing Account names found - gsa-peo already has every production Account name. Nothing written to $InsertFile." -ForegroundColor Yellow
+    Write-Host "No missing Account names found - $OrgAlias already has every production Account name. Nothing written to $InsertFile." -ForegroundColor Yellow
 }
 
 # ============================================================
@@ -213,7 +221,7 @@ Write-Host "============================================================" -Foreg
 Write-Host ""
 Write-Host ("{0,-45} {1,8:N0}" -f "Production Account rows (export)", $ProdNames.Count)
 Write-Host ("{0,-45} {1,8:N0}" -f "Duplicate names within the export (deduped)", $DuplicateInSourceCount)
-Write-Host ("{0,-45} {1,8:N0}" -f "Existing gsa-peo Account records", $ExistingAccounts.Count)
+Write-Host ("{0,-45} {1,8:N0}" -f "Existing Account records in the org", $ExistingAccounts.Count)
 Write-Host ("{0,-45} {1,8:N0}" -f "Already present by name (skipped)", ($ProdNames.Count - $DuplicateInSourceCount - $InsertRows.Count))
 Write-Host ("{0,-45} {1,8:N0}" -f "New Accounts to insert", $InsertRows.Count)
 Write-Host ""

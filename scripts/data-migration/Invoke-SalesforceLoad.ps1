@@ -39,7 +39,13 @@ param(
 
     [string]$ExternalIdField = "LDGCRM_External_ID__c",
 
-    [string]$OrgAlias = "gsa-peo",
+    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [string]$Environment = "Dev",
+
+    # Empty = use the environment's registered alias (scripts/common/Common.Orgs.ps1).
+    # Set this only to reach an org that isn't in the registry; doing so skips
+    # the registry's identity checks.
+    [string]$OrgAlias = "",
     [string]$ApiVersion = "67.0",
     [int]$WaitMinutes = 30,
 
@@ -55,6 +61,8 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\common\Common.ps1")
 . (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
+
+$OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Invoke-SalesforceLoad-$ObjectApiName"
 

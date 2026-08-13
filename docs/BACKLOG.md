@@ -12,7 +12,45 @@ Ordered roughly by value, not by effort.
 
 ## 1. Assign record owners from Airtable, not the loading user
 
-**Status:** not started. **Raised:** 2026-08-13 by the Partnerships lead.
+**Status: BUILT 2026-08-13, not yet loaded.** All four decisions below were answered by the
+Partnerships lead on 2026-08-13 and are implemented in the existing `Build-*.ps1` transforms.
+**Raised:** 2026-08-13 by the Partnerships lead.
+
+### Decisions taken (2026-08-13)
+
+1. **Fallback owner:** the loading/integration user.
+2. **Applications** take their **Partner Account's** owner (*not* Airtable's `Account Owner`, which
+   is a rollup from the parent Account).
+3. **Contacts** inherit their **Account's** owner.
+4. **Existing Accounts are left alone** — but the rules are baked into the core transforms rather
+   than applied as a one-off backfill, because a **full wipe and reload** was planned for the same
+   day. There is deliberately no `Build-OwnershipBackfill.ps1`.
+
+### How it was implemented
+
+One shared resolver, `Resolve-SalesforceOwnerIds` in `Common.DataMigration.ps1`, used by every
+transform. The fallback is expressed as a **blank `OwnerId`**, not an explicit Id — Bulk API 2.0
+reads empty as "not supplied", so inserts land on the loading user *and* re-runs don't revert manual
+reassignments. Full rationale, the per-object source table, and the three silent
+email-to-User resolution traps are in [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)'s
+"Record ownership" section.
+
+Coverage produced by the rebuilt transforms:
+
+| Object | Owner resolved | Falls back |
+| --- | --- | --- |
+| Opportunity | 476 of 742 | 266 |
+| `LDGCRM_application__c` | 511 of 688 | 177 |
+| Contact | 1,116 of 1,943 | 827 |
+| Meetings (when built) | 1,315 of 1,845 | 530 |
+
+**⚠️ Contact ownership can't be verified in gsa-peo.** The 2026-08-13 rebuild seeded Accounts
+Name-only, so 1,346 of 1,350 Accounts are owned by the loading user — Contacts inherit correctly, but
+inherit *that*. The code is right; the sandbox just can't demonstrate it. Seeding Account `OwnerId`
+in `Build-ProdAccountSeed.ps1` would fix that if a sandbox demonstration is wanted; it was built
+Name-only on the basis that nothing read Account ownership, which is no longer true.
+
+### Original analysis (kept for reference)
 
 ### The problem
 
@@ -81,22 +119,60 @@ people block ownership in two places, so provisioning or reassigning them fixes 
 
 ### Open questions for the Partnerships lead
 
-1. Confirm the fallback owner (the migration user, or a named person / queue?).
-2. Should Applications take their Account's owner, given Airtable has no Application-specific owner?
-3. Should Contacts take their Account's owner, or the default?
-4. Should the migration change ownership of **existing** Accounts, or leave those alone?
+~~All four answered 2026-08-13 — see "Decisions taken" above.~~
 
 ---
 
 ## 2. Meetings (1,845 Airtable rows, 0 loaded)
 
-**Status:** not started. Blocked on one decision.
+**Status:** not started. **Blocked on three decisions, not one** — the source data was inspected on
+2026-08-13 and the mapping is less clean than this entry originally assumed.
 
-Airtable's Meetings table records only a **date** — no start or end time. Salesforce calendar events
-require both. A default duration and start time have to be agreed before this can load (e.g. "all-day
-event", or "09:00 for 60 minutes"). Everything else about the mapping is understood:
-`Meeting Type` → `LDGCRM_Meeting_Type__c`, and the meeting attaches to its Opportunity when there is
-one, otherwise to its Account.
+### 2a. `Meeting Type` doesn't fit the Salesforce field (the biggest of the three)
+
+`LDGCRM_Meeting_Type__c` on Activity is a **single-value restricted picklist** with 10 values.
+Airtable's `Meeting Type` is a **multi-select**, and its values largely don't match:
+
+| Airtable value | Meetings | Salesforce picklist |
+| --- | --- | --- |
+| `General Follow Up` | 465 | **no match** — SF offers `BD Ad-hoc Follow Up` / `AM Ad-hoc Follow Up` |
+| `Launch meeting` | 213 | `Launch Meeting` — differs by case |
+| `Internal` | 37 | **no match** |
+| `Contact Center` | 30 | **no match** |
+| `Informal Sync` | 20 | **no match** |
+| `Renewals` | 14 | **no match** |
+
+`Intro Call`, `Technical Consultation`, `AM - Regular Sync`, `Exec Leadership`,
+`Quarterly Business Review`, `Networking` and `Demo` all match exactly.
+
+**566 meetings carry a value with no destination**, and **83 rows carry two or more types** against a
+single-select field. This reads as a config gap rather than a data problem — the same shape as the
+`Login_gov` record-type picklist gap and the Demographic Served expansion, both of which were fixed
+by deploying values. **Not being guessed at:** splitting `General Follow Up` into SF's BD vs AM
+variants is a human call, per the no-workarounds-for-bad-data rule.
+
+**Needs:** (a) which values to add to the picklist, (b) what `General Follow Up` should become, and
+(c) for the 83 multi-type rows — first value wins, or does the field need to become a multi-select?
+
+### 2b. Start/end times (the original blocker)
+
+Airtable records only a **date**, no time. Salesforce Events require both. Needs an agreed convention
+(e.g. all-day event, or 09:00 for 60 minutes). Dates run 2024-02-05 → 2026-08-13.
+
+### 2c. 241 meetings have no date at all
+
+230 of them are marked `(Past)`. An Event can't be created without a date, so these are skipped
+unless they should become dateless Tasks instead.
+
+### Also worth knowing before building it
+
+- **Link coverage:** 792 → Opportunity, 766 → Account only, and **287 link to neither** — those would
+  be Events with no `WhatId` (legal, but floating).
+- **`Meeting Leader` is a real owner source** — 1,315 of 1,845 resolve to an active User. This entry
+  previously assumed Meetings had no owner column; it does. See item 1.
+- Activity is a shared object with the unrelated FCIC and CTI apps (its field list includes
+  `CTI_*` and `Template_*` columns), and `TriggerControls__c` has a record for **`Task`** — so
+  **check the live org for Event/Task triggers before the first load**, per the standing rule.
 
 ---
 

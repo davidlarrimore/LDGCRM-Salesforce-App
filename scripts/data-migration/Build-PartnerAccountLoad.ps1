@@ -50,11 +50,17 @@
       - "Account Owner" is a Lookup to User with no external ID field to hang
         a relationship-header resolution on, so unlike every other lookup in
         this script, it's resolved to a real Salesforce Id by querying Users
-        directly. Airtable's owner emails match real User records once
-        gsa-peo's sandbox-standard ".invalid" Email suffix is accounted for
-        (e.g. "gabriel.yunusa@gsa.gov" -> "gabriel.yunusa@gsa.gov.invalid").
-        2 of 7 distinct owner emails in this export match no User at all -
-        left blank and flagged for review rather than guessed.
+        directly - via the shared Resolve-SalesforceOwnerIds helper, which
+        handles the sandbox ".invalid" Email suffix (present on most gsa-peo
+        users but NOT all), filters to active Users, and refuses to guess when
+        one address matches several. Owners it can't resolve are left blank and
+        flagged for review rather than guessed.
+        NOTE: this is the custom LDGCRM_Partner_Account_Owner__c field, not
+        record ownership. LDGCRM_Partner_Account__c is a Master-Detail child of
+        Account and therefore has NO OwnerId of its own - it inherits the
+        Account's owner, so there is nothing here for the ownership rule to set.
+        The value written here does feed Application's OwnerId, though (see
+        Build-ApplicationLoad.ps1), so an inactive or wrong owner propagates.
       - Every picklist target (Complexity, Health, Priority, Service Type,
         Status) was checked distinct-value-by-distinct-value against its
         Salesforce picklist before deciding no mapping table was needed -
@@ -66,7 +72,13 @@
 #>
 
 param(
-    [string]$OrgAlias = "gsa-peo",
+    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [string]$Environment = "Dev",
+
+    # Empty = use the environment's registered alias (scripts/common/Common.Orgs.ps1).
+    # Set this only to reach an org that isn't in the registry; doing so skips
+    # the registry's identity checks.
+    [string]$OrgAlias = "",
     [string]$ApiVersion = "67.0"
 )
 
@@ -75,12 +87,14 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "..\common\Common.ps1")
 . (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
 
+$OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
+
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-PartnerAccountLoad"
 
 try {
 
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host " PARTNER ACCOUNT LOAD PREP (Airtable -> gsa-peo)" -ForegroundColor Cyan
+Write-Host " PARTNER ACCOUNT LOAD PREP (Airtable -> $OrgAlias)" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -92,29 +106,33 @@ Write-Host "$($AirtablePartnerAccounts.Count) Airtable Partner Account rows load
 # RESOLVE OWNERS (Account Owner -> User.Id)
 # ============================================================
 
+# This was hand-rolled here first and had THREE defects, each of which produced
+# a wrong owner rather than an error. It now delegates to the shared
+# Resolve-SalesforceOwnerIds helper (Common.DataMigration.ps1), which is also
+# what Opportunity uses, so the ownership rule has one implementation:
+#   1. No IsActive filter - Salesforce refuses to assign a record to an
+#      inactive user, so an inactive match is not a match.
+#   2. Duplicate emails were last-write-wins - moncef.belyamani@gsa.gov has two
+#      User records in gsa-peo (one active, one inactive).
+#   3. Only the ".invalid" form was queried. NOT every gsa-peo user carries that
+#      suffix - users created since the last sandbox refresh have a plain
+#      address (verified: howard.miller@gsa.gov). So real, matchable owners were
+#      being reported as unmatched. Querying both forms is also what lets this
+#      run unchanged against production, where no suffix exists.
 $OwnerEmails = @($AirtablePartnerAccounts |
     ForEach-Object { $_.fields.'Account Owner'.email } |
     Where-Object { $_ } |
     Sort-Object -Unique)
 
-$OwnerIdByEmail = @{}
+Write-Host ""
+Write-Host "Resolving $($OwnerEmails.Count) distinct owner email(s) against Salesforce Users..." -ForegroundColor Cyan
 
-if ($OwnerEmails.Count -gt 0) {
-    Write-Host ""
-    Write-Host "Resolving $($OwnerEmails.Count) distinct owner email(s) against Salesforce Users..." -ForegroundColor Cyan
+$OwnerLookup = Resolve-SalesforceOwnerIds -Emails $OwnerEmails -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+$OwnerIdByEmail = $OwnerLookup.IdByEmail
 
-    $SandboxEmails = $OwnerEmails | ForEach-Object { "'$($_ + '.invalid')'" }
-    $Soql = "SELECT Id, Email FROM User WHERE Email IN (" + ($SandboxEmails -join ",") + ")"
-    $UserRecords = @(Invoke-SalesforceQuery -Soql $Soql -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
-
-    foreach ($UserRecord in $UserRecords) {
-        # Strip the sandbox-standard ".invalid" suffix to get back the plain
-        # email Airtable stores, so it can be used as the lookup key below.
-        $PlainEmail = $UserRecord.Email -replace '\.invalid$', ''
-        $OwnerIdByEmail[$PlainEmail] = $UserRecord.Id
-    }
-
-    Write-Host "$($OwnerIdByEmail.Count) of $($OwnerEmails.Count) owner email(s) matched an active User."
+Write-Host "$($OwnerIdByEmail.Count) of $($OwnerEmails.Count) owner email(s) matched an active User."
+if (@($OwnerLookup.Ambiguous).Count -gt 0) {
+    Write-Host "$(@($OwnerLookup.Ambiguous).Count) email(s) matched MORE THAN ONE active User - left blank for review." -ForegroundColor Yellow
 }
 
 # ============================================================

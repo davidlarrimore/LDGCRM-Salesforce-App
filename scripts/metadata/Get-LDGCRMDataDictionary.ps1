@@ -1,9 +1,17 @@
 #Requires -Version 5.1
+param(
+    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [string]$Environment = "Dev",
+
+    # Empty = use the environment's registered alias (scripts/common/Common.Orgs.ps1).
+    [string]$OrgAlias = ""
+)
+
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\common\Common.ps1")
 
-$TargetOrg = "gsa-peo"
+$TargetOrg = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
 # Standard Salesforce objects to include.
 # Salesforce Activities are represented by Task and Event.

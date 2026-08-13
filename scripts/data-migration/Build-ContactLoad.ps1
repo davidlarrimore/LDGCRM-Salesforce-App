@@ -47,7 +47,13 @@
 #>
 
 param(
-    [string]$OrgAlias = "gsa-peo",
+    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [string]$Environment = "Dev",
+
+    # Empty = use the environment's registered alias (scripts/common/Common.Orgs.ps1).
+    # Set this only to reach an org that isn't in the registry; doing so skips
+    # the registry's identity checks.
+    [string]$OrgAlias = "",
     [string]$ApiVersion = "67.0"
 )
 
@@ -55,6 +61,8 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\common\Common.ps1")
 . (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
+
+$OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-ContactLoad"
 
@@ -191,9 +199,25 @@ Write-Host "$($ExistingByEmail.Count) existing Contacts with an email in $OrgAli
 
 # --- Resolvable lookups ----------------------------------------------------
 Write-Host "Querying $OrgAlias for Accounts and Partner Accounts..." -ForegroundColor Cyan
+# The Account query also carries OwnerId, because Contacts inherit their
+# Account's owner (decided 2026-08-13). Airtable has no Contact owner column at
+# all, and Contact has org-wide-default-restricted sharing with owner-based
+# sharing rules, so ownership decides who can SEE the contact - leaving all
+# 1,900+ on the loading user would make that sharing model meaningless.
+#
+# Owner.IsActive is checked because Salesforce refuses to ASSIGN a record to an
+# inactive user (INACTIVE_OWNER_OR_USER), even though existing records may
+# legitimately still be owned by one. These Accounts pre-date the migration, so
+# inactive owners are entirely plausible here.
 $LoadedAccountIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-foreach ($Row in @(Invoke-SalesforceQuery -Soql "SELECT LDGCRM_External_ID__c FROM Account WHERE LDGCRM_External_ID__c != null" -OrgAlias $OrgAlias -ApiVersion $ApiVersion)) {
-    if ($Row.LDGCRM_External_ID__c) { $LoadedAccountIds.Add($Row.LDGCRM_External_ID__c) | Out-Null }
+$AccountOwnerByExternalId = @{}
+foreach ($Row in @(Invoke-SalesforceQuery -Soql "SELECT LDGCRM_External_ID__c, OwnerId, Owner.IsActive FROM Account WHERE LDGCRM_External_ID__c != null" -OrgAlias $OrgAlias -ApiVersion $ApiVersion)) {
+    if ($Row.LDGCRM_External_ID__c) {
+        $LoadedAccountIds.Add($Row.LDGCRM_External_ID__c) | Out-Null
+        if ($Row.OwnerId -and $Row.Owner.IsActive) {
+            $AccountOwnerByExternalId[$Row.LDGCRM_External_ID__c] = $Row.OwnerId
+        }
+    }
 }
 $LoadedPartnerAccountIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 foreach ($Row in @(Invoke-SalesforceQuery -Soql "SELECT LDGCRM_External_ID__c FROM LDGCRM_Partner_Account__c WHERE LDGCRM_External_ID__c != null" -OrgAlias $OrgAlias -ApiVersion $ApiVersion)) {
@@ -398,8 +422,21 @@ foreach ($Group in $Groups) {
         $FederalRecordTypeCount++
     }
 
+    # --- OwnerId: inherited from the resolved Account ---
+    # Blank = fall back to the loading user, deliberately: Bulk API 2.0 reads an
+    # empty value as "not supplied", so inserts land on the loading user (the
+    # agreed fallback) and re-runs don't revert manual reassignments. The 371
+    # Contacts with no resolvable Account all land here - the same population as
+    # the unmatched-Account data-quality issue, so fixing those Accounts fixes
+    # these owners too, with no code change.
+    $OwnerId = ""
+    if ($AccountId -and $AccountOwnerByExternalId.ContainsKey($AccountId)) {
+        $OwnerId = $AccountOwnerByExternalId[$AccountId]
+    }
+
     $UpsertRows.Add([PSCustomObject]([ordered]@{
         LDGCRM_External_ID__c                             = $Group.ExternalId
+        OwnerId                                           = $OwnerId
         RecordTypeId                                      = $RecordTypeId
         FirstName                                         = $FirstName
         LastName                                          = $LastName
@@ -453,6 +490,10 @@ Write-Host ""
 Write-Host "  Record type:" -ForegroundColor Cyan
 Write-Host ("{0,-52} {1,8:N0}" -f "    Federal (partner-agency contacts)", $FederalRecordTypeCount)
 Write-Host ("{0,-52} {1,8:N0}" -f "    GSA (@gsa.gov staff)", $GsaRecordTypeCount)
+Write-Host ""
+Write-Host ""
+Write-Host ("{0,-52} {1,8:N0}" -f "Owner inherited from the Account", @($UpsertRows | Where-Object { $_.OwnerId }).Count)
+Write-Host ("{0,-52} {1,8:N0}" -f "Owner falls back to the loading user", @($UpsertRows | Where-Object { -not $_.OwnerId }).Count)
 Write-Host ""
 Write-Host ("{0,-52} {1,8:N0}" -f "Values dropped for review (Subscription Type)", $ValueReviewRows.Count)
 Write-Host ""

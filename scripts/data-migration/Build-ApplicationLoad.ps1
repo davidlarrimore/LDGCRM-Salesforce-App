@@ -49,13 +49,21 @@
 #>
 
 param(
-    [string]$OrgAlias = "gsa-peo"
+    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [string]$Environment = "Dev",
+
+    # Empty = use the environment's registered alias (scripts/common/Common.Orgs.ps1).
+    # Set this only to reach an org that isn't in the registry; doing so skips
+    # the registry's identity checks.
+    [string]$OrgAlias = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\common\Common.ps1")
 . (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
+
+$OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-ApplicationLoad"
 
@@ -234,7 +242,7 @@ function Resolve-DateValue {
 try {
 
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host " APPLICATION LOAD PREP (Airtable -> gsa-peo)" -ForegroundColor Cyan
+Write-Host " APPLICATION LOAD PREP (Airtable -> $OrgAlias)" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Reads Salesforce (one read-only query) - writes local files only." -ForegroundColor Yellow
@@ -253,18 +261,38 @@ Write-Host "$($AirtableApplications.Count) Airtable Application rows loaded."
 # reviewable skip list instead of load-time noise that buries real failures.
 Write-Host ""
 Write-Host "Querying $OrgAlias for Partner Accounts that actually exist..." -ForegroundColor Cyan
+# The same query also carries the Partner Account's owner, which becomes the
+# Application's OwnerId (decided 2026-08-13). Airtable has no Application-level
+# owner: its "Account Owner" column is a ROLLUP from the parent Account, so
+# using it would assert the agency's account owner personally owns each
+# application. The Partner Account's own owner is the nearest authored value,
+# and every Application has a required Partner Account, so coverage is total
+# wherever the Partner Account itself has an owner.
+#
+# IsActive is pulled through the relationship because Salesforce rejects an
+# INACTIVE user as an OwnerId - and this field was populated by an earlier
+# version of Build-PartnerAccountLoad.ps1 that did not filter on IsActive, so
+# stale inactive owners can genuinely be sitting in it.
 $LoadedPartnerAccounts = @(Invoke-SalesforceQuery `
-    -Soql "SELECT LDGCRM_External_ID__c FROM LDGCRM_Partner_Account__c WHERE LDGCRM_External_ID__c != null" `
+    -Soql ("SELECT LDGCRM_External_ID__c, LDGCRM_Partner_Account_Owner__c, " +
+           "LDGCRM_Partner_Account_Owner__r.IsActive " +
+           "FROM LDGCRM_Partner_Account__c WHERE LDGCRM_External_ID__c != null") `
     -OrgAlias $OrgAlias)
 
 $LoadedPartnerAccountIds = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
+$PartnerAccountOwnerById = @{}
 foreach ($Pa in $LoadedPartnerAccounts) {
     if ($Pa.LDGCRM_External_ID__c) {
         $LoadedPartnerAccountIds.Add($Pa.LDGCRM_External_ID__c) | Out-Null
+
+        if ($Pa.LDGCRM_Partner_Account_Owner__c -and $Pa.LDGCRM_Partner_Account_Owner__r.IsActive) {
+            $PartnerAccountOwnerById[$Pa.LDGCRM_External_ID__c] = $Pa.LDGCRM_Partner_Account_Owner__c
+        }
     }
 }
 Write-Host "$($LoadedPartnerAccountIds.Count) Partner Accounts present in $OrgAlias."
+Write-Host "$($PartnerAccountOwnerById.Count) of them carry an active owner to pass down to Applications."
 
 # Same problem, different severity, for the OPTIONAL Opportunity lookup.
 # "Optional" means the column may be blank - it does NOT mean it may point at
@@ -418,8 +446,19 @@ foreach ($Row in $AirtableApplications) {
         $ServiceLevel = @($Row.fields.'Service Level')[0]
     }
 
+    # --- OwnerId: inherited from the Partner Account ---
+    # Blank means "fall back to the loading user" and is deliberate: Bulk API
+    # 2.0 treats an empty value as "not supplied", so an insert lands on the
+    # loading user (the agreed fallback) and a re-run leaves any manual
+    # reassignment in Salesforce intact instead of reverting it.
+    $OwnerId = ""
+    if ($PartnerAccountOwnerById.ContainsKey($PartnerAccountId)) {
+        $OwnerId = $PartnerAccountOwnerById[$PartnerAccountId]
+    }
+
     $OutputRow = [ordered]@{
         LDGCRM_External_ID__c                             = $RecId
+        OwnerId                                            = $OwnerId
         Name                                               = $Name
         "LDGCRM_Partner_Account__r.LDGCRM_External_ID__c"  = $PartnerAccountId
         "LDGCRM_Opportunity__r.LDGCRM_External_ID__c"      = $OpportunityId
@@ -486,6 +525,8 @@ Write-Host ("{0,-48} {1,8:N0}" -f "Ready for upsert", $UpsertRows.Count)
 Write-Host ("{0,-48} {1,8:N0}" -f "Skipped - no Partner Account in Airtable", $SkippedNoPartnerAccount)
 Write-Host ("{0,-48} {1,8:N0}" -f "Skipped - Partner Account not loaded in org", $SkippedPartnerAccountNotLoaded)
 Write-Host ("{0,-48} {1,8:N0}" -f "Opportunity links blanked (Opportunity not loaded)", $UnresolvedOpportunityCount)
+Write-Host ("{0,-48} {1,8:N0}" -f "Owner inherited from Partner Account", @($UpsertRows | Where-Object { $_.OwnerId }).Count)
+Write-Host ("{0,-48} {1,8:N0}" -f "Owner falls back to the loading user", @($UpsertRows | Where-Object { -not $_.OwnerId }).Count)
 Write-Host ("{0,-48} {1,8:N0}" -f "Unmapped Ramp Up Approach (left blank)", $UnmappedRampUpRows.Count)
 Write-Host ("{0,-48} {1,8:N0}" -f "Demographic Served tags dropped (stale category)", $DroppedDemographicTagCount)
 Write-Host ("{0,-48} {1,8:N0}" -f "Name/URL/date values corrected or blanked", $OverLengthRows.Count)

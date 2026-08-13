@@ -10,6 +10,14 @@
     whose either side can't resolve fails outright, so unresolvable pairs are
     skipped rather than submitted.
 
+    OwnerId is deliberately NOT set. This object DOES have one (it joins its two
+    parents by plain Lookup, not Master-Detail, so it is not owner-inheriting
+    the way LDGCRM_Opportunity_Impediment__c is), but Airtable records no owner
+    for an application-contact association - only the association itself. Under
+    the ownership rule agreed 2026-08-13 that means the fallback owner, which is
+    what leaving OwnerId unset already produces. Inheriting the Contact's or the
+    Application's owner would be inventing a rule nobody agreed to.
+
     THREE THINGS DRIVE THE DESIGN:
 
     1. THE SOURCE IS THE AIRTABLE CONTACT *ROWS*, NOT THE MERGED CONTACTS.
@@ -56,7 +64,13 @@
 #>
 
 param(
-    [string]$OrgAlias = "gsa-peo",
+    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [string]$Environment = "Dev",
+
+    # Empty = use the environment's registered alias (scripts/common/Common.Orgs.ps1).
+    # Set this only to reach an org that isn't in the registry; doing so skips
+    # the registry's identity checks.
+    [string]$OrgAlias = "",
     [string]$ApiVersion = "67.0"
 )
 
@@ -64,6 +78,8 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\common\Common.ps1")
 . (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
+
+$OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-ApplicationContactLoad"
 

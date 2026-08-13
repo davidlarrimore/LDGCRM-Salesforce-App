@@ -142,14 +142,43 @@ list is what unblocks them.
   and separately, whichever one is correct, `Department of the Treasury` still needs the duplicate
   question resolved either way.
 
-### Partner Accounts: 2 account owners aren't in Salesforce
+### Missing Salesforce logins block record ownership across three objects at once
 
-`elizabeth.mays@gsa.gov` and `tony.parrilla@gsa.gov` are listed as the Account Owner on several
-Partner Account records, but neither has an active Salesforce User account in `gsa-peo`. Affects
-several Partner Account rows (owner field left blank on those until this is resolved).
+**Updated 2026-08-13** — this started as a Partner Account-only note. Now that records are assigned
+to their real owners rather than all landing on the person running the migration, the same handful of
+missing Salesforce logins turns out to block ownership in several places at once. Any record whose
+Airtable owner has no active Salesforce user falls back to the migration user — nothing is lost or
+blocked, but the record won't show up under the right person's name, and because these objects use
+owner-based sharing, ownership also affects who can see them.
 
-**What we need:** confirm whether these are current GSA staff who need a Salesforce login, or former
-staff whose records should be reassigned to someone else.
+Ranked by how many records each person would fix:
+
+| Person | Opportunities | Meetings | Partner Accounts | Total records |
+| --- | --- | --- | --- | --- |
+| `elizabeth.mays@gsa.gov` | 157 | 182 | several | **~340** |
+| `tony.parrilla@gsa.gov` | 15 | 50 | several | **~65** |
+| `gabriel.vorleto@gsa.gov` | 105 | 8 | — | **~113** |
+| `sierra.stewart@gsa.gov` | 8 | 11 | — | **~19** |
+| `trish.nguyen@gsa.gov` | — | 21 | — | 21 |
+| `diondra.humphries@gsa.gov` | — | 13 | — | 13 |
+| 8 others | — | ~20 combined | — | ~20 |
+
+Two distinct situations, which need different answers:
+
+- **No Salesforce user at all:** `elizabeth.mays@gsa.gov`, `tony.parrilla@gsa.gov`,
+  `sierra.stewart@gsa.gov`, `robert.owens@gsa.gov`, `nour.aldimashki@gsa.gov`,
+  `goutham.kommanaboyina@gsa.gov`, `brianna.naolu@gsa.gov`.
+- **User exists but is deactivated:** `gabriel.vorleto@gsa.gov`, `trish.nguyen@gsa.gov`,
+  `diondra.humphries@gsa.gov`, `becky.badalato@gsa.gov`, `hanna.kim@gsa.gov`,
+  `matt.pritchard@gsa.gov`, `ambuj.neupane@gsa.gov`. Salesforce won't assign records to a deactivated
+  user, so these behave the same as "missing" for migration purposes.
+
+**What we need:** for each person, either confirm they're current staff who need an active Salesforce
+login, or name who their records should be reassigned to. The first two names alone account for
+roughly 400 records.
+
+*(Note for engineers: this is a `gsa-peo` sandbox observation. Confirm against production before
+acting — the sandbox's user list is not guaranteed to match.)*
 
 ### Applications: 11 records look like incomplete drafts, not ready to migrate
 

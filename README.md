@@ -5,10 +5,36 @@ project, and the automation around it: pulling metadata from the Salesforce sand
 data dictionary, cleaning up test data, and pulling/transforming/loading migrated records from
 Airtable via the Salesforce CLI's Bulk API.
 
-Everything here targets a single sandbox: org alias **`gsa-peo`**.
+Every script targets an **environment**, not a hard-coded org: `-Environment Dev|QA|Full|Prod`,
+defaulting to **Dev**. See [Environments](#environments) below — and note that the alias `gsa-peo`
+now means **production**, not the Dev sandbox it used to point at.
 
 > For AI-agent-oriented conventions (data model, script patterns, gitignore rationale), see
 > [CLAUDE.md](CLAUDE.md). This README is the human quick start.
+
+## Environments
+
+| `-Environment` | Alias | Sandbox | Used for |
+| --- | --- | --- | --- |
+| `Dev` *(default)* | `peodv8dvn` | PEOdV8DVn | Day-to-day development and pipeline testing |
+| `QA` | `peodv15dvn` | PEOdV15DVn | Full end-to-end migration rehearsal |
+| `Full` | *not yet provisioned* | TBD | Operations team integration testing: scripts + change sets, immediately before production |
+| `Prod` | `gsa-peo` | — | The live GSA PEO org. Real partner data. |
+
+**An alias is the org's own sandbox name**, so an alias cannot quietly drift from the org it names.
+The registry lives in [`scripts/common/Common.Orgs.ps1`](scripts/common/Common.Orgs.ps1); nothing
+else hard-codes an alias. Before reading or writing anything, scripts verify that the alias still
+resolves to the org the registry claims — matching the instance URL against the expected sandbox
+name and checking `Organization.IsSandbox` — and stop outright if it doesn't.
+
+> ⚠️ **`gsa-peo` changed meaning on 2026-08-13.** It used to be the alias for the *Dev sandbox*,
+> despite being the name of the *production* org. Every reference in this repo was updated in the
+> same change, and the local `gsa-peo` alias was deleted, so any stale command line fails with "No
+> authorization information found" rather than silently writing to production. Don't re-create that
+> alias pointing anywhere but production.
+
+Writes and deletes against `Prod` require typing the org alias at an extra confirmation gate, on top
+of whatever the script already asks for.
 
 ## Repository layout
 
@@ -17,8 +43,8 @@ sfdx/                   Salesforce DX project (force-app, manifest, package.json
 scripts/
   common/                Shared PowerShell helpers (logging, repo-root resolution)
   metadata/              Pull metadata + export the data dictionary from the sandbox
-  cleanup/               Interactive, destructive sandbox record cleanup
-  data-migration/        Pull Airtable data, transform to load-ready CSVs, load into gsa-peo
+  cleanup/               Interactive, destructive record cleanup (+ optional Account bootstrap)
+  data-migration/        Pull Airtable data, transform to load-ready CSVs, load into the target org
 docs/                    Data-migration pipeline docs (architecture, field mappings, data-quality asks)
 logs/                    Gitignored run output (transcripts, CSV exports)
 data/                    Gitignored Airtable exports, prepped load CSVs, and mapping files
@@ -34,16 +60,21 @@ applicants via Airtable or the sandbox. Only `.gitkeep`/`README.md` placeholders
   they also run fine under [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell)
   (`pwsh`) if you have it, but nothing in `scripts/` requires it
 - Node.js (for `sfdx/`'s lint/test/prettier tooling — see `sfdx/package.json`)
-- Access to the `gsa-peo` Salesforce sandbox
+- Access to the GSA PEO sandbox(es) you intend to target — see [Environments](#environments)
 
 ## Setup
 
 ```bash
-# Authenticate to the sandbox once per machine (sandboxes use test.salesforce.com)
-sf org login web --alias gsa-peo --instance-url https://test.salesforce.com
+# Authenticate once per machine, per environment. Sandboxes log in through
+# test.salesforce.com; the alias is always the sandbox's own name.
+sf org login web --alias peodv8dvn  --instance-url https://test.salesforce.com   # Dev
+sf org login web --alias peodv15dvn --instance-url https://test.salesforce.com   # QA
 
 # Verify the connection
-sf org display --target-org gsa-peo
+sf org display --target-org peodv8dvn
+
+# Optional: make Dev the default for bare `sf` commands that omit --target-org
+sf config set target-org=peodv8dvn --global
 
 # Install sfdx/ tooling (lint, prettier, jest, husky pre-commit hook)
 cd sfdx && npm install
@@ -64,20 +95,42 @@ Run these from the repo root with `powershell`:
 
 ```powershell
 # Pull metadata listed in sfdx/manifest/package.xml into sfdx/force-app
-powershell scripts/metadata/Sync-Metadata.ps1
+powershell scripts/metadata/Sync-Metadata.ps1                      # Dev (default)
+powershell scripts/metadata/Sync-Metadata.ps1 -Environment QA
 
 # Export a full object/field data dictionary CSV to logs/metadata/
 powershell scripts/metadata/Get-LDGCRMDataDictionary.ps1
 ```
 
-**Destructive — sandbox test-data cleanup:**
+**Destructive — test-data cleanup, with optional Account bootstrap:**
 
 ```powershell
-powershell scripts/cleanup/cleanup-gsa-peo.ps1
+powershell scripts/cleanup/Invoke-OrgCleanup.ps1                   # Dev (default)
+powershell scripts/cleanup/Invoke-OrgCleanup.ps1 -Environment QA
 ```
 
 Hard-deletes records (only rows where `LDGCRM_External_ID__c` is set) after a typed `HARD DELETE`
 confirmation, exporting the deleted IDs to `logs/cleanup/` first as an audit trail. Read the prompts.
+
+Once the deletes finish it **offers to bootstrap the Account tree** from
+`data/peo-prod-accounts-<date>.xls`, if that export is present. That matters because the pipeline
+*reconciles onto existing Accounts* rather than creating them, so a freshly cleaned (or freshly
+refreshed) org has nothing for the later loads to attach to. Answer the prompt, or drive it
+non-interactively with `-BootstrapAccounts` / `-SkipBootstrap`.
+
+**Resetting an org for a full migration rehearsal** is therefore one command followed by the normal
+pipeline:
+
+```powershell
+powershell scripts/cleanup/Invoke-OrgCleanup.ps1 -Environment QA -BootstrapAccounts
+```
+
+The bootstrap can also be run on its own — always dry-run it first:
+
+```powershell
+powershell scripts/data-migration/Invoke-AccountBootstrap.ps1 -Environment QA -PlanOnly
+powershell scripts/data-migration/Invoke-AccountBootstrap.ps1 -Environment QA
+```
 
 Every script writes a transcript (and any CSV output) under `logs/<category>/` via
 `scripts/common/Common.ps1`, so history of what ran and when is always available locally, without
@@ -92,8 +145,8 @@ cd sfdx
 npm run lint              # ESLint over aura/lwc JS
 npm test                  # sfdx-lwc-jest
 npm run prettier:verify   # Prettier check
-sf project deploy validate --source-dir force-app --target-org gsa-peo
-sf project deploy start    --source-dir force-app --target-org gsa-peo
+sf project deploy validate --source-dir force-app --target-org peodv8dvn
+sf project deploy start    --source-dir force-app --target-org peodv8dvn
 ```
 
 The Husky `pre-commit` hook runs `lint-staged` (Prettier + ESLint + related Jest tests) automatically.
@@ -105,7 +158,7 @@ The Husky `pre-commit` hook runs `lint-staged` (Prettier + ESLint + related Jest
 
 ## Data migration
 
-Moves data from Airtable into `gsa-peo`, in three stages — pull, prep/transform, load. See
+Moves data from Airtable into the target org, in three stages — pull, prep/transform, load. See
 [docs/README.md](docs/README.md) for the full pipeline and
 build status, and
 [docs/TRANSFORMATION-RULES.md](docs/TRANSFORMATION-RULES.md)

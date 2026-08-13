@@ -44,6 +44,191 @@ function Import-AirtableTable {
     return @(Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json)
 }
 
+function Resolve-ProdAccountExportPath {
+    <#
+        Finds the production Account export used to bootstrap a fresh org's
+        Account tree: data/peo-prod-accounts-<yyyy-MM-dd>.xls.
+
+        Glob-matched rather than hard-coded so dropping in a newer dated export
+        is all it takes to refresh the bootstrap source - the newest filename
+        wins (the dates are ISO, so a plain descending sort is chronological).
+        The file was originally delivered as "PEO PROD Accounts 07162026 (1).xls";
+        it was renamed 2026-08-13 to this convention.
+
+        Returns "" when no export is present. Callers treat that as "the
+        bootstrap option isn't available", not as an error - the cleanup script
+        relies on this to decide whether to even offer it.
+    #>
+
+    $DataDir = Join-Path (Get-RepoRoot) "data"
+
+    if (-not (Test-Path -LiteralPath $DataDir)) {
+        return ""
+    }
+
+    # Not named $Matches - that's PowerShell's automatic -match variable.
+    $Candidates = @(Get-ChildItem -LiteralPath $DataDir -Filter "peo-prod-accounts-*.xls" -File -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending)
+
+    if ($Candidates.Count -eq 0) {
+        return ""
+    }
+
+    return $Candidates[0].FullName
+}
+
+function Import-ProdAccountExport {
+    <#
+        Parses the production Account export into one object per row.
+
+        FORMAT: despite the .xls extension this is an HTML table - a browser
+        "Export" from a Salesforce report, not a binary Excel file. Parsed with
+        regex accordingly.
+
+        TWO TRAPS IN THIS FILE, both found 2026-08-13 by checking what the
+        columns actually contain rather than trusting their headers:
+
+        1. THE "Account ID" COLUMN IS NOT THE ROW'S OWN ACCOUNT ID. The same
+           Id appears on completely unrelated rows - 378 collisions across
+           1,369 rows, e.g. 001SJ00000HVpEq is given for both "Office of Human
+           Resources and Administration" (under Veterans Affairs) and "Office of
+           Congressional Workplace Rights" (under U.S. Congress). It is a
+           misaligned report column. It is therefore NOT returned by this
+           function at all: nothing may key off it. (Prod Ids would be useless
+           in a sandbox anyway, but a caller could easily have used it as a
+           dedupe key and silently collapsed unrelated Accounts.)
+
+        2. "Parent Account" IS AUTHORITATIVE; the Level 1/2/3 columns are not.
+           They agree for 1,365 of 1,369 rows. The 4 that differ are the ones
+           that matter: 3 rows name themselves as their own parent (Department
+           of Defense, District of Columbia, Office of the Director of National
+           Intelligence) and 1 is a depth-4 row ("Defense Technical Information
+           Center") whose real parent sits below the deepest ancestor column.
+           So ParentName comes from "Parent Account", and the ancestor columns
+           are kept only as disambiguation context for duplicate names.
+
+        Self-parenting rows are returned with ParentName = "" and
+        IsSelfParent = $true. Salesforce rejects a self-referencing ParentId
+        outright, so they can only ever be loaded as roots.
+
+        Returns PSCustomObjects:
+          Name          - the Account name
+          ParentName    - parent Account name, "" for a root
+          Ancestors     - @(Level 1, Level 2, Level 3) minus blanks, outermost
+                          first; context only
+          AncestorPath  - "A > B > C > Name", lower-cased; disambiguates rows
+                          whose Name is duplicated elsewhere in the export
+          Level         - Salesforce's "Account Level" label, verbatim
+          RecordType    - "Account Record Type" verbatim (all Federal today)
+          OwnerName     - "Account Owner" DISPLAY NAME, not an email. Not
+                          currently loaded; see Invoke-AccountBootstrap.ps1.
+          IsSelfParent  - see above
+          SourceRow     - 1-based row number in the export, for review CSVs
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Production Account export not found: $Path"
+    }
+
+    $Html = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+
+    $AllRows = [System.Collections.Generic.List[string[]]]::new()
+
+    foreach ($RowMatch in [regex]::Matches($Html, '<tr>(.*?)</tr>')) {
+        $CellMatches = [regex]::Matches($RowMatch.Groups[1].Value, '<t[hd][^>]*>(.*?)</t[hd]>')
+        # @() around the pipeline: a single-cell row would otherwise come back
+        # as a bare string and index by character.
+        $Cells = @($CellMatches | ForEach-Object { ConvertFrom-ProdExportHtmlEntities ($_.Groups[1].Value.Trim()) })
+        $AllRows.Add($Cells)
+    }
+
+    if ($AllRows.Count -lt 2) {
+        throw "Expected a header row plus data rows in $Path, found $($AllRows.Count) row(s) total."
+    }
+
+    $Header = $AllRows[0]
+
+    # Resolved by header name, not by position: this is a report export, and a
+    # report's columns get reordered by whoever runs it next.
+    $Index = @{}
+    foreach ($Column in @("Account Name", "Parent Account", "Account Level", "Account Record Type",
+                          "Account Owner", "Level 1 Account", "Level 2 Account", "Level 3 Account")) {
+        $Found = [array]::IndexOf($Header, $Column)
+
+        if ($Found -lt 0) {
+            throw "Column '$Column' not found in $Path. Header: $($Header -join ' | ')"
+        }
+
+        $Index[$Column] = $Found
+    }
+
+    $Rows = [System.Collections.Generic.List[object]]::new()
+
+    for ($i = 1; $i -lt $AllRows.Count; $i++) {
+        $Cells = $AllRows[$i]
+        $Name = $Cells[$Index["Account Name"]]
+
+        if ([string]::IsNullOrWhiteSpace($Name)) {
+            continue
+        }
+
+        $Name = $Name.Trim()
+        $ParentName = "$($Cells[$Index['Parent Account']])".Trim()
+
+        $IsSelfParent = $false
+
+        if ($ParentName -and $ParentName -eq $Name) {
+            $IsSelfParent = $true
+            $ParentName = ""
+        }
+
+        $Ancestors = @(@(
+            $Cells[$Index["Level 1 Account"]],
+            $Cells[$Index["Level 2 Account"]],
+            $Cells[$Index["Level 3 Account"]]
+        ) | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+
+        # The Level 1 column repeats the row's own name on root rows, which
+        # would otherwise duplicate it in the path.
+        $PathParts = @($Ancestors | Where-Object { $_ -ne $Name })
+        $PathParts += $Name
+
+        $Rows.Add([PSCustomObject]@{
+            Name         = $Name
+            ParentName   = $ParentName
+            Ancestors    = $Ancestors
+            AncestorPath = ($PathParts -join " > ").ToLowerInvariant()
+            Level        = "$($Cells[$Index['Account Level']])".Trim()
+            RecordType   = "$($Cells[$Index['Account Record Type']])".Trim()
+            OwnerName    = "$($Cells[$Index['Account Owner']])".Trim()
+            IsSelfParent = $IsSelfParent
+            SourceRow    = $i
+        })
+    }
+
+    # CALLER CONTRACT: wrap in @() - same reason as Invoke-SalesforceQuery.
+    return $Rows.ToArray()
+}
+
+function ConvertFrom-ProdExportHtmlEntities {
+    <#
+        The report export HTML-escapes cell text ("Office of Oceanic &amp;
+        Atmospheric Research"). Unescaping matters for more than cosmetics:
+        these strings are matched against Salesforce Account Names, so a stray
+        &amp; is a failed parent lookup.
+    #>
+    param([string]$Text)
+
+    if (-not $Text) { return $Text }
+
+    return $Text -replace '&amp;', '&' -replace '&lt;', '<' -replace '&gt;', '>' `
+                 -replace '&quot;', '"' -replace '&#39;', "'" -replace '&nbsp;', ' '
+}
+
 function Get-SalesforceLoadDirectory {
     <#
         Ensures/returns data/salesforce-loads/, where transform scripts
@@ -129,6 +314,20 @@ function Invoke-SalesforceQuery {
         return @()
     }
 
+    # SILENT TRUNCATION GUARD. `sf data query` follows queryMore itself, but a
+    # partial result is indistinguishable from a small one at the call site -
+    # every caller here does .Count on the result and reports it as fact. A
+    # truncated Account query in particular would make Invoke-AccountBootstrap
+    # re-insert Accounts it simply didn't see. Cheap to check, impossible to
+    # notice if it's missing.
+    $Returned = @($JsonResult.result.records).Count
+    $Total = [int]$JsonResult.result.totalSize
+
+    if ($Returned -lt $Total) {
+        throw ("Query returned $Returned of $Total records - the result set was truncated, so any count " +
+               "derived from it would be wrong. Narrow the query or page it explicitly. SOQL: $Soql")
+    }
+
     # CALLER CONTRACT: always wrap the call site in @(), e.g.
     #     $Rows = @(Invoke-SalesforceQuery -Soql ... -OrgAlias ...)
     # PowerShell unwraps a single-element array back to a bare scalar when a
@@ -146,6 +345,131 @@ function Invoke-SalesforceQuery {
     # is correct in all three cases (0 rows, 1 row, many) and is idempotent, so
     # it can't be double-applied by mistake.
     return $JsonResult.result.records
+}
+
+function Resolve-SalesforceOwnerIds {
+    <#
+        Resolves a set of Airtable owner email addresses to Salesforce User
+        Ids, for the record-ownership rule agreed 2026-08-13:
+
+            "If the Airtable owner has a matching Salesforce User, assign the
+             record to them. If not, fall back to a single default owner."
+
+        This is the ONLY place that mapping is implemented. It was previously
+        inline in Build-PartnerAccountLoad.ps1 and had two defects that are
+        fixed here, both of which silently produce a WRONG owner rather than
+        an error:
+
+          1. NO IsActive FILTER. Salesforce rejects an inactive User as an
+             OwnerId, so an inactive match is not a match - it has to fall
+             back like any other unresolved owner. gsa-peo has real cases:
+             7 of the 40 distinct Meeting Leaders resolve only to a
+             deactivated User.
+          2. DUPLICATE EMAILS WERE LAST-WRITE-WINS. moncef.belyamani@gsa.gov
+             has TWO User records in gsa-peo - one active, one inactive - and
+             a plain hashtable assignment in query order could land on either.
+             Filtering to IsActive resolves that particular case outright;
+             genuinely ambiguous ones (2+ ACTIVE users on one address) are
+             reported to the caller instead of being picked silently.
+
+        SANDBOX EMAIL SUFFIX: Salesforce appends ".invalid" to every user's
+        Email when a sandbox is refreshed, so "jane.doe@gsa.gov" in Airtable is
+        "jane.doe@gsa.gov.invalid" in gsa-peo. Both forms are queried, so this
+        works unchanged against production, where the suffix isn't present.
+
+        Returns a PSCustomObject:
+          IdByEmail - hashtable, lower-cased plain email -> User Id. Contains
+                      ONLY confidently-resolved active users; an email absent
+                      from it is the caller's signal to apply the fallback.
+          Ambiguous - emails matching more than one ACTIVE User, for a review
+                      CSV. These are deliberately left OUT of IdByEmail rather
+                      than guessed at.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$Emails,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OrgAlias,
+
+        [string]$ApiVersion = "67.0"
+    )
+
+    $Result = [PSCustomObject]@{
+        IdByEmail = @{}
+        Ambiguous = @()
+    }
+
+    $Distinct = @($Emails |
+        Where-Object { $_ } |
+        ForEach-Object { "$_".Trim().ToLower() } |
+        Where-Object { $_ } |
+        Sort-Object -Unique)
+
+    # An empty IN () list is a SOQL syntax error, not an empty result set.
+    if ($Distinct.Count -eq 0) { return $Result }
+
+    # Collect active matches per email first, so ambiguity can be detected
+    # across the whole result rather than overwritten as rows stream past.
+    $ActiveIdsByEmail = @{}
+
+    # Chunked so a large owner set can't blow the SOQL statement length limit.
+    $ChunkSize = 200
+
+    for ($Offset = 0; $Offset -lt $Distinct.Count; $Offset += $ChunkSize) {
+        $Last = [Math]::Min($Offset + $ChunkSize, $Distinct.Count) - 1
+        $Chunk = @($Distinct[$Offset..$Last])
+
+        $Literals = [System.Collections.Generic.List[string]]::new()
+
+        foreach ($Email in $Chunk) {
+            # Escape embedded quotes/backslashes rather than assuming an
+            # address can't contain them.
+            $Safe = $Email -replace '\\', '\\\\' -replace "'", "\'"
+            $Literals.Add("'$Safe'")
+            $Literals.Add("'$Safe.invalid'")
+        }
+
+        $Soql = "SELECT Id, Email FROM User WHERE IsActive = true AND Email IN (" +
+            ($Literals -join ",") + ")"
+
+        # @() per the Invoke-SalesforceQuery caller contract - a single match
+        # would otherwise unwrap to a bare scalar and break .Count/foreach.
+        $Users = @(Invoke-SalesforceQuery -Soql $Soql -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
+
+        foreach ($User in $Users) {
+            $Plain = ("$($User.Email)" -replace '\.invalid$', '').ToLower()
+
+            if (-not $ActiveIdsByEmail.ContainsKey($Plain)) {
+                $ActiveIdsByEmail[$Plain] = [System.Collections.Generic.List[string]]::new()
+            }
+
+            if (-not $ActiveIdsByEmail[$Plain].Contains($User.Id)) {
+                $ActiveIdsByEmail[$Plain].Add($User.Id)
+            }
+        }
+    }
+
+    $AmbiguousEmails = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($Email in $ActiveIdsByEmail.Keys) {
+        $Ids = $ActiveIdsByEmail[$Email]
+
+        if ($Ids.Count -eq 1) {
+            $Result.IdByEmail[$Email] = $Ids[0]
+        }
+        else {
+            # Two or more ACTIVE users share this address. Picking one would
+            # assign real records to a possibly-wrong person, so it falls back
+            # and gets surfaced for a human instead.
+            $AmbiguousEmails.Add($Email)
+        }
+    }
+
+    $Result.Ambiguous = @($AmbiguousEmails)
+
+    return $Result
 }
 
 function Get-CleanContactEmail {

@@ -1,8 +1,9 @@
 # Airtable → Salesforce migration pipeline
 
-This directory holds the scripts that move Login.gov applicant data from Airtable into the
-`gsa-peo` Salesforce sandbox (and eventually production). The pipeline has four stages that run
-in order:
+This directory holds the scripts that move Login.gov applicant data from Airtable into a GSA PEO
+Salesforce org — the Dev sandbox today, QA and a Full sandbox next, production last. See
+[Environments and org aliases](#environments-and-org-aliases) for how a script is pointed at one.
+The pipeline has four stages that run in order:
 
 1. **Pull** — `Get-AirtableExport.ps1` pulls current data from the Airtable REST API into
    `data/airtable-exports/<Table>.json`. Already built. See the root `CLAUDE.md` ("Airtable API")
@@ -29,7 +30,145 @@ in order:
    `TRANSFORMATION-RULES.md`'s "Notes" section for the mechanism, candidate fields found so far, and
    the proposed (not yet implemented) Title/Body heuristic.
 
+## Environments and org aliases
+
+Every script takes `-Environment Dev|QA|Full|Prod` (default **Dev**) and resolves the alias from the
+registry in [`scripts/common/Common.Orgs.ps1`](../scripts/common/Common.Orgs.ps1). No script
+hard-codes an alias any more.
+
+| `-Environment` | Alias | Sandbox name | Purpose |
+| --- | --- | --- | --- |
+| `Dev` *(default)* | `peodv8dvn` | PEOdV8DVn | Day-to-day development and pipeline testing |
+| `QA` | `peodv15dvn` | PEOdV15DVn | Full end-to-end migration rehearsal |
+| `Full` | *not yet provisioned* | TBD | Operations team integration testing — the scripts **and** the change sets, immediately before production |
+| `Prod` | `gsa-peo` | — | The live GSA PEO org |
+
+**The convention: an alias is the org's own sandbox name.** Chosen 2026-08-13 precisely because an
+`sf` alias is a local, mutable pointer that can be repointed by a stray `sf org login web`, and a
+name like `dev` gives you no way to notice. `peodv8dvn` can be checked against the instance URL.
+
+### ⚠️ `gsa-peo` changed meaning on 2026-08-13
+
+It used to be this repo's only alias, and it pointed at the **Dev sandbox** — while being the name
+of the **production** org. 146 references across 26 files read as though they targeted production
+and didn't. Under the new scheme `gsa-peo` means production, so a stale `--target-org gsa-peo` would
+be a silent retarget in the dangerous direction. Two things prevent that:
+
+1. Every reference in this repo was updated in the same change.
+2. The local `gsa-peo` alias was **deleted**, and production is not authorized on this machine. A
+   stale reference fails with "No authorization information found" instead of writing to production.
+
+Don't re-create a `gsa-peo` alias pointing anywhere but production.
+
+### Authorizing a new environment
+
+Sandboxes authenticate through `test.salesforce.com`, production through `login.salesforce.com`.
+The alias is always the sandbox's own name.
+
+```powershell
+# 1. Log in. A browser window opens; use your @gsa.gov.peo.<sandbox> credentials.
+sf org login web --alias peodv15dvn --instance-url https://test.salesforce.com
+
+# 2. Confirm you landed on the org you meant to.
+sf org display --target-org peodv15dvn
+sf data query --target-org peodv15dvn --query "SELECT Name, IsSandbox FROM Organization"
+
+# 3. Prove the registry agrees, before running anything real. This is the same
+#    check every script runs at startup, and it fails loudly on a mismatch.
+powershell -Command ". ./scripts/common/Common.ps1; Assert-LdgcrmOrgTarget -Environment QA"
+```
+
+For the **Full sandbox**, whose name isn't known yet, also fill in `Alias` and `SandboxName` for the
+`Full` entry in `Common.Orgs.ps1` — until then every script targeting it stops with a pointer back
+to this section rather than falling through to a default org.
+
+### What the startup check actually verifies
+
+`Assert-LdgcrmOrgTarget` runs before any script reads or writes, and stops the run if:
+
+- the alias doesn't resolve or the org is unreachable;
+- sandbox/production status disagrees with the registry (`Organization.IsSandbox`, queried from the
+  org — `sf org display` doesn't report it, and `sf org list` reads a local cache, which is the very
+  thing being verified);
+- the instance URL doesn't contain the expected sandbox name, i.e. the alias has been repointed.
+
+An explicit `-OrgAlias` overrides the registry for one-offs, and says so on screen; the identity
+checks are skipped in that case, because there's nothing to check it against.
+
+### Production
+
+`Prod` is gated twice: whatever the script already asks for (`HARD DELETE`, `LOAD`, `BOOTSTRAP`),
+plus typing the org alias in full at a separate production guard. Nothing about production is
+authorized on this machine today, and per the coordination note below, a production run also needs
+the Operations team in the loop.
+
+## Rebuilding an org's Account tree (the bootstrap)
+
+`Invoke-AccountBootstrap.ps1` rebuilds an org's Account names **and parent hierarchy** from a
+production Account export (`data/peo-prod-accounts-<yyyy-MM-dd>.xls`). It supersedes
+`Build-ProdAccountSeed.ps1`, which seeded names only.
+
+**Why any of this is needed:** Account is the one object the migration does *not* create.
+`Build-AccountReconciliation.ps1` matches Airtable rows onto Accounts that already exist, because in
+production they do. In a cleaned or freshly refreshed sandbox they don't, so every downstream load
+has nothing to attach to and a rehearsal proves nothing. The bootstrap supplies that starting
+universe.
+
+**Why it takes multiple passes:** `Account.ParentId` is a self-referential lookup and the export
+names parents by *name*, so a parent's Salesforce Id doesn't exist until its row has been inserted.
+The tree is built outward from the roots — insert, re-query, resolve the next layer — until a pass
+changes nothing. Four levels deep in the current export.
+
+```powershell
+# Always dry-run first: read-only, writes the pass plan to logs/data-migration/
+powershell scripts/data-migration/Invoke-AccountBootstrap.ps1 -Environment QA -PlanOnly
+
+# Apply it (typed BOOTSTRAP confirmation)
+powershell scripts/data-migration/Invoke-AccountBootstrap.ps1 -Environment QA
+```
+
+It is idempotent — it inserts only what's missing by name and only ever *fills in* a blank
+`ParentId`, never reparents an Account that already has one. `Invoke-OrgCleanup.ps1` offers to run
+it automatically once its deletes finish.
+
+### What it refuses to guess
+
+Three findings from the first dry run, all reported to review CSVs rather than resolved:
+
+- **14 Account names are borne by two or more distinct Accounts** in the export ("Office of the
+  Inspector General" appears under four departments). A child naming one of those as its parent
+  can't be resolved by name, so it is inserted **parentless** and reported — `-StrictHierarchy`
+  skips it entirely instead.
+- **31 planned rows can't be mapped onto the Dev sandbox's existing Accounts** at all, because the
+  earlier name-only seed deduplicated those 14 names down to one record each. There's no way to tell
+  which planned Account an existing record represents, so their parents are left unset. An org
+  bootstrapped from empty won't have this gap.
+- **1 Account is already parented differently** from the export (`U.S. Citizenship And Immigration
+  Services`). Existing hierarchy in the target org wins.
+
+### Two traps in the export itself
+
+Both found by checking what the columns contain rather than trusting the headers — the same lesson
+as `CLAUDE.md`'s "Not every Airtable column is a simple same-name mapping":
+
+- **The `Account ID` column is not the row's own Account ID.** The same Id appears on completely
+  unrelated rows — 378 collisions across 1,369 rows. It's a misaligned report column, and
+  `Import-ProdAccountExport` deliberately doesn't return it, so nothing can key off it.
+- **`Parent Account` is authoritative; the `Level 1/2/3 Account` columns are not.** They agree on
+  1,365 of 1,369 rows, and the 4 exceptions are the interesting ones: 3 rows name themselves as
+  their own parent, and 1 depth-4 row's real parent sits below the deepest ancestor column.
+
+Owner is **not** loaded: the export's `Account Owner` is a display name and
+`Resolve-SalesforceOwnerIds` matches on email. Consequence worth knowing before a rehearsal —
+Contact ownership inherits from Account, so it still can't be demonstrated outside production (see
+`TRANSFORMATION-RULES.md`'s "Record ownership").
+
 ## Production Account seed (one-time bootstrap, not a pipeline stage)
+
+> **Superseded 2026-08-13** by `Invoke-AccountBootstrap.ps1` (above), which does everything below
+> *and* rebuilds the hierarchy. The account of the 2026-08-13 rebuild is kept because the record
+> counts elsewhere in these docs refer to it.
+
 
 `gsa-peo`'s Account data has been a moving target (531 → 588 → growing) and doesn't reliably match
 the real universe of production Accounts, which makes testing `Build-AccountReconciliation.ps1`
@@ -50,10 +189,10 @@ process end to end:
    `Build-PartnerAccountLoad.ps1` → load chain** against that now-realistic baseline. This is exactly
    what the real production reconciliation pass will look like, not a sandbox-only approximation.
 
-**Full rebuild completed 2026-08-13**, after the user asked to first hard-delete gsa-peo's existing
-test-created Account/Partner Account data (via `scripts/cleanup/cleanup-gsa-peo.ps1`, scoped to just
-those two objects with its new `-ObjectsCsv` override — see that script's own docs) rather than layer
-the seed on top of it, for a genuinely clean test:
+**Full rebuild completed 2026-08-13**, after the user asked to first hard-delete the Dev sandbox's
+existing test-created Account/Partner Account data (via `scripts/cleanup/Invoke-OrgCleanup.ps1`,
+then named `cleanup-gsa-peo.ps1`, scoped to just those two objects with its `-ObjectsCsv` override —
+see that script's own docs) rather than layer the seed on top of it, for a genuinely clean test:
 - Cleanup: 584 of 585 external-ID-tagged Accounts deleted, all 74 external-ID-tagged Partner Accounts
   deleted. One Account (blocked by a pre-existing test `LDGCRM_Application_Contact__c` junction
   record) and all other pre-existing non-external-ID test data were deliberately left alone —
@@ -86,6 +225,12 @@ should not happen without that coordination.
 **For the full field-by-field mapping rules and every gotcha discovered per object, see
 [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)** — that's the authoritative detail; this file
 covers pipeline architecture, build status, and how to run things.
+
+**Before running a full wipe-and-reload, work through
+[`RELOAD-QA-CHECKLIST.md`](RELOAD-QA-CHECKLIST.md)** — the operational runbook: pre-flight, baseline
+capture, delete order, the ownership test-batch gate, per-object load verification, and a
+side-effect sweep. It exists because ownership is set by the transforms at load time and cannot be
+verified any other way.
 
 **For a running list of Airtable data-quality issues that block or would improve the migration —
 written for the data owner, not developers — see
@@ -145,6 +290,14 @@ Airtable pull of 2026-08-12.
   part of the first column header. Files meant for human review (unmatched/ambiguous-row reports)
   still use plain `Export-Csv -Encoding UTF8` — the BOM there is harmless and helps Excel detect
   UTF-8 correctly.
+- **Record ownership is set by the transforms, not by a backfill script** (decided 2026-08-13). Each
+  object takes its owner from its own Airtable source where that person has an **active** Salesforce
+  User, and otherwise falls back to the loading user. The fallback is written as a **blank
+  `OwnerId`**, never an explicit Id: Bulk API 2.0 reads empty as "not supplied", so an insert lands
+  on the loading user *and* a re-run leaves any manual reassignment alone. One shared resolver
+  (`Resolve-SalesforceOwnerIds`) handles email → User for every object. Per-object sources, coverage,
+  and the three silent resolution traps it fixes are in
+  [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)'s "Record ownership" section.
 - **Dry run before a full load**, per `sfdx-sandbox-ops` — export/preflight-count before writing,
   small batch before the full object, explicit confirmation before anything destructive or
   hard-to-reverse.
@@ -154,25 +307,28 @@ Airtable pull of 2026-08-12.
 | File | Stage | Status |
 | --- | --- | --- |
 | `Get-AirtableExport.ps1` | Pull | Built |
-| `Common.DataMigration.ps1` | shared helpers (Airtable JSON loading, Data Loader CSV writing, read-only SOQL) | Built |
+| `Common.DataMigration.ps1` | shared helpers (Airtable JSON loading, Data Loader CSV writing, read-only SOQL, owner email → User resolution) | Built |
 | `Build-AccountReconciliation.ps1` | Prep — Account (update, not upsert) | Built |
 | `Build-ImpedimentLoad.ps1` | Prep — Impediment (independent parent, straight upsert) | Built |
 | `Build-PartnerAccountLoad.ps1` | Prep — Partner Account (Master-Detail to Account, requires Account loaded first) | Built |
-| `Build-OpportunityLoad.ps1` | Prep — Opportunity (needs Account **and Partner Account** loaded first) | Built and **loaded 2026-08-13: 742/742 succeeded**, including the `LDGCRM_Partner_Account__c` lookup (66 linked). Required a Login_gov record-type picklist fix found by a test batch (see `TRANSFORMATION-RULES.md`) and an `LDGCRM_App_Description__c` LongTextArea deploy. 186 rows withheld (142 unreconciled Accounts, 28 no Status, 16 no Account link). |
-| `Build-ContactLoad.ps1` | Prep — Contact (independent parent; optional Account/Partner Account lookups) | Built and **loaded 2026-08-13: 1,483 of 1,487** (4 rejected by an org duplicate rule). **Merges rows sharing an email** (1,599 → 1,532) since Airtable lacks a person↔Application junction; also emits `Contact-identity-map.csv` for the junction chunk. Loaded with `-DisableTriggerControl "Contact"` — see "Loading Contact" below. |
-| `Build-ApplicationLoad.ps1` | Prep — Application, needs Partner Account **and Opportunity** loaded first (see "Load order") | Built and **loaded 2026-08-13: 688/688 succeeded, 0 failures**. Took three attempts — the first failed 1,045 of 1,047 rows — which drove six fixes (Service Level array unwrap, Broker App Parent moved to a second pass, Name/URL platform-limit handling across *all* Url fields, out-of-range date check, live Partner Account/Opportunity preflight, plus an `Invoke-SalesforceQuery` array bug). 359 rows remain skipped pending Airtable Account fixes; 92 Opportunity links pending the Opportunity load. See `TRANSFORMATION-RULES.md`'s Application section for the full 55-field mapping and the failure post-mortem. |
+| `Build-OpportunityLoad.ps1` | Prep — Opportunity (needs Account **and Partner Account** loaded first) | Built and **loaded 2026-08-13: 742/742 succeeded**, including the `LDGCRM_Partner_Account__c` lookup (66 linked). Required a Login_gov record-type picklist fix found by a test batch (see `TRANSFORMATION-RULES.md`) and an `LDGCRM_App_Description__c` LongTextArea deploy. 186 rows withheld (142 unreconciled Accounts, 28 no Status, 16 no Account link). **Ownership added 2026-08-13** (`Pod Opportunity Lead` → `OwnerId`): 476 of 742 resolve, 266 fall back — needs a reload to take effect. |
+| `Build-ContactLoad.ps1` | Prep — Contact (independent parent; optional Account/Partner Account lookups) | Built and **loaded 2026-08-13: 1,483 of 1,487** (4 rejected by an org duplicate rule). **Merges rows sharing an email** (1,599 → 1,532) since Airtable lacks a person↔Application junction; also emits `Contact-identity-map.csv` for the junction chunk. Loaded with `-DisableTriggerControl "Contact"` — see "Loading Contact" below. **Ownership added 2026-08-13** (inherits the Account's owner), but it cannot be demonstrated in gsa-peo — the Account seed is Name-only, so nearly every Account is owned by the loading user. |
+| `Build-ApplicationLoad.ps1` | Prep — Application, needs Partner Account **and Opportunity** loaded first (see "Load order") | Built and **loaded 2026-08-13: 688/688 succeeded, 0 failures**. Took three attempts — the first failed 1,045 of 1,047 rows — which drove six fixes (Service Level array unwrap, Broker App Parent moved to a second pass, Name/URL platform-limit handling across *all* Url fields, out-of-range date check, live Partner Account/Opportunity preflight, plus an `Invoke-SalesforceQuery` array bug). 359 rows remain skipped pending Airtable Account fixes; 92 Opportunity links pending the Opportunity load. See `TRANSFORMATION-RULES.md`'s Application section for the full 55-field mapping and the failure post-mortem. **Ownership added 2026-08-13** (inherits its Partner Account's owner, *not* Airtable's rollup `Account Owner`): 511 of 688 resolve. |
 | `Build-ApplicationContactLoad.ps1` | Prep — Application↔Contact junction (needs Application + Contact loaded) | Built and **loaded 2026-08-13: 1,880/1,880**. Uses a **composite external ID** (`<contact>\|<application>`) so uniqueness is structural — the object's duplicate-check Flow throws on duplicates *and* misses intra-batch ones. 884 pairs pending their other side. |
 | `Build-OpportunityImpedimentLoad.ps1` | Prep — Impediment↔Opportunity junction (two Master-Details, both required) | Built and **loaded 2026-08-13: 267/267**. Composite external ID; severity comes from *which* Airtable column an Opportunity appears in. **Excludes the placeholder Impediment named "None"** (465 links, 53% of the loadable set) — see `TRANSFORMATION-RULES.md`. 44 pairs pending an unloaded Opportunity. |
 | `Build-OpportunityContactRoleLoad.ps1` | Prep — OpportunityContactRole. **The one object that cannot be upserted** | Built and **loaded 2026-08-13: 515 rows**. The previously-documented `externalId=true` fix is **impossible** — Salesforce forbids External ID fields on this object entirely — so it uses an INSERT + read-then-diff for idempotency instead. Extended the `ContactRole` StandardValueSet with 2 new Role values. 83 rows skipped pending an unresolved Opportunity/Contact. |
 | `Build-MeetingLoad.ps1` | Prep — Activity/Event, needs a default-duration convention for synthesized `StartDateTime`/`EndDateTime` | Not built |
 | `Invoke-SalesforceLoad.ps1` | Load — generic `sf data upsert bulk`/`sf data update bulk` wrapper, any object | Built |
 | `Build-NotesLoad.ps1` (name TBD) | Notes — `ContentNote`/`ContentDocumentLink` for freeform columns, last chunk | Not started |
-| `Build-ProdAccountSeed.ps1` | Bootstrap — production Account name seeding, not a regular pipeline chunk | Built. Tested: 786 of 1,369 production Account names missing from gsa-peo, ready to insert. |
+| `Build-ProdAccountSeed.ps1` | Bootstrap — production Account **name** seeding, not a regular pipeline chunk | **Superseded 2026-08-13** by `Invoke-AccountBootstrap.ps1`. Still runs (now via the shared parser). Its name-dedupe is what left 31 rows unmappable for the hierarchy pass — see "Rebuilding an org's Account tree". |
+| `Invoke-AccountBootstrap.ps1` | Bootstrap — production Account **names + parent hierarchy**, multi-pass, any environment | Built 2026-08-13. Dry-run against Dev: 1,360 planned Accounts, 0 to insert (already seeded), 1,087 parent links to set, 31 unmappable + 1 unresolvable parent + 1 conflict reported. **Not yet applied** — awaiting a live run. |
 
 ## Load order
 
 Parents before children/junctions (the reverse of the delete order in
-`scripts/cleanup/cleanup-gsa-peo.ps1`):
+`scripts/cleanup/Invoke-OrgCleanup.ps1`). In an org that has just been cleaned or refreshed, the
+Account step means running `Invoke-AccountBootstrap.ps1` first — reconciliation has nothing to match
+against otherwise:
 
 ```
 Market Segment (already migrated)

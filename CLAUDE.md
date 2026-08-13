@@ -1,17 +1,45 @@
-﻿# CLAUDE.md
+# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project
 
-This repo builds the Salesforce CRM app (in a Salesforce sandbox, org alias `gsa-peo`) that the
-**Login.gov Airtable -> Salesforce CRM Migration Project** is migrating data into. There are two
-kinds of work here: maintaining the Salesforce app's metadata (`sfdx/`), and PowerShell automation
-for pulling metadata/data out of the sandbox and (upcoming) loading migrated data into it (`scripts/`).
+This repo builds the Salesforce CRM app that the **Login.gov Airtable -> Salesforce CRM Migration
+Project** is migrating data into. There are two kinds of work here: maintaining the Salesforce app's
+metadata (`sfdx/`), and PowerShell automation for pulling metadata/data out of an org and loading
+migrated data into it (`scripts/`).
 
-This is a single-org setup: every script targets the `gsa-peo` sandbox alias. Records created by the
-migration carry an external ID field, `LDGCRM_External_ID__c`, used to correlate Salesforce records
-back to their Airtable source.
+Records created by the migration carry an external ID field, `LDGCRM_External_ID__c`, used to
+correlate Salesforce records back to their Airtable source.
+
+## Environments (read this before running anything)
+
+**This is no longer a single-org setup.** Every script takes `-Environment Dev|QA|Full|Prod`
+(default `Dev`) and resolves the alias from the registry in `scripts/common/Common.Orgs.ps1`, which
+`Common.ps1` dot-sources so every script gets it. **Never hard-code an org alias in a script again.**
+
+| `-Environment` | Alias | Sandbox | Purpose |
+| --- | --- | --- | --- |
+| `Dev` (default) | `peodv8dvn` | PEOdV8DVn | Development and pipeline testing. Everything documented below was done here. |
+| `QA` | `peodv15dvn` | PEOdV15DVn | Full end-to-end migration rehearsal |
+| `Full` | *not provisioned yet* | TBD | Operations team integration testing: scripts + change sets, immediately before production |
+| `Prod` | `gsa-peo` | — | Live GSA PEO org |
+
+**An alias is the org's own sandbox name**, so it can be checked against the instance URL and cannot
+silently drift. `Assert-LdgcrmOrgTarget` runs at the start of every script and refuses to continue
+if the alias resolves to an org that disagrees with the registry — including sandbox-vs-production,
+which it reads from `Organization.IsSandbox` (`sf org display` doesn't report it, and `sf org list`
+reads a local cache, which is the thing being verified).
+
+**⚠️ `gsa-peo` used to mean the Dev sandbox and now means PRODUCTION** (changed 2026-08-13 — it was
+always the *production* org's name, while pointing at Dev). Any historical note, transcript, or
+command line saying `--target-org gsa-peo` was talking about **Dev**. The local `gsa-peo` alias was
+deleted and production isn't authorized here, so a stale reference fails loudly rather than writing
+to production. Prose in this file still saying "gsa-peo" for a past finding means the Dev sandbox.
+
+Writes/deletes against `Prod` need the org alias typed at an extra guard
+(`Assert-LdgcrmProductionConsent`) on top of the script's own confirmation. See `docs/README.md`,
+"Environments and org aliases", for the authorization runbook for a new sandbox.
 
 See [README.md](README.md) for human-facing setup/quick-start steps (auth, prerequisites, common
 commands). This file focuses on conventions and architecture for working in the code.
@@ -284,7 +312,7 @@ self-referential lookup can't resolve within its own upsert batch and needs a se
 
 **Current sandbox state (rebuilt 2026-08-13 — see `docs/README.md`'s "Production Account seed"
 section for the full rebuild):** the Account/Partner Account chain was deliberately hard-deleted
-(scoped, via `scripts/cleanup/cleanup-gsa-peo.ps1`) and rebuilt from a real production Account
+(scoped, via `scripts/cleanup/Invoke-OrgCleanup.ps1`) and rebuilt from a real production Account
 export to make reconciliation testing meaningful, rather than testing against arbitrary sandbox seed
 data. **Treat every count below as a moving target, not a fixed baseline** — it's shifted several
 times in a single day already. Current: 1,346 Accounts (1,342 inserted from the production export +
@@ -306,7 +334,7 @@ backfill — read-only against Salesforce, writing an update CSV plus human-revi
 it can't confidently match; see `docs/README.md` for the full pipeline.
 
 **Load order** (parents before children/junctions — the reverse of the delete order in
-`scripts/cleanup/cleanup-gsa-peo.ps1`): Market Segment → Account → `LDGCRM_Partner_Account__c` →
+`scripts/cleanup/Invoke-OrgCleanup.ps1`): Market Segment → Account → `LDGCRM_Partner_Account__c` →
 Contact → Opportunity → `LDGCRM_application__c` → `LDGCRM_Opportunity_Impediment__c` (needs
 `LDGCRM_Impediment__c` and Opportunity first) → `LDGCRM_Application_Contact__c` →
 `OpportunityContactRole` → Activity (Meetings, needs Account/Opportunity first).
@@ -340,10 +368,23 @@ Current scripts:
   metadata types — see `scripts/metadata/ldgcrm-manifest-ignore.json` for confirmed non-LDGCRM
   components that should stop resurfacing in that report). Then runs `sf project retrieve start`
   against the manifest. `-WhatIf` reports only; `-SkipDiscovery` retrieves the manifest as-is.
-- `scripts/cleanup/cleanup-gsa-peo.ps1` — **interactive and destructive**: hard-deletes sandbox
-  records by object (only rows where `LDGCRM_External_ID__c` is populated), after a typed
-  `HARD DELETE` confirmation. Exports the record IDs it deletes first for an audit trail. Treat with
-  the same caution as any prod-affecting script even though it targets a sandbox.
+- `scripts/cleanup/Invoke-OrgCleanup.ps1` (renamed from `cleanup-gsa-peo.ps1` 2026-08-13) —
+  **interactive and destructive**: hard-deletes records by object (only rows where
+  `LDGCRM_External_ID__c` is populated), after a typed `HARD DELETE` confirmation. Exports the
+  record IDs it deletes first for an audit trail. Treat with the same caution as any prod-affecting
+  script even though it defaults to a sandbox. When the deletes finish it **offers to run
+  `Invoke-AccountBootstrap.ps1`** against the same environment, if `data/peo-prod-accounts-*.xls`
+  exists — because deleting is only half a rebuild (see the next bullet). `-BootstrapAccounts` /
+  `-SkipBootstrap` answer that prompt non-interactively.
+- `scripts/data-migration/Invoke-AccountBootstrap.ps1` — rebuilds an org's Account **names and
+  parent hierarchy** from the production export. Needed because the pipeline *reconciles onto*
+  existing Accounts rather than creating them, so a cleaned or freshly refreshed org gives the
+  downstream loads nothing to attach to. **Multi-pass by necessity**: `Account.ParentId` is a
+  self-lookup and the export names parents by name, so each layer can only be resolved after the one
+  above it exists. Idempotent; only ever fills in a *blank* `ParentId`; refuses to guess an ambiguous
+  parent (14 Account names are borne by 2+ distinct Accounts) and reports those instead. Run
+  `-PlanOnly` first. Supersedes `Build-ProdAccountSeed.ps1`, which seeded names only — and whose
+  name-dedupe is why 31 rows in the Dev sandbox can no longer be mapped to a hierarchy.
 - `scripts/data-migration/Get-AirtableExport.ps1` — pulls current data directly from the Airtable REST
   API (one JSON file per table, paginated via `offset`) into `data/airtable-exports/<Table>.json`,
   **overwriting** the previous pull each run (a timestamped transcript + `pull-summary-<timestamp>.csv`
@@ -370,7 +411,7 @@ Current scripts:
 ## sfdx/ commands
 
 Run from inside `sfdx/`:
-- `sf project retrieve start -x manifest/package.xml --target-org gsa-peo` — pull metadata (or use
+- `sf project retrieve start -x manifest/package.xml --target-org peodv8dvn` — pull metadata (or use
   `scripts/metadata/Sync-Metadata.ps1` from the repo root, which wraps this with logging).
 - `npm run lint` — ESLint over `aura`/`lwc` JS.
 - `npm test` / `npm run test:unit` — `sfdx-lwc-jest`; `test:unit:watch` and `test:unit:coverage` variants
@@ -430,7 +471,7 @@ Run from inside `sfdx/`:
 - **Retrieving a Salesforce Outbound Change Set's contents:** Change Sets have no direct Metadata/
   Tooling API or `sf` support for listing/querying them, but a change set's **Name** (not its Setup
   URL ID) works as an unmanaged package name for retrieval: `sf project retrieve start --package-name
-  "<Change Set Name>" --target-org gsa-peo`. This is how `force-app/` was synced from `LDGCRM_Sprint_1_12`.
+  "<Change Set Name>" --target-org peodv8dvn`. This is how `force-app/` was synced from `LDGCRM_Sprint_1_12`.
   It retrieves into a new folder named after the package (not into `force-app/`) — merge it in and
   regenerate/hand-check `manifest/package.xml` afterward rather than leaving a second package directory.
 - **Broad wildcard retrieves (e.g. `CustomApplication:*`) pull the entire org**, not just this app —

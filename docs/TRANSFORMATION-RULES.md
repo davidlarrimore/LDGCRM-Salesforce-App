@@ -86,6 +86,102 @@ a review CSV in `logs/data-migration/` rather than dropping them silently.
 
 ---
 
+## Record ownership (cross-object rule, decided 2026-08-13)
+
+Applies to every object in the migration, so it lives here rather than being repeated per section.
+Implemented inside the existing `Build-*.ps1` transforms — there is deliberately **no separate
+ownership-backfill script**, because the decision was made alongside a full wipe-and-reload, so
+correct owners are produced by the normal load rather than patched on afterwards.
+
+**The rule:** if the Airtable owner has a matching **active** Salesforce User, assign the record to
+them; otherwise fall back to the loading user.
+
+### The fallback is expressed as a BLANK `OwnerId`, not an explicit Id
+
+This is the single most important implementation detail and it looks like an omission if you don't
+know why. Bulk API 2.0 treats an empty CSV value as *"no value supplied"*, which gives both halves of
+the desired behaviour for free:
+
+- on **insert**, Salesforce assigns the record to the loading user — exactly the agreed fallback;
+- on a **re-run that updates** an existing record, the current owner is left untouched, so a manual
+  reassignment made by a human in Salesforce is not silently reverted every time the pipeline runs.
+
+Writing the loading user's Id explicitly would satisfy the rule on insert but stomp real
+reassignments on every subsequent run. Every transform therefore emits `""`, never a hard-coded Id.
+
+**⚠️ Confirm this on the test batch before the full load.** The empty-value semantics above are the
+design intent and match documented Bulk API 2.0 behaviour, but they have **not yet been exercised
+against gsa-peo** — this pipeline has never before submitted a partially-populated `OwnerId` column.
+The 15–25 row test batch must deliberately include **both** a resolved owner and a blank one, and
+verify (a) the blank rows don't fail with `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`-style errors or
+a null-owner rejection, and (b) they actually land on the loading user rather than erroring. Same
+discipline as the record-type picklist case: prove the assumption on a small batch, don't infer it
+from documentation.
+
+### Which object takes its owner from where
+
+| Object | Owner source | Coverage (2026-08-13) |
+| --- | --- | --- |
+| Opportunity | `Pod Opportunity Lead` (collaborator, scalar — verified 0 of 826 rows are multi-valued) | **476 of 742** |
+| `LDGCRM_application__c` | its Partner Account's `LDGCRM_Partner_Account_Owner__c` | **511 of 688** |
+| Contact | its resolved Account's `OwnerId` | 1,116 of 1,943 — but see the warning below |
+| `LDGCRM_Impediment__c` | *none — the Airtable table has no owner column* | 0 (all fallback) |
+| `LDGCRM_Application_Contact__c` | *none — Airtable records the association, not an owner* | 0 (all fallback) |
+| Activity/Event (Meetings) | `Meeting Leader` (collaborator) — **not yet built** | 1,315 of 1,845 would resolve |
+| `LDGCRM_Partner_Account__c` | **n/a — no `OwnerId`.** Master-Detail child of Account, inherits its owner | — |
+| `LDGCRM_Opportunity_Impediment__c` | **n/a — no `OwnerId`.** Two Master-Details | — |
+| Account | **deliberately untouched.** Airtable has no Account owner column, and Accounts pre-date the migration | — |
+
+Application deliberately does **not** use Airtable's `Account Owner` column: on that table it is a
+**rollup from the parent Account**, so using it would assert that an agency's account owner
+personally owns each individual application. The Partner Account's own owner is the nearest authored
+value, and every Application has a required Partner Account.
+
+### ⚠️ Contact ownership cannot be demonstrated in gsa-peo today
+
+The rule is correct and will work in production, but the sandbox cannot show it working. The
+2026-08-13 rebuild inserted 1,342 Accounts from the production export with **Name only, no owner**
+(`Build-ProdAccountSeed.ps1`), so **1,346 of gsa-peo's 1,350 Accounts are owned by the loading
+user**. Contacts faithfully inherit their Account's owner — and that owner is the loading user in
+almost every case, making the result indistinguishable from the fallback.
+
+In production, where Accounts carry real owners, the same code produces real Contact owners with no
+change. If the sandbox needs to demonstrate this, `Build-ProdAccountSeed.ps1` would have to seed
+Account `OwnerId` too — it was built Name-only on the explicit basis that nothing in the migration
+read Account ownership, which **is no longer true** now that Contact inherits from it.
+
+### Resolving an email to a User: three traps, all silent
+
+`Resolve-SalesforceOwnerIds` in `Common.DataMigration.ps1` is the **single** implementation. It
+replaced a hand-rolled version inside `Build-PartnerAccountLoad.ps1` that had three defects, each of
+which produced a *wrong owner* rather than an error:
+
+1. **No `IsActive` filter.** Salesforce refuses to *assign* a record to an inactive user
+   (`INACTIVE_OWNER_OR_USER`), even though existing records may legitimately still be owned by one.
+   An inactive match is therefore not a match — it has to fall back. Real in this data: 7 of the 40
+   distinct Meeting Leaders resolve only to a deactivated User.
+2. **Duplicate emails were last-write-wins.** `moncef.belyamani@gsa.gov` has **two** User records in
+   gsa-peo, one active and one inactive; a plain hashtable assignment in query order could land on
+   either. Filtering to active resolves that case; genuinely ambiguous addresses (2+ *active* users)
+   are reported for review instead of being picked silently.
+3. **Only the `.invalid` form was queried.** Sandbox refreshes append `.invalid` to every user's
+   Email — but **not every user carries it**: accounts created since the last refresh have a plain
+   address (verified: `howard.miller@gsa.gov`, `jeremy.curcio@gsa.gov`, `rahul.kamarouthu@gsa.gov`).
+   Querying only the suffixed form under-matched real, matchable owners. Querying **both** forms is
+   also what lets this code run unchanged against production, where no suffix exists.
+
+Same family as General Principle #2 — the metadata/convention you expect is not necessarily what the
+org actually contains, so query it.
+
+### The unresolvable owners are a data-quality ask, not a code problem
+
+Two people block ownership in **three** places at once, which makes provisioning them the single
+highest-leverage fix on the ownership item: `elizabeth.mays@gsa.gov` (157 Opportunities + 182
+Meetings + Partner Accounts) and `tony.parrilla@gsa.gov` (15 + 50 + Partner Accounts). See
+`AIRTABLE-DATA-QUALITY-REQUESTS.md`.
+
+---
+
 ## Notes (deferred — final chunk, not built)
 
 Freeform/journal-style Airtable columns that don't belong in a dedicated Salesforce field aren't

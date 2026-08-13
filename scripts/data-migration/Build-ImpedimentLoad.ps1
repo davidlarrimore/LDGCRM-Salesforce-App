@@ -7,6 +7,12 @@
     this is a straight upsert-on-external-ID transform with no Salesforce query
     needed first.
 
+    OwnerId is deliberately NOT set. Checked, not overlooked: the Airtable
+    Impediments table has no owner/assignee column of any kind (its only
+    non-content columns are Airtable-side rollups). Under the ownership rule
+    agreed 2026-08-13, "no Airtable owner" means fall back to the loading user,
+    which is what leaving OwnerId unset already does.
+
     Field notes (checked against the Airtable export and LDGCRM_Impediment__c's
     metadata before assuming a same-name mapping, per the "States + DC/PR" lesson
     on Account):
@@ -54,7 +60,7 @@ $CategoryMap = @{
 try {
 
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host " IMPEDIMENT LOAD PREP (Airtable -> gsa-peo)" -ForegroundColor Cyan
+Write-Host " IMPEDIMENT LOAD PREP (Airtable -> Salesforce)" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "This script does not query or write to Salesforce - local files only." -ForegroundColor Yellow

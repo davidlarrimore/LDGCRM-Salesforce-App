@@ -56,6 +56,13 @@
     Department of Defense carry byte-identical 50-Opportunity lists, several
     named "(placeholder)". See docs/TRANSFORMATION-RULES.md.
 
+    OwnerId comes from Airtable's "Pod Opportunity Lead" (a collaborator object
+    carrying .email), per the ownership rule agreed 2026-08-13: use the Airtable
+    owner where they have an ACTIVE Salesforce User, otherwise fall back to the
+    loading user. The fallback is expressed by leaving OwnerId BLANK rather than
+    writing an explicit Id - see the OwnerId comment at the output row for why
+    that is deliberate and not an oversight.
+
     This needs no separate pass: Partner Accounts load BEFORE Opportunity (see
     the load order in docs/README.md), so the lookup resolves during this same
     load, and the derivation only needs the local Applications JSON export, not
@@ -65,7 +72,13 @@
 #>
 
 param(
-    [string]$OrgAlias = "gsa-peo",
+    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [string]$Environment = "Dev",
+
+    # Empty = use the environment's registered alias (scripts/common/Common.Orgs.ps1).
+    # Set this only to reach an org that isn't in the registry; doing so skips
+    # the registry's identity checks.
+    [string]$OrgAlias = "",
     [string]$ApiVersion = "67.0"
 )
 
@@ -73,6 +86,8 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\common\Common.ps1")
 . (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
+
+$OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-OpportunityLoad"
 
@@ -255,10 +270,25 @@ foreach ($Pa in $LoadedPartnerAccounts) {
 }
 Write-Host "$($LoadedPartnerAccountIds.Count) Partner Accounts present in $OrgAlias."
 
+# --- Record owner: "Pod Opportunity Lead" -> OwnerId ---
+# Always a scalar collaborator object here (verified: 0 of 826 rows carry more
+# than one), so no array unwrap is needed - unlike Application's Service Level,
+# which looked scalar and was a 1-element array. Checked rather than assumed.
+Write-Host ""
+Write-Host "Resolving Pod Opportunity Lead emails to Salesforce Users..." -ForegroundColor Cyan
+$LeadEmails = @($AirtableOpportunities |
+    ForEach-Object { $_.fields.'Pod Opportunity Lead'.email } |
+    Where-Object { $_ })
+
+$OwnerLookup = Resolve-SalesforceOwnerIds -Emails $LeadEmails -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+$DistinctLeads = @($LeadEmails | ForEach-Object { $_.ToLower() } | Sort-Object -Unique)
+Write-Host "$($OwnerLookup.IdByEmail.Count) of $($DistinctLeads.Count) distinct leads resolve to an active User."
+
 $UpsertRows = [System.Collections.Generic.List[object]]::new()
 $SkippedRows = [System.Collections.Generic.List[object]]::new()
 $ValueReviewRows = [System.Collections.Generic.List[object]]::new()
 $CloseDateFallbackRows = [System.Collections.Generic.List[object]]::new()
+$UnresolvedOwnerRows = [System.Collections.Generic.List[object]]::new()
 $DroppedDemographicCount = 0
 $UnresolvedPartnerAccountCount = 0
 
@@ -411,8 +441,40 @@ foreach ($Row in $AirtableOpportunities) {
         $FirstYearRamp = [math]::Round([double]$Row.fields.'Est. First Year Ramp %' * 100, 0)
     }
 
+    # --- OwnerId ---
+    # BLANK IS THE FALLBACK, AND IT IS DELIBERATE. Bulk API 2.0 treats an empty
+    # CSV value as "no value supplied", which means:
+    #   - on INSERT, Salesforce assigns the record to the loading user, which is
+    #     exactly the agreed fallback owner; and
+    #   - on a re-run that UPDATES an existing record, the current owner is left
+    #     untouched, so a manual reassignment made in Salesforce is not silently
+    #     reverted every time this pipeline runs.
+    # Writing the loading user's Id explicitly would satisfy the rule on insert
+    # but stomp real reassignments on every subsequent run.
+    $OwnerId = ""
+    $LeadEmail = $Row.fields.'Pod Opportunity Lead'.email
+    if ($LeadEmail) {
+        $LeadKey = "$LeadEmail".Trim().ToLower()
+        if ($OwnerLookup.IdByEmail.ContainsKey($LeadKey)) {
+            $OwnerId = $OwnerLookup.IdByEmail[$LeadKey]
+        }
+        else {
+            $UnresolvedOwnerRows.Add([PSCustomObject]@{
+                AirtableRecordId = $RecId
+                OpportunityName  = $Name
+                OwnerEmail       = $LeadEmail
+                Reason           = if ($OwnerLookup.Ambiguous -contains $LeadKey) {
+                    "More than one ACTIVE Salesforce User has this email - not guessed at. Owner falls back to the loading user."
+                } else {
+                    "No active Salesforce User has this email (checked with and without the sandbox '.invalid' suffix). Owner falls back to the loading user."
+                }
+            })
+        }
+    }
+
     $OutputRow = [ordered]@{
         LDGCRM_External_ID__c                      = $RecId
+        OwnerId                                     = $OwnerId
         Name                                        = $Name
         RecordTypeId                                = $LoginGovRecordTypeId
         StageName                                   = $Status
@@ -449,6 +511,7 @@ $UpsertFile = Join-Path $LoadDir "Opportunity-upsert.csv"
 $SkippedFile = Join-Path $LogDir "Opportunity-skipped-$Timestamp.csv"
 $ValueReviewFile = Join-Path $LogDir "Opportunity-value-review-$Timestamp.csv"
 $CloseDateFile = Join-Path $LogDir "Opportunity-closedate-fallback-$Timestamp.csv"
+$UnresolvedOwnerFile = Join-Path $LogDir "Opportunity-unresolved-owner-$Timestamp.csv"
 
 if ($UpsertRows.Count -gt 0) {
     Export-DataLoaderCsv -InputObject $UpsertRows.ToArray() -Path $UpsertFile
@@ -461,6 +524,9 @@ if ($ValueReviewRows.Count -gt 0) {
 }
 if ($CloseDateFallbackRows.Count -gt 0) {
     $CloseDateFallbackRows | Export-Csv -LiteralPath $CloseDateFile -NoTypeInformation -Encoding UTF8
+}
+if ($UnresolvedOwnerRows.Count -gt 0) {
+    $UnresolvedOwnerRows | Export-Csv -LiteralPath $UnresolvedOwnerFile -NoTypeInformation -Encoding UTF8
 }
 
 $SkippedNoStatus = @($SkippedRows | Where-Object { $_.Reason -like "No Status*" }).Count
@@ -479,6 +545,8 @@ Write-Host ("{0,-50} {1,8:N0}" -f "Skipped - no Account link in Airtable", $Skip
 Write-Host ("{0,-50} {1,8:N0}" -f "Skipped - Account not reconciled in org", $SkippedAccountUnreconciled)
 Write-Host ("{0,-50} {1,8:N0}" -f "Partner Account linked (via Applications)", @($UpsertRows | Where-Object { $_.'LDGCRM_Partner_Account__r.LDGCRM_External_ID__c' }).Count)
 Write-Host ("{0,-50} {1,8:N0}" -f "Partner Account known but not loaded yet", $UnresolvedPartnerAccountCount)
+Write-Host ("{0,-50} {1,8:N0}" -f "Owner set from Pod Opportunity Lead", @($UpsertRows | Where-Object { $_.OwnerId }).Count)
+Write-Host ("{0,-50} {1,8:N0}" -f "Owner falls back to the loading user", @($UpsertRows | Where-Object { -not $_.OwnerId }).Count)
 Write-Host ("{0,-50} {1,8:N0}" -f "CloseDate came from a fallback field", $CloseDateFallbackRows.Count)
 Write-Host ("{0,-50} {1,8:N0}" -f "Demographic tags dropped (unmapped)", $DroppedDemographicCount)
 Write-Host ("{0,-50} {1,8:N0}" -f "Other values blanked for review", $ValueReviewRows.Count)
@@ -499,6 +567,10 @@ if ($CloseDateFallbackRows.Count -gt 0) {
 if ($ValueReviewRows.Count -gt 0) {
     Write-Host "Values blanked/dropped for human review:" -ForegroundColor Yellow
     Write-Host $ValueReviewFile
+}
+if ($UnresolvedOwnerRows.Count -gt 0) {
+    Write-Host "Owners with no active Salesforce User (fell back):" -ForegroundColor Yellow
+    Write-Host $UnresolvedOwnerFile
 }
 
 }

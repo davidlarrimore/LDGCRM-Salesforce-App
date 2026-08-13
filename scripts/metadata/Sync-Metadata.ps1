@@ -14,13 +14,20 @@
     for the running list of known false positives).
 
     Usage:
-        powershell scripts/metadata/Sync-Metadata.ps1
-        powershell scripts/metadata/Sync-Metadata.ps1 -OrgAlias gsa-peo
+        powershell scripts/metadata/Sync-Metadata.ps1                  # Dev sandbox
+        powershell scripts/metadata/Sync-Metadata.ps1 -Environment QA
         powershell scripts/metadata/Sync-Metadata.ps1 -WhatIf          # report only; no manifest edit, no retrieve
         powershell scripts/metadata/Sync-Metadata.ps1 -SkipDiscovery   # retrieve the manifest as-is, skip the scan
 #>
 param(
-    [string]$OrgAlias = "gsa-peo",
+    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [string]$Environment = "Dev",
+
+    # Empty = use the environment's registered alias (scripts/common/Common.Orgs.ps1).
+    # Set this only to reach an org that isn't in the registry; doing so skips
+    # the registry's identity checks.
+    [string]$OrgAlias = "",
+
     [switch]$WhatIf,
     [switch]$SkipDiscovery
 )
@@ -28,6 +35,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\common\Common.ps1")
+
+$OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
 # Anything found in the org that matches this pattern - and isn't already a
 # manifest member or in the ignore list - is assumed to be a new LDGCRM

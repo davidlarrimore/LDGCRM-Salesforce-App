@@ -1,18 +1,18 @@
 ---
 name: sfdx-metadata-sync
-description: Use when pulling Salesforce metadata from the gsa-peo sandbox into sfdx/force-app, extending the retrieval manifest, or deploying local metadata changes back to the sandbox with the Salesforce CLI.
+description: Use when pulling Salesforce metadata from a GSA PEO org (Dev sandbox by default) into sfdx/force-app, extending the retrieval manifest, or deploying local metadata changes back to the sandbox with the Salesforce CLI.
 ---
 
-# Salesforce metadata sync (gsa-peo)
+# Salesforce metadata sync
 
-This project has one SFDX project (`sfdx/`) and one target org, alias `gsa-peo`. Metadata flows
+This project has one SFDX project (`sfdx/`) and four registered environments (Dev/QA/Full/Prod — see `scripts/common/Common.Orgs.ps1`; the Dev sandbox alias is `peodv8dvn`). Metadata flows
 both directions through the Salesforce CLI (`sf`) — retrieve from the sandbox into `sfdx/force-app`,
 or deploy local changes back out.
 
 ## Before anything: confirm the org
 
 ```bash
-sf org display --target-org gsa-peo
+sf org display --target-org peodv8dvn
 ```
 
 If this fails or looks unfamiliar, stop and check with the user before retrieving or deploying —
@@ -26,7 +26,7 @@ Prefer the manifest-driven sync over ad hoc `--metadata` flags, so retrievals st
 powershell scripts/metadata/Sync-Metadata.ps1
 ```
 
-This runs `sf project retrieve start -x manifest/package.xml --target-org gsa-peo` from `sfdx/` and
+This runs `sf project retrieve start -x manifest/package.xml --target-org peodv8dvn` from `sfdx/` and
 logs a transcript to `logs/metadata/`.
 
 **Extending coverage:** if you need something not yet in `sfdx/manifest/package.xml`, add a
@@ -39,7 +39,7 @@ manifest):
 
 ```bash
 cd sfdx
-sf project retrieve start --metadata "<Type>:<Name>" --target-org gsa-peo
+sf project retrieve start --metadata "<Type>:<Name>" --target-org peodv8dvn
 ```
 
 **Retrieving an Outbound Change Set's exact contents:** Change Sets have no direct Metadata/Tooling
@@ -49,7 +49,7 @@ label, not the Setup URL's ID) works as an unmanaged package name for retrieval:
 
 ```bash
 cd sfdx
-sf project retrieve start --package-name "<Change Set Name>" --target-org gsa-peo
+sf project retrieve start --package-name "<Change Set Name>" --target-org peodv8dvn
 ```
 
 This retrieves into a **new folder named after the package** (e.g. `sfdx/<Change Set Name>/main/default/`),
@@ -88,8 +88,8 @@ Validate before deploying — a deploy writes to the shared sandbox:
 
 ```bash
 cd sfdx
-sf project deploy validate --source-dir force-app --target-org gsa-peo
-sf project deploy start    --source-dir force-app --target-org gsa-peo
+sf project deploy validate --source-dir force-app --target-org peodv8dvn
+sf project deploy start    --source-dir force-app --target-org peodv8dvn
 ```
 
 Treat `deploy start` like any other write to shared state: confirm scope with the user first unless
