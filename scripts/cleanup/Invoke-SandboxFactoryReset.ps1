@@ -111,6 +111,12 @@ param(
 
     [string]$ObjectsCsv = "",
 
+    # Approve the delete without a prompt, by passing the same token the prompt
+    # asks for: -Confirmation "HARD DELETE". Deliberately a token rather than a
+    # -Force switch - see Assert-LdgcrmTypedConfirmation for why. Every
+    # non-interactive approval is announced and written to the transcript.
+    [string]$Confirmation = "",
+
     # Run the Account bootstrap after the deletes without prompting.
     [switch]$BootstrapAccounts,
 
@@ -363,7 +369,13 @@ function Invoke-AccountBootstrapStep {
         [string]$Env,
         [string]$Alias,
         [bool]$AlreadyAnswered,
-        [bool]$Suppressed
+        [bool]$Suppressed,
+
+        # When this reset was itself approved non-interactively, the child gets
+        # its own token too - otherwise an automated reset deletes everything
+        # and then stalls on the bootstrap's prompt, which is the worst possible
+        # place to stop.
+        [bool]$NonInteractive
     )
 
     if ($Suppressed) {
@@ -394,7 +406,22 @@ function Invoke-AccountBootstrapStep {
     Write-Host ""
 
     if (-not $AlreadyAnswered) {
-        $Answer = Read-Host "Run the Account bootstrap against $Alias now? (y/N)"
+        # -BootstrapAccounts / -SkipBootstrap already answer this without a
+        # prompt. This branch only runs when neither was passed, so a host that
+        # cannot prompt is told which flag to use rather than crashing on
+        # Read-Host - a half-finished factory reset (deleted, not rebuilt) is a
+        # worse place to stop than not starting.
+        try {
+            $Answer = Read-Host "Run the Account bootstrap against $Alias now? (y/N)"
+        }
+        catch {
+            Write-Host ""
+            Write-Host "This host cannot prompt, and neither -BootstrapAccounts nor -SkipBootstrap" -ForegroundColor Yellow
+            Write-Host "was passed. The records are deleted but the Account tree was NOT rebuilt." -ForegroundColor Yellow
+            Write-Host "Finish the reset with:" -ForegroundColor Yellow
+            Write-Host "  .\scripts\data-migration\Invoke-AccountBootstrap.ps1 -Environment $Env -Confirmation BOOTSTRAP" -ForegroundColor DarkGray
+            return "Not offered (host cannot prompt; pass -BootstrapAccounts)"
+        }
 
         if ($Answer -notmatch '^(y|yes)$') {
             Write-Host ""
@@ -414,7 +441,12 @@ function Invoke-AccountBootstrapStep {
     Write-Host ""
     Write-Host "Handing off to Invoke-AccountBootstrap.ps1..." -ForegroundColor Cyan
 
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $BootstrapScript -Environment $Env
+    if ($NonInteractive) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $BootstrapScript -Environment $Env -Confirmation BOOTSTRAP
+    }
+    else {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $BootstrapScript -Environment $Env
+    }
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
@@ -543,7 +575,8 @@ if ($TotalRecords -eq 0) {
         -Env $Environment `
         -Alias $OrgAlias `
         -AlreadyAnswered ([bool]$BootstrapAccounts) `
-        -Suppressed ([bool]$SkipBootstrap)
+        -Suppressed ([bool]$SkipBootstrap) `
+        -NonInteractive ([bool]$Confirmation)
 
     Write-Host ""
     Write-Host "Account bootstrap: $BootstrapStatus" -ForegroundColor Cyan
@@ -568,9 +601,10 @@ Write-Host ""
 # layers at the top), so calling it would be dead code that implies a production
 # path exists. The typed confirmation below is the only gate, and it guards a
 # sandbox.
-$Confirmation = Read-Host "Type HARD DELETE to continue"
-
-if ($Confirmation -cne "HARD DELETE") {
+if (-not (Assert-LdgcrmTypedConfirmation `
+        -Token "HARD DELETE" `
+        -Provided $Confirmation `
+        -Action ("HARD DELETE $(($TotalRecords + $NoteDocumentIds.Count).ToString('N0')) migrated record(s) from $OrgAlias"))) {
     Write-Host ""
     Write-Host "Factory reset cancelled. No records were deleted." `
         -ForegroundColor Yellow
@@ -776,7 +810,8 @@ $BootstrapStatus = Invoke-AccountBootstrapStep `
     -Env $Environment `
     -Alias $OrgAlias `
     -AlreadyAnswered ([bool]$BootstrapAccounts) `
-    -Suppressed ([bool]$SkipBootstrap)
+    -Suppressed ([bool]$SkipBootstrap) `
+    -NonInteractive ([bool]$Confirmation)
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green

@@ -77,6 +77,13 @@ param(
     # Write the request payloads and stop. Nothing is sent to Salesforce.
     [switch]$PlanOnly,
 
+    # Approve the load without a prompt: -Confirmation "LOAD". A token rather
+    # than a -Force switch - see Assert-LdgcrmTypedConfirmation.
+    [string]$Confirmation = "",
+
+    # Separate, additional token required only when -Environment Prod.
+    [string]$ProductionConfirmation = "",
+
     # Skip note creation and re-run only the linking step, from an earlier run's
     # note-Id file. For recovering orphaned notes.
     [string]$ResumeFromNoteIdFile = "",
@@ -273,12 +280,14 @@ Write-Host "ContentDocumentLink records in $OrgAlias." -ForegroundColor Yellow
 Write-Host "ContentNote has no external ID - these cannot be matched or re-upserted" -ForegroundColor Yellow
 Write-Host "later, only found by what they are attached to." -ForegroundColor Yellow
 
-if (-not (Assert-LdgcrmProductionConsent -Environment $Environment -Action "create $($Staging.Count) notes and attach them")) {
+if (-not (Assert-LdgcrmProductionConsent -Environment $Environment -Action "create $($Staging.Count) notes and attach them" -ProductionConfirmation $ProductionConfirmation)) {
     exit 0
 }
 
-$Typed = Read-Host "Type LOAD to continue"
-if ($Typed -cne "LOAD") {
+if (-not (Assert-LdgcrmTypedConfirmation `
+        -Token "LOAD" `
+        -Provided $Confirmation `
+        -Action "create $($Staging.Count) note(s) and attach them in $OrgAlias")) {
     Write-Host "Not confirmed. Nothing was written." -ForegroundColor Yellow
     exit 0
 }

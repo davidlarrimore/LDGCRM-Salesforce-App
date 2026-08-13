@@ -93,6 +93,13 @@ param(
     # resolved unambiguously.
     [switch]$StrictHierarchy,
 
+    # Approve the bootstrap without a prompt: -Confirmation "BOOTSTRAP". A token
+    # rather than a -Force switch - see Assert-LdgcrmTypedConfirmation.
+    [string]$Confirmation = "",
+
+    # Separate, additional token required only when -Environment Prod.
+    [string]$ProductionConfirmation = "",
+
     # Runaway guard. The export is 4 levels deep; this should never bind.
     [int]$MaxPasses = 12,
 
@@ -420,14 +427,15 @@ if (-not $PlanOnly) {
     Write-Host "This will write to Account in $($OrgAlias): up to $ToInsert inserts plus" -ForegroundColor Yellow
     Write-Host "parent-link updates, across up to $MaxPasses passes." -ForegroundColor Yellow
 
-    if (-not (Assert-LdgcrmProductionConsent -Environment $Environment -Action "bootstrap the Account tree from $([System.IO.Path]::GetFileName($SourceFile))")) {
+    if (-not (Assert-LdgcrmProductionConsent -Environment $Environment -Action "bootstrap the Account tree from $([System.IO.Path]::GetFileName($SourceFile))" -ProductionConfirmation $ProductionConfirmation)) {
         exit 0
     }
 
     Write-Host ""
-    $Confirmation = Read-Host "Type BOOTSTRAP to continue"
-
-    if ($Confirmation -cne "BOOTSTRAP") {
+    if (-not (Assert-LdgcrmTypedConfirmation `
+            -Token "BOOTSTRAP" `
+            -Provided $Confirmation `
+            -Action "bootstrap the Account tree in $OrgAlias from $([System.IO.Path]::GetFileName($SourceFile))")) {
         Write-Host ""
         Write-Host "Bootstrap cancelled. Nothing was written." -ForegroundColor Yellow
         exit 0

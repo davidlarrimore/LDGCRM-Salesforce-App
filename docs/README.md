@@ -359,6 +359,14 @@ Airtable pull of 2026-08-12.
   (`Resolve-SalesforceOwnerIds`) handles email → User for every object. Per-object sources, coverage,
   and the three silent resolution traps it fixes are in
   [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)'s "Record ownership" section.
+- **Every write is gated by a typed token, which can also be passed as a flag.** Interactive by
+  default; non-interactive by supplying the same token the prompt asks for — `-Confirmation "LOAD"`,
+  `"HARD DELETE"`, `"BOOTSTRAP"`. That makes the pipeline runnable by CI, an agent, or the Operations
+  team without weakening the gate: a token states *what* is being approved, where a `-Force` switch
+  would read the same on every command and travel between them by habit. Comparison is
+  case-sensitive, and every non-interactive approval prints an audit banner into the run transcript.
+  Production needs a second, separate token (`-ProductionConfirmation <alias>`) so a sandbox
+  automation can't be retargeted at production by changing `-Environment` alone.
 - **Dry run before a full load**, per `sfdx-sandbox-ops` — export/preflight-count before writing,
   small batch before the full object, explicit confirmation before anything destructive or
   hard-to-reverse.

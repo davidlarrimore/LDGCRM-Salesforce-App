@@ -323,7 +323,20 @@ function Assert-LdgcrmProductionConsent {
         [string]$Environment,
 
         [Parameter(Mandatory = $true)]
-        [string]$Action
+        [string]$Action,
+
+        # Non-interactive approval for an automated production run. The operator
+        # must pass the org alias in full, exactly as the prompt would ask them
+        # to type it.
+        #
+        # THIS IS A SEPARATE TOKEN FROM THE SCRIPT'S OWN -Confirmation, ON
+        # PURPOSE. Production writes therefore need TWO distinct approvals on the
+        # command line, neither of which can be supplied by habit:
+        #   -Confirmation "LOAD" -ProductionConfirmation "gsa-peo"
+        # Collapsing them into one flag would mean an operator who had automated
+        # a sandbox load could retarget it at production by changing only
+        # -Environment.
+        [string]$ProductionConfirmation = ""
     )
 
     $Entry = (Get-LdgcrmEnvironmentTable)[$Environment]
@@ -344,9 +357,12 @@ function Assert-LdgcrmProductionConsent {
     Write-Host "Operations team and confirm the change window before continuing." -ForegroundColor Yellow
     Write-Host ""
 
-    $Typed = Read-Host "Type the org alias ($($Entry.Alias)) to proceed"
-
-    if ($Typed -cne $Entry.Alias) {
+    if (-not (Assert-LdgcrmTypedConfirmation `
+            -Token $Entry.Alias `
+            -Provided $ProductionConfirmation `
+            -Action "PRODUCTION: $Action" `
+            -Prompt "Type the org alias ($($Entry.Alias)) to proceed" `
+            -ParameterName "-ProductionConfirmation")) {
         Write-Host ""
         Write-Host "Production guard not cleared. Nothing was run." -ForegroundColor Yellow
         return $false

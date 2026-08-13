@@ -221,9 +221,16 @@ foreach ($o in $objs) {
 it is about to delete first (audit trail), then requires a typed `HARD DELETE` confirmation. Against
 production it additionally requires typing the org alias (`Assert-LdgcrmProductionConsent`).
 
-- [ ] **Run it from a real new process** or the typed prompt won't appear:
+- [ ] **Either** run it from a real console so the prompt appears:
       `powershell -File scripts\cleanup\Invoke-SandboxFactoryReset.ps1 -Environment Dev -BootstrapAccounts`
-      The `&` call operator hits "NonInteractive mode" in some harnesses.
+      **or** approve it non-interactively by passing the same token the prompt asks for:
+      ```powershell
+      powershell -File scripts\cleanup\Invoke-SandboxFactoryReset.ps1 `
+          -Environment Dev -BootstrapAccounts -Confirmation "HARD DELETE"
+      ```
+      Every load script takes the same treatment (`-Confirmation "LOAD"` / `"BOOTSTRAP"`), so the
+      whole reload can be driven from a script or an agent. The token is case-sensitive and each
+      non-interactive approval is banner-logged to the transcript.
 - [ ] Decide `-BootstrapAccounts` (rebuild the Account tree straight after the deletes, no prompt) vs
       `-SkipBootstrap` (never). Omitting both prompts interactively.
 - [ ] Scope with `-ObjectsCsv` if not wiping everything. Comma-separated, no spaces.

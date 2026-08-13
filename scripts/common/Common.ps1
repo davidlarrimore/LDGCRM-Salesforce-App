@@ -20,6 +20,114 @@ function Get-RepoRoot {
     Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 }
 
+function Assert-LdgcrmTypedConfirmation {
+    <#
+        The single confirmation gate for every destructive or write operation in
+        this repo. Interactive by default; passable non-interactively by
+        supplying the SAME token the prompt would ask a human to type.
+
+        WHY THIS IS NOT A -Force SWITCH
+        ===============================
+        A boolean -Force is one keystroke, reads the same on every command, and
+        gets copy-pasted between contexts without thought - which is precisely
+        the failure mode a confirmation gate exists to prevent. Requiring the
+        literal token instead keeps the "state your intent" property that made
+        the interactive prompt worth having:
+
+            -Confirmation "HARD DELETE"
+
+        cannot be mistaken for anything else in a shell history, a CI log, or a
+        code review, and it cannot be carried across from a LOAD script to a
+        delete script by habit, because the tokens differ.
+
+        A typed prompt never proved anyone had READ anything anyway - it proved
+        someone could type. This keeps that same (modest) guarantee while making
+        the pipeline automatable by an agent, by CI, or by the Operations team,
+        which the interactive-only version simply was not.
+
+        WHAT IT STILL WILL NOT DO
+        =========================
+        It does not weaken any other gate. The Sandbox Factory Reset still
+        cannot target production at all (that block is structural, not a
+        prompt), and Assert-LdgcrmProductionConsent still applies on top of this
+        wherever it applies today.
+
+        EVERY NON-INTERACTIVE USE IS ANNOUNCED AND RECORDED. The banner below
+        goes through Write-Host into the script's transcript, so the audit trail
+        shows the operation was approved by flag rather than by a human at a
+        keyboard, and by whom.
+
+        Returns $true to proceed, $false if a human declined at the prompt.
+        THROWS on a wrong token, and on a missing token in a host that cannot
+        prompt - a clear instruction beats PowerShell's default
+        "Windows PowerShell is in NonInteractive mode", which tells an operator
+        nothing about how to fix it.
+    #>
+    param(
+        # What the operator must type/pass, e.g. "HARD DELETE". Compared
+        # case-sensitively: "hard delete" is not an approval.
+        [Parameter(Mandatory = $true)]
+        [string]$Token,
+
+        # Human-readable description of what is being approved, for the banner
+        # and for the error text.
+        [Parameter(Mandatory = $true)]
+        [string]$Action,
+
+        # The value of the calling script's -Confirmation parameter. Empty means
+        # "prompt me".
+        [string]$Provided = "",
+
+        # Overrides the prompt wording; the default suits most callers.
+        [string]$Prompt = "",
+
+        # The calling script's -Confirmation parameter name, quoted in the
+        # error when a host cannot prompt. Only differs if a script renames it.
+        [string]$ParameterName = "-Confirmation"
+    )
+
+    if (-not $Prompt) { $Prompt = "Type $Token to continue" }
+
+    if ($Provided) {
+        if ($Provided -cne $Token) {
+            throw ("Confirmation token mismatch. Expected exactly '$Token' but got '$Provided'. " +
+                   "Nothing was run. (The comparison is case-sensitive on purpose.)")
+        }
+
+        Write-Host ""
+        Write-Host "------------------------------------------------------------" -ForegroundColor Yellow
+        Write-Host " NON-INTERACTIVE CONFIRMATION" -ForegroundColor Yellow
+        Write-Host "------------------------------------------------------------" -ForegroundColor Yellow
+        Write-Host ("  Approved : {0}" -f $Action)
+        Write-Host ("  Token    : {0}  (supplied via {1})" -f $Token, $ParameterName)
+        Write-Host ("  User     : {0}\{1}" -f $env:USERDOMAIN, $env:USERNAME)
+        Write-Host ("  Host     : {0}" -f $env:COMPUTERNAME)
+        Write-Host ("  When     : {0}" -f (Get-Date).ToString("u"))
+        Write-Host "------------------------------------------------------------" -ForegroundColor Yellow
+        Write-Host ""
+
+        return $true
+    }
+
+    # No token supplied - fall back to prompting, and give a usable error when
+    # the host has no console to prompt with (agent harnesses, CI, scheduled
+    # tasks). Read-Host is attempted rather than guessed at via
+    # [Environment]::UserInteractive, which is unreliable across hosts.
+    try {
+        $Typed = Read-Host $Prompt
+    }
+    catch {
+        throw ("This host cannot prompt for confirmation, and no token was supplied. " +
+               "Re-run with $ParameterName `"$Token`" to approve non-interactively: $Action")
+    }
+
+    if ($Typed -cne $Token) {
+        return $false
+    }
+
+    return $true
+}
+
 function Get-LogDirectory {
     param(
         [Parameter(Mandatory = $true)]

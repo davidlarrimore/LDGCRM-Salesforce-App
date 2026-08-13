@@ -43,13 +43,34 @@ production use, and adding a way to approve it only creates a way to approve it 
 3. **Export before delete/modify.** Write the affected record IDs to a CSV in `logs/<category>/`
    before the destructive step runs, so there's an audit trail even though the folder is gitignored.
 
-## Never bypass the confirmation gate
+## The confirmation gate is typed, not a switch
 
-`Invoke-SandboxFactoryReset.ps1` requires the operator to type `HARD DELETE` verbatim before anything is deleted.
-Don't:
-- pre-answer or script around the `Read-Host` prompt,
-- add a `-Force` / `-Confirm:$false` flag to skip it,
-- run it non-interactively "to save time."
+Every destructive/write script gates on `Assert-LdgcrmTypedConfirmation` (`scripts/common/Common.ps1`):
+interactive by default, and passable non-interactively **by supplying the same token the prompt would
+ask a human to type**.
+
+```powershell
+-Confirmation "HARD DELETE"    # Invoke-SandboxFactoryReset.ps1
+-Confirmation "LOAD"           # Invoke-SalesforceLoad.ps1, Invoke-NotesLoad.ps1
+-Confirmation "BOOTSTRAP"      # Invoke-AccountBootstrap.ps1
+```
+
+**This is deliberately not a `-Force` switch, and don't add one.** A boolean is one keystroke, reads
+identically on every command, and gets copy-pasted between contexts without thought — exactly the
+failure a confirmation gate exists to prevent. A token keeps the "state your intent" property: it
+can't be carried from a load script to a delete script by habit because the tokens differ, and it is
+self-documenting in shell history, CI logs and code review. Comparison is case-sensitive; every
+non-interactive approval prints an audit banner into the transcript.
+
+Production writes need **two** distinct tokens — `-Confirmation` *and* `-ProductionConfirmation <alias>` —
+so an operator who automated a sandbox load cannot retarget it at production by changing
+`-Environment` alone.
+
+Still don't:
+- add a `-Force` / `-Confirm:$false` switch, or any flag that skips the gate rather than answering it,
+- weaken the case-sensitive comparison,
+- hard-code a token inside a script so it self-approves,
+- bake `-ProductionConfirmation` into a saved command or script.
 
 That prompt is the one safety gate before a permanent, non-recoverable delete (`--hard-delete`, not
 Recycle Bin). If a task genuinely requires skipping it, that's a decision for the user to make

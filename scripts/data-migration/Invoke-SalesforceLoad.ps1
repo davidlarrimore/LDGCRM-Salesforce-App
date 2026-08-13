@@ -49,6 +49,17 @@ param(
     [string]$ApiVersion = "67.0",
     [int]$WaitMinutes = 30,
 
+    # Approve the load without a prompt: -Confirmation "LOAD". A token rather
+    # than a -Force switch, so the approval states what it approves and can't be
+    # copy-pasted between scripts that expect different tokens. See
+    # Assert-LdgcrmTypedConfirmation.
+    [string]$Confirmation = "",
+
+    # Separate, additional token required only when -Environment Prod. Two
+    # distinct flags on purpose: an operator who automated a sandbox load
+    # cannot retarget it at production by changing -Environment alone.
+    [string]$ProductionConfirmation = "",
+
     <#
         Name of a TriggerControls__c custom-setting record to switch OFF for
         the duration of this load, then switch back on. See the big
@@ -225,9 +236,22 @@ if ($DisableTriggerControl) {
     Write-Host "afterwards. See the TRIGGER BYPASS block in this script for why." -ForegroundColor Yellow
 }
 
-$Confirmation = Read-Host "Type LOAD to continue"
+# The production guard runs BEFORE the load confirmation, and was missing here
+# entirely until 2026-08-13 - this script accepted -Environment Prod with only a
+# single "LOAD" to clear, while the docs claimed production was gated twice. It
+# is the most-used write script in the pipeline, so that was the worst place to
+# be missing it.
+if (-not (Assert-LdgcrmProductionConsent `
+        -Environment $Environment `
+        -Action "$Operation $($Rows.Count.ToString('N0')) row(s) into $ObjectApiName" `
+        -ProductionConfirmation $ProductionConfirmation)) {
+    exit 0
+}
 
-if ($Confirmation -cne "LOAD") {
+if (-not (Assert-LdgcrmTypedConfirmation `
+        -Token "LOAD" `
+        -Provided $Confirmation `
+        -Action "$Operation $($Rows.Count.ToString('N0')) row(s) into $ObjectApiName in $OrgAlias")) {
     Write-Host ""
     Write-Host "Load cancelled. Nothing was written." -ForegroundColor Yellow
     exit 0
