@@ -59,7 +59,8 @@ $DefaultTables = @(
     [PSCustomObject]@{ Label = "Opportunity Contacts"; TableId = "tbl6tVFthvVrdpNbf" },
     [PSCustomObject]@{ Label = "Impediments"; TableId = "tbl8j1PTFBUBAMcyq" },
     [PSCustomObject]@{ Label = "Market Segments"; TableId = "tblu0YYt8ffuWZ2ef" },
-    [PSCustomObject]@{ Label = "Meetings"; TableId = "tblGEHJ83qdnLEc6M" }
+    [PSCustomObject]@{ Label = "Meetings"; TableId = "tblGEHJ83qdnLEc6M" },
+    [PSCustomObject]@{ Label = "Issuer Strings"; TableId = "tbl8XAxD4G5uBEPMk" }
 )
 
 if ($Tables -and $Tables.Count -gt 0) {
