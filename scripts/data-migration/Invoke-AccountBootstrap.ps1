@@ -458,6 +458,10 @@ $ParentConflicts = [System.Collections.Generic.List[object]]::new()
 $AmbiguousSelf = [System.Collections.Generic.List[object]]::new()
 
 $TotalInserted = 0
+# Passes whose Bulk result could not be parsed - see the guard in the write
+# block. Tracked so the summary can say the insert total is a FLOOR rather than
+# letting it read as exact.
+$UnparseablePasses = 0
 $TotalParented = 0
 $TotalInsertFailed = 0
 $TotalUpdateFailed = 0
@@ -737,14 +741,39 @@ for ($Pass = 1; $Pass -le $MaxPasses; $Pass++) {
         $InsertResult = Invoke-BulkCsv -Subcommand "import" -CsvFile $InsertFile -Org $OrgAlias -Version $ApiVersion -Wait $WaitMinutes
         $Counts = Get-BulkCounts -Result $InsertResult
 
-        $Succeeded = $Counts.Processed - $Counts.Failed
-        $TotalInserted += $Succeeded
-        $TotalInsertFailed += $Counts.Failed
+        # UNPARSEABLE RESULT GUARD. Get-BulkCounts knows two JSON shapes; the CLI
+        # has at least one more. On 2026-08-13 pass 2 submitted 336 Accounts and
+        # this reported "inserted 0, failed 0 (job )" - no job id, no counts -
+        # while all 336 had in fact loaded. The run then under-reported its total
+        # by 334 (said 249, actually 583).
+        #
+        # Under-reporting an INSERT is the dangerous direction: an operator who
+        # believes nothing loaded re-runs the pass and creates duplicate
+        # Accounts, which nothing here would catch (bootstrapped Accounts carry
+        # no external ID, so they cannot be deduplicated afterwards by key).
+        # So say plainly that the count is unknown rather than printing a zero
+        # that looks like a fact.
+        $Unparseable = ($Counts.Processed -eq 0 -and -not $Counts.JobId)
 
-        Write-Host ("  inserted {0:N0}, failed {1:N0} (job {2})" -f $Succeeded, $Counts.Failed, $Counts.JobId)
+        if ($Unparseable) {
+            Write-Host ("  !! Could not read the job result for this pass. {0:N0} row(s) were submitted; " -f $InsertRows.Count) -ForegroundColor Red
+            Write-Host "     how many landed is UNKNOWN from here - the CLI returned a shape this script" -ForegroundColor Red
+            Write-Host "     does not recognise. They may well have inserted." -ForegroundColor Red
+            Write-Host "     DO NOT re-run this pass before checking the org: a second run would create" -ForegroundColor Red
+            Write-Host "     duplicate Accounts, and bootstrapped Accounts carry no external ID to dedupe on." -ForegroundColor Red
+            Write-Host ("     Check with: sf data query -q ""SELECT COUNT() FROM Account"" --target-org {0}" -f $OrgAlias) -ForegroundColor DarkGray
+            $UnparseablePasses++
+        }
+        else {
+            $Succeeded = $Counts.Processed - $Counts.Failed
+            $TotalInserted += $Succeeded
+            $TotalInsertFailed += $Counts.Failed
 
-        if ($Counts.Failed -gt 0) {
-            Write-Host "  Row failures - see the job result via: sf data bulk results --job-id $($Counts.JobId) --target-org $OrgAlias" -ForegroundColor Yellow
+            Write-Host ("  inserted {0:N0}, failed {1:N0} (job {2})" -f $Succeeded, $Counts.Failed, $Counts.JobId)
+
+            if ($Counts.Failed -gt 0) {
+                Write-Host "  Row failures - see the job result via: sf data bulk results --job-id $($Counts.JobId) --target-org $OrgAlias" -ForegroundColor Yellow
+            }
         }
     }
 
@@ -817,8 +846,20 @@ Write-Host ""
 $PassSummaries | Format-Table -AutoSize
 
 if (-not $PlanOnly) {
-    Write-Host ("{0,-40} {1,8:N0}" -f "Accounts inserted", $TotalInserted)
+    if ($UnparseablePasses -gt 0) {
+        Write-Host ("{0,-40} {1,8:N0}  <- AT LEAST this many; see below" -f "Accounts inserted", $TotalInserted) -ForegroundColor Yellow
+    }
+    else {
+        Write-Host ("{0,-40} {1,8:N0}" -f "Accounts inserted", $TotalInserted)
+    }
     Write-Host ("{0,-40} {1,8:N0}" -f "Parent links set", $TotalParented)
+
+    if ($UnparseablePasses -gt 0) {
+        Write-Host ""
+        Write-Host ("  !! {0} pass(es) returned a Bulk result this script could not read, so the" -f $UnparseablePasses) -ForegroundColor Red
+        Write-Host "     'Accounts inserted' figure above is a FLOOR, not a total. The verification" -ForegroundColor Red
+        Write-Host "     line below is measured against the org and is the number to trust." -ForegroundColor Red
+    }
 
     if ($TotalInsertFailed -gt 0 -or $TotalUpdateFailed -gt 0) {
         Write-Host ("{0,-40} {1,8:N0}" -f "Insert row failures", $TotalInsertFailed) -ForegroundColor Red

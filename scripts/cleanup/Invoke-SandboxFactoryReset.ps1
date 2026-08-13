@@ -661,9 +661,17 @@ if ($NoteDocumentIds.Count -gt 0) {
     # Deleting ContentNote directly is not the equivalent operation.
     Remove-Records -ObjectApiName "ContentDocument" -CsvFile $NoteIdFile
 
+    # SHAPE MUST MATCH the per-object results added below. Format-Table builds
+    # its columns from the FIRST object it sees, and this one is first - so a
+    # different property set here renders every later row's counts as BLANK
+    # while the totals underneath stay correct. That is exactly what the
+    # 2026-08-13 reload printed: "Deleted 537" for notes and empty cells for all
+    # nine objects, against a real total of 6,335.
     $Results += [PSCustomObject]@{
-        Object  = "ContentDocument (notes)"
-        Deleted = $NoteDocumentIds.Count
+        Object         = "ContentDocument (notes)"
+        PreflightCount = $NoteDocumentIds.Count
+        ExportedCount  = $NoteDocumentIds.Count
+        Status         = "Completed"
     }
 }
 

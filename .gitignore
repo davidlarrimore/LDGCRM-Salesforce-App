@@ -45,3 +45,9 @@ $RECYCLE.BIN/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+
+# Salesforce CLI bulk job result files - written to CWD by `sf data bulk results`.
+# They contain full record payloads (applicant names, emails, partner notes), so
+# they are PII and must never be committed. Same reasoning as logs/ and data/.
+750*-success-records.csv
+750*-failed-records.csv

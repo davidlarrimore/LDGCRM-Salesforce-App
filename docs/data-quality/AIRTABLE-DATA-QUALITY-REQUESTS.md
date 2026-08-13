@@ -19,6 +19,33 @@ migration into Salesforce.
 **This list grows as more tables get migrated** (Contacts, Opportunities, and a few others haven't
 been reviewed yet as of 2026-08-13) — it isn't the final/complete list, just everything found so far.
 
+## 📈 Where things stand after the 2026-08-13 full reload
+
+The sandbox was wiped and rebuilt from scratch to measure exactly this. **Your fixes moved a lot.**
+
+| | Before | After |
+| --- | --- | --- |
+| **Total records migrated** | 6,819 | **8,734** *(+28%)* |
+| Opportunities | 742 | **842** |
+| Applications | 688 | **1,026** |
+| Contacts | 1,483 | **1,870** |
+| Application–Contact links | 1,880 | **2,699** |
+| Notes | 537 | **716** |
+| Partner Accounts | 74 | **92** |
+
+**Nine items on this list are now fully resolved** — see the [Resolved log](#-resolved-log). The
+standouts:
+
+- **Every Opportunity now has a real estimated go-live date** (199 of 928 → 904 of 904). Salesforce
+  requires a Close Date, so until now most were filled with a stand-in date that couldn't be trusted
+  for reporting. **Zero** now use a stand-in.
+- **Every Opportunity has a Status and an Account link** (28 and 16 missing → 0 and 0).
+- **Contacts with no agency dropped 86%** (390 → 54), purely as a knock-on effect of the Account work.
+- **Applications blocked by unmatched Accounts dropped 94%** (359 → 22).
+
+**The Account duplicate/matching work remains the highest-impact item left.** It's down 172 → 155
+rows, but almost everything still blocked traces back to it.
+
 ### How to read the status on each item
 
 Items are **never deleted from this document when they're fixed** — they're marked resolved and kept,
@@ -48,11 +75,23 @@ to an Account, every Application must be linked to a Partner Account). Airtable 
 link get skipped rather than guessed at. None of these are broken on the Salesforce side — they need
 a decision or a data fix in Airtable.
 
-### Accounts: 172 rows don't match an existing Salesforce Account
+### Accounts: rows that don't match an existing Salesforce Account — 🟡 172 → 155
 
-Airtable has 757 Account rows; Salesforce already has 588. When we tried to match them up (by ID
-first, then by exact name), 172 Airtable rows didn't match anything. Full list:
-`logs/data-migration/Account-reconciliation-unmatched-*.csv` (ask engineering for the latest one).
+**Status: 🟡 Partially resolved — 172 → 155** as of the 2026-08-13 full reload. **Still the
+highest-impact item on this list**, because everything below cascades from it.
+
+What the remaining 155 are still blocking, measured on this reload (all sharply down):
+
+| Blocked by unmatched Accounts | Was | Now |
+| --- | --- | --- |
+| Partner Accounts | ~20 | **2** |
+| Applications | 359 | **22** |
+| Opportunities | 142 | **62** |
+| Contacts (no agency) | 390 | **54** |
+
+Airtable has 747 Account rows; Salesforce has 584 tagged. Matching is by ID first, then exact name.
+Full list: `logs/data-migration/Account-reconciliation-unmatched-*.csv` (ask engineering for the
+latest one).
 
 One concrete example: **`Depart of Homeland Security`** looks like a typo'd duplicate of an Account
 that's already in Salesforce under its correct name.
@@ -213,73 +252,40 @@ roughly 400 records.
 *(Note for engineers: this is a `gsa-peo` sandbox observation. Confirm against production before
 acting — the sandbox's user list is not guaranteed to match.)*
 
-### Applications: 11 records look like incomplete drafts, not ready to migrate
+### Applications: 11 records look like incomplete drafts — ✅ RESOLVED 2026-08-13
 
-These all have a blank Status, no Partner Account link, and no other data filled in — and were
-**created within the last ~7 weeks** (several just 8 days before this was written), so they read as
-records someone started entering and hasn't finished, not old/stale data:
+**Status: ✅ Resolved.** **0 Applications** now have both a blank Status and no Partner Account link,
+down from 11. The four near-duplicate HHS-named rows and the `Test Application` scratch record are no
+longer in that state. Nothing further needed.
 
-| Name | Created |
-| --- | --- |
-| `DOL - ICAM` | 2026-06-25 |
-| `HHS` | 2026-06-25 |
-| `HHS OIG` (two separate records with this exact name) | 2026-06-25 |
-| `HHS-OIG` | 2026-06-25 |
-| `SSA Secure Online Services` | 2026-08-04 |
-| `MyTravelGov` | 2026-08-04 |
-| `DOL EBSA` (two separate records with this exact name) | 2026-06-25 |
-| `Test Application` | 2026-01-26 |
+### Applications: rows with a Name or URL too long for Salesforce — ✅ RESOLVED 2026-08-13 (one left)
 
-The four HHS-named rows in particular were all created within about 35 minutes of each other on
-2026-06-25 — worth checking whether some of these are accidental duplicates of the same intended
-record rather than four separate applications.
+**Status: ✅ Resolved for Names and the `URL` column.** Verified against a fresh export:
 
-**What we need:** either finish entering these (Status + linked Partner Account, at minimum) before
-the next migration pass, or confirm they should stay as drafts for now — we'll re-check this table
-closer to the actual migration date rather than assuming today's snapshot is final.
-`Test Application` in particular looks like a scratch/test record — probably safe to delete outright.
+- **Application Name over 80 characters: 5 → 0.** Nothing is being truncated any more.
+- **`URL` over 255 characters: 13 → 0.** Nothing is being blanked any more.
 
-### Applications: 14 rows have a Name or URL too long for Salesforce
+**One remains, and it's the easy one:** a single **`Launch Deck URL` of 275 characters** — a Google
+redirect wrapper around a Drive link, where the underlying Drive URL would fit comfortably. Replacing
+it with the plain Drive link closes this item entirely. (The other 8 rows still in
+`logs/data-migration/Application-overlength-*.csv` are the long *partner-portal team names*, tracked
+separately under Issuer Strings above — not Application data.)
 
-Found during the first real Application load attempt (2026-08-13). These are **Salesforce platform
-hard limits**, not something we can raise by changing a field setting — unlike a few earlier cases in
-this migration where a too-short field genuinely was ours to fix:
+### Applications: 1 row has a mistyped go-live year (`ECOMP`) — ✅ RESOLVED 2026-08-13
 
-- **5 rows: Application Name is over 80 characters.** *(Count is from the first load pass; a later
-  pass found 14 total over-length values across Name and all URL fields.)* Salesforce caps every custom object's Name
-  field at 80 characters, with no way to extend it. We're **truncating these to 80 characters** on
-  load and flagging them, e.g. `Office of Minority and Women Inclusion (OMWI)'s Supplier Diversity
-  Business Management System (SDBMS)` and `CISA Firmware Analysis and App Vetting Execution (FAAVE)
-  (aka Mobile App Vetting (MAV))`.
-- **14 rows: a URL is over 255 characters** (13 in the `URL` column, 1 in `Launch Deck URL`).
-  Salesforce caps URL-type fields at 255 characters, also not extendable. A truncated URL wouldn't
-  work, so we're **leaving these blank** rather than loading a broken link. Most are very long
-  OAuth/SSO authorization URLs with large query strings (one DHS Okta URL runs over 1,200
-  characters); the `Launch Deck URL` case is a Google redirect wrapper around a Drive link, where the
-  underlying Drive URL would fit fine on its own.
+**Status: ✅ Resolved.** `ECOMP`'s Actual Go-Live Date is now **`2020-02-18`**, a valid date —
+previously `0202-02-18`, which Salesforce rejected outright. The field now migrates.
 
-**What we need:** for the 5 long names, a shorter official name or accepted abbreviation would be
-better than our automatic truncation (which just cuts at 80 characters and may cut mid-word). For the
-9 long URLs, a shorter canonical landing-page URL would be better than a full OAuth authorization
-link — those long links are usually session/flow-specific anyway and aren't durable as a record of
-"where this application lives." Full list in
-`logs/data-migration/Application-overlength-*.csv` (ask engineering for the latest).
+*(One thing worth a second look, purely as a sanity check: this document originally guessed the
+intended value was `2022-02-18`, and it was set to `2020`. Either is plausible and neither blocks
+anything — just confirm 2020 is the year you meant.)*
 
-### Applications: 1 row has a mistyped go-live year (`ECOMP`)
+### Applications: 2 rows have an unusable "Ramp Up Approach" value — ✅ RESOLVED 2026-08-13
 
-`ECOMP` has an **Actual Go-Live Date of `0202-02-18`** — almost certainly meant to be `2022-02-18`.
-Salesforce rejects the record outright rather than storing an impossible year, so this field is
-currently being loaded blank. Its Current Go Live Date (`2026-03-02`) is fine.
-
-**What we need:** correct the year in Airtable. This is the only date of its kind — every other date
-value across both go-live columns (1,565 values) is valid.
-
-### Applications: 2 rows have an unusable "Ramp Up Approach" value
-
-Values `"Q1 - FY'23"` and `"146"` don't match any real Ramp Up Approach (`Gradual`/`Immediate`/
-`Spikes`) — look like the wrong data got entered into this field. Low priority (the Salesforce field
-is optional, so these two records will migrate fine with it left blank), but worth a quick fix in
-Airtable if there's a real value that belongs there.
+**Status: ✅ Resolved.** The `"Q1 - FY'23"` and `"146"` values are gone. All **745** Applications that
+carry a Ramp Up Approach now use a real one (`Gradual`/`Immediate`/`Spikes` with a level suffix) —
+**0 unusable**. The remaining 311 Applications simply have the field empty, which is fine; it's
+optional.
 
 ### Issuer Strings: 273 Team Name / Team UUID cells contain the literal text `#N/A` — 🔴 OPEN
 
@@ -548,52 +554,40 @@ the Application records over them; everything else about those Applications migr
 Neither is an External ID and nothing matches records on them, so nothing depends on the setting.
 Once it's changed, the data loads on the next run with no code change.
 
-### Opportunities: 28 records have no Status, so they can't migrate
+### Opportunities: 28 records have no Status — ✅ RESOLVED 2026-08-13
 
-Salesforce requires every Opportunity to have a stage, and there's no sensible default to invent, so
-these 28 are skipped. All were created on **2026-07-22** within the same batch, and most also have no
-Account link — they read as an unfinished bulk import. Examples: `DOC - OSSD(Office of Solution`
-(name looks truncated mid-word), `TSA CFMS (Certified Facility Management System)`,
-`eNativeTrust Family Portal`, `CA - LACERA`, `US Coast Guard`, `Service`, `DOL OUIM Expansion (legacy`
-(also truncated), `DHS-Trusted Traveler Programs`.
+**Status: ✅ Resolved. Thank you — nothing further needed.** All 904 Opportunities now carry a Status.
+Verified against a fresh export during the 2026-08-13 full reload: **0 rows without one**, down from
+28. Those records now migrate.
 
-**What we need:** set a Status (and ideally an Account link) on these, or confirm they're abandoned
-drafts we should ignore. Full list in `logs/data-migration/Opportunity-skipped-*.csv`.
+### Opportunities: 16 records have no Account link — ✅ RESOLVED 2026-08-13
 
-### Opportunities: 16 records have no Account link
+**Status: ✅ Resolved.** Every Opportunity now has an Account link — **0 without one**, down from 16.
+This also means they pick up a Market Segment automatically (Salesforce derives it from the Account).
 
-Same situation as the Partner Accounts above — an Opportunity with no Account can't get its Market
-Segment either (Salesforce derives that from the Account automatically). Skipped rather than loaded
-half-connected.
+### Opportunities: blocked by the duplicate-Account problem — 🟡 PARTIALLY RESOLVED
 
-### Opportunities: 142 more are blocked by the duplicate-Account problem
+**Status: 🟡 Partially resolved — 142 → 62.** These point at Airtable Account rows that don't match a
+Salesforce Account (the issue at the top of this document). Progress on the Account duplicates has cut
+this by more than half. **The remaining 62 will migrate automatically once those Accounts are
+resolved**, with no work needed on the Opportunity records themselves. Current list:
+`logs/data-migration/Opportunity-skipped-*.csv`.
 
-These point at Airtable Account rows that don't match a Salesforce Account — the same issue described
-at the top of this document. **They will migrate automatically once those Accounts are resolved**, no
-further work needed on the Opportunity records themselves.
+### Opportunities: 729 records have no estimated go-live date — ✅ RESOLVED 2026-08-13
 
-### Opportunities: 729 records have no estimated go-live date
+**Status: ✅ Resolved, and this one was a big lift — thank you.** **All 904 Opportunities now have an
+`Est. Go Live` value**, up from 199 of 928.
 
-Salesforce requires a Close Date on every Opportunity. Only 199 of 928 have an `Est. Go Live` value —
-and the gap is understandable rather than sloppy: 524 of 531 `Identified` opportunities have none,
-because a go-live date isn't estimated until a deal qualifies. To load at all, we fall back to the
-record's last status-change date, then its created date. **These are not real forecast dates** and
-shouldn't be read as such in Salesforce reporting until a genuine estimate exists.
+This matters more than the count suggests. Close Date is required on every Salesforce Opportunity, so
+until now we fell back to the last status-change date and then the created date — **dates that were
+not real forecasts** and couldn't safely be used for reporting. As of this reload **0 Opportunities
+use a fallback**: every Close Date in Salesforce is now a genuine estimate from Airtable.
 
-**What we need:** nothing blocking — but any opportunity that's far enough along to have a realistic
-go-live estimate would be more useful in Salesforce with `Est. Go Live` filled in. We re-read this
-every run, so filling them in later automatically corrects the Close Date. Affected records are
-listed in `logs/data-migration/Opportunity-closedate-fallback-*.csv`.
+### Opportunities: "Gov?t Employees" has a corrupted apostrophe — ✅ RESOLVED 2026-08-13
 
-### Opportunities: "Gov?t Employees" has a corrupted apostrophe
-
-25 records have the Demographic Served value **`Gov?t Employees`** — a literal question mark where an
-apostrophe should be (`Gov't`). We confirmed this is genuinely stored that way in Airtable, not a
-glitch in our export (other curly apostrophes in the same data come through fine). We map it to the
-correct `Gov't Employees` on load, so nothing is blocked.
-
-**What we need:** fix the value in Airtable so it stops propagating. It likely came from a paste out
-of a system that couldn't handle the apostrophe.
+**Status: ✅ Resolved.** The literal question mark is gone — **0 records** carry `Gov?t Employees`,
+down from 25. The mapping that corrected it on load is now a no-op and can be retired whenever the
+transform is next touched.
 
 ### Opportunities: the "Priority Type" field can't be migrated yet — 🟡 PARTIALLY RESOLVED
 
@@ -718,9 +712,13 @@ guessing would invent role data on 716 records. The value is currently dropped.
 **What we need:** either confirm that "Technical Emails" should map to "Technical POC", or add a
 matching subscription option in Salesforce, or confirm it isn't needed.
 
-### Contacts: 390 can't be linked to any agency, so they are no longer migrated
+### Contacts: can't be linked to any agency — 🟡 390 → 54, LARGELY RESOLVED
 
-**Changed 2026-08-13.** Contacts with no resolvable Account are now **skipped rather than loaded**. A
+**Status: 🟡 Down from 390 to 54** as of the 2026-08-13 full reload — an 86% reduction, driven by the
+Account fixes above rather than by anything done to the Contact records themselves. **1,870 Contacts
+now load, up from 1,483.**
+
+**Changed 2026-08-13.** Contacts with no resolvable Account are **skipped rather than loaded**. A
 contact attached to no agency isn't usable in the CRM, can't inherit an owner, and each one caused
 Salesforce to auto-create a junk placeholder Account.
 
@@ -734,13 +732,12 @@ A further 38 are matched by email domain where every other contact on that `.gov
 the same agency (listed in `logs/data-migration/Contact-domain-inferred-account-*.csv` — these are
 inferred, not recorded, and are worth a spot-check).
 
-**That leaves 390 with no agency at all.** Most trace back to the unmatched-Account problem at the
-top of this document, so fixing those Accounts brings these contacts back automatically with no
-further work. The rest genuinely have no agency recorded anywhere.
+**That leaves 54** (was 390) with no agency at all. As predicted, they traced back to the
+unmatched-Account problem at the top of this document, and fixing those Accounts recovered them
+automatically with no work on the Contact records.
 
-**What we need:** nothing separate — fixing the Account duplicates above is what recovers these. The
-full list is in `logs/data-migration/Contact-no-account-*.csv` if you want to review them
-individually.
+**What we need:** still nothing separate — closing out the remaining Account duplicates recovers most
+of the last 54. Current list: `logs/data-migration/Contact-no-account-*.csv`.
 
 ### Impediments: what does the impediment named "None" mean?
 
@@ -761,23 +758,24 @@ that takes a single setting, no code change.
 to remove those links in Airtable (an opportunity with no impediment simply shouldn't be linked to
 one) and delete the record.
 
-### Impediments: 122 opportunities are marked as both blocked and requested
+### Impediments: opportunities marked as both blocked and requested — 🟡 DOWN TO 7
+
+**Status: 🟡 The count is now 7, as predicted.** 122 → **7**, because 115 of the original 122 involved
+the `None` placeholder impediment, which the migration excludes.
 
 The same opportunity appears in **both** the "Opportunities blocked" and "Opportunities requested"
-lists for the same impediment. Salesforce stores a single severity per link, so it can't be both.
-We currently record these as **Blocker** (the more severe reading), and every case is listed in
+lists for the same impediment. Salesforce stores a single severity per link, so it can't be both; we
+record these as **Blocker** (the more severe reading). The 7 remaining are genuine and listed in
 `logs/data-migration/OpportunityImpediment-severity-conflict-*.csv`.
 
-115 of the 122 involve the `None` impediment above, so resolving that question resolves most of
-these. That leaves **7 genuine cases** worth a human check.
-
 **What we need:** confirm whether "blocked" or "requested" is correct for those 7, and ideally avoid
-putting the same opportunity in both lists going forward.
+putting the same opportunity in both lists going forward. **Note this closes only if the `None`
+question above is also closed** — the 115 are suppressed by our exclusion, not fixed at source.
 
-### Impediments: "Feature - Citizenship verification" exists twice
+### Impediments: "Feature - Citizenship verification" exists twice — ✅ RESOLVED 2026-08-13
 
-Two separate impediment records share that exact name. Worth merging so the linked opportunities and
-blocked-revenue totals aren't split across two records.
+**Status: ✅ Resolved.** Only **one** record with that name now exists, down from two, so linked
+opportunities and blocked-revenue totals are no longer split.
 
 ## Recommended cleanup — not blocking, but worth doing
 
@@ -846,6 +844,17 @@ to the full item above, which is kept in place rather than deleted.
 | --- | --- | --- | --- | --- |
 | 2026-08-13 | [Opportunities: identity-platform columns](#opportunities-identity-platform-columns-point-at-an-untracked-table---resolved-2026-08-13) | `Existing Identity Platforms` and `Alternative Identity Platforms` converted from linked records to plain multi-selects holding vendor names | **Airtable data owners** | Both fields now migrate. 272 + 181 tags, none lost in the conversion. 3 spelling differences mapped in code, no Airtable edit needed. ⚠️ Requires an Airtable export pulled *after* the conversion — the 2026-08-12 export predates it, and `Build-OpportunityLoad.ps1` now **fails loudly** rather than dropping the 453 stale values silently. |
 | 2026-08-13 | [Opportunities: "Priority Type"](#opportunities-the-priority-type-field-cant-be-migrated-yet---partially-resolved) *(partial)* | Deleted the malformed picklist value that was all six labels concatenated into one string; confirmed the correct target field is Level of Priority, not the identically-labelled TTS OTCRM field | Salesforce config owner | Unblocks the *analysis*, not the data. Still needs the seven values added to Level of Priority before any of the 462 rows can load. |
+| 2026-08-13 | [Opportunities: 28 with no Status](#opportunities-28-records-have-no-status--resolved-2026-08-13) | Every Opportunity now has a Status | **Airtable data owners** | 28 → 0. Those records migrate. |
+| 2026-08-13 | [Opportunities: 16 with no Account link](#opportunities-16-records-have-no-account-link--resolved-2026-08-13) | Every Opportunity now has an Account link | **Airtable data owners** | 16 → 0. They also pick up a Market Segment automatically. |
+| 2026-08-13 | [Opportunities: 729 with no estimated go-live date](#opportunities-729-records-have-no-estimated-go-live-date--resolved-2026-08-13) | `Est. Go Live` filled in across the board | **Airtable data owners** | 199/928 → **904/904**. **0 Opportunities now use a fallback Close Date**, so every Close Date in Salesforce is a real estimate rather than a stand-in. The biggest single data-quality win of the day. |
+| 2026-08-13 | [Opportunities: "Gov?t Employees" apostrophe](#opportunities-govt-employees-has-a-corrupted-apostrophe--resolved-2026-08-13) | Corrupted value corrected at source | **Airtable data owners** | 25 → 0. The load-time mapping is now a no-op. |
+| 2026-08-13 | [Applications: 11 incomplete drafts](#applications-11-records-look-like-incomplete-drafts--resolved-2026-08-13) | Drafts completed or removed | **Airtable data owners** | 11 → 0 with both a blank Status and no Partner Account. |
+| 2026-08-13 | [Applications: over-length Name / URL](#applications-rows-with-a-name-or-url-too-long-for-salesforce--resolved-2026-08-13-one-left) | Long Application Names and `URL` values shortened | **Airtable data owners** | Name >80: 5 → 0 (nothing truncated any more). `URL` >255: 13 → 0 (nothing blanked). **1 `Launch Deck URL` of 275 chars remains.** |
+| 2026-08-13 | [Applications: `ECOMP` mistyped go-live year](#applications-1-row-has-a-mistyped-go-live-year-ecomp--resolved-2026-08-13) | `0202-02-18` → `2020-02-18` | **Airtable data owners** | Date now valid and migrating. Worth confirming 2020 was the intended year (this doc had guessed 2022). |
+| 2026-08-13 | [Applications: 2 unusable Ramp Up Approach values](#applications-2-rows-have-an-unusable-ramp-up-approach-value--resolved-2026-08-13) | `"Q1 - FY'23"` and `"146"` cleared | **Airtable data owners** | All 745 populated values are now valid; 0 unusable. |
+| 2026-08-13 | [Impediments: "Feature - Citizenship verification" duplicated](#impediments-feature---citizenship-verification-exists-twice--resolved-2026-08-13) | The two records merged into one | **Airtable data owners** | Linked opportunities and blocked-revenue totals no longer split across two records. |
+| 2026-08-13 | [Accounts: unmatched rows](#accounts-rows-that-dont-match-an-existing-salesforce-account--172--155) *(partial)* | Ongoing duplicate/merge work in Airtable | **Airtable data owners** | 172 → 155 unmatched, but the *downstream* effect is far larger: Applications blocked 359 → **22**, Opportunities 142 → **62**, Contacts with no agency 390 → **54**, Partner Accounts ~20 → **2**. |
+| 2026-08-13 | Migration pipeline (engineering, not an Airtable fix) | Contact ownership now inherits the Account owner; Contact sourcing folds in the Opportunity Contacts table; Partner Portal Team + Admin sourced from the new Issuer Strings table; Account hierarchy bootstrap | Engineering | **8,734 records migrated, up from 6,819 (+28%)**. Contact ownership went from 100% fallback to **1,870 real owners / 0 fallback**. |
 
 ## Already decided, listed here for visibility (not asks)
 
