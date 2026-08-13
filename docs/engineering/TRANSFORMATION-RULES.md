@@ -2168,13 +2168,27 @@ Services - Payment, WebVendors, Fedpay` alone covers three. Those load with a UU
 rather than a truncated one — a truncated team name reads as real while not matching the portal.
 Widening the field fixes it.
 
-#### `LDGCRM_PP_Issuer_Strings__c` is still not migrated, and now for measured reasons
+#### `LDGCRM_PP_Issuer_Strings__c` is not migrated — and is now DEPRECATED
 
 Pulling the table did **not** unblock the issuer-string field itself. It is `Text(40)`, single-valued
 and unique, against a source where **776 of 899 issuer strings exceed 40 characters** (longest 130)
 and **847 Applications have more than one**. Its own help text describes it as a field the OEs
-maintain by hand against ZenDesk/GitHub. Three independent reasons, any one sufficient — this is now
-a measured exclusion rather than the earlier assumption-based one.
+maintain by hand against ZenDesk/GitHub. Three independent reasons, any one sufficient.
+
+**Superseded 2026-08-13:** the project owner confirmed this data is not being migrated and **the
+field is to be retired entirely.** That is not a plain delete — see **CR-2** in
+[SALESFORCE-CHANGE-REQUESTS.md](SALESFORCE-CHANGE-REQUESTS.md):
+
+- `LDGCRM_Level_1_Complete_Pct__c` counts it as **1 of 9** checklist items. Since the migration never
+  populates it, every migrated Application forfeits that item — a hard ceiling of 89%, with an
+  observed maximum of **78%** across 1,026 records. Salesforce also blocks deleting a field a formula
+  references, so the formula must be edited first (→ `/8`).
+- `LDGCRM_Launch_Checklist_Completion__c` then has to change too, because it hard-codes each level's
+  **item count** as a weight (`*9`, `/16`, `/20` → `*8`, `/15`, `/19`). This is the non-obvious part:
+  dropping one checklist item silently changes a second metric.
+- Plus 4 report types, 3 permission sets and 1 layout.
+
+**Nothing in this pipeline changes when it goes** — no transform ever wrote it.
 
 ### Fields with no destination — the full inventory (as requested)
 

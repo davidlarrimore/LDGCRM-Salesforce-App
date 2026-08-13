@@ -29,12 +29,13 @@
         themselves from fields this script does set (checkboxes, URLs, the
         Opportunity lookup).
       - LDGCRM_Annual_Revenue_Amount__c: no Airtable source found.
-      - LDGCRM_PP_Issuer_Strings__c: deliberately NOT migrated even though the
-        Issuer Strings table is now pulled. The field is Text(40) and holds one
-        value; 776 of 899 issuer strings exceed 40 characters (longest 130) and
-        847 Applications have more than one. It is also described in its own
-        help text as a field the OEs maintain by hand against ZenDesk/GitHub,
-        so it is theirs, not the migration's. See TRANSFORMATION-RULES.md.
+      - LDGCRM_PP_Issuer_Strings__c: not migrated, and now DEPRECATED - the
+        project owner confirmed 2026-08-13 that this data is not being migrated
+        and the field is to be retired. Removal is not a plain delete: a formula
+        (LDGCRM_Level_1_Complete_Pct__c) depends on it, which in turn feeds
+        LDGCRM_Launch_Checklist_Completion__c. Tracked as CR-2 in
+        docs/engineering/SALESFORCE-CHANGE-REQUESTS.md. Nothing here needs to
+        change when it goes - this script never wrote it.
       - LDGCRM_Broker_App_Parent__c: a self-Lookup (Application -> Application).
         Deliberately NOT in the main upsert file - a first real load attempt
         (2026-08-12) confirmed Bulk API 2.0 does not resolve external-ID

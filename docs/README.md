@@ -41,6 +41,7 @@ does.
 | [engineering/ARCHITECTURE.md](engineering/ARCHITECTURE.md) | How the pipeline is built, per-script status, conventions, load order, environments |
 | [engineering/TRANSFORMATION-RULES.md](engineering/TRANSFORMATION-RULES.md) | The authority on field-by-field mapping — every rule and every gotcha, per object |
 | [engineering/BACKLOG.md](engineering/BACKLOG.md) | Agreed but unbuilt work, and the decisions each item still needs |
+| [engineering/SALESFORCE-CHANGE-REQUESTS.md](engineering/SALESFORCE-CHANGE-REQUESTS.md) | **For the Salesforce config owner.** Things only a change set can fix — field settings blocking a load, and formulas producing wrong numbers |
 
 **Read `TRANSFORMATION-RULES.md`'s General Principles before writing any new transform.** They are
 distilled from mistakes that reached a real org, and most of them describe a way Salesforce or
@@ -54,6 +55,11 @@ valid on the field but not the record type, a linked-record column that turns ou
 [data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md](data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) —
 written for the people who own the Airtable base, not for engineers. Every item is something that
 **unblocks records** if fixed, ordered by how many.
+
+> **The Salesforce-side equivalent is
+> [engineering/SALESFORCE-CHANGE-REQUESTS.md](engineering/SALESFORCE-CHANGE-REQUESTS.md).** When a
+> load is blocked by a *field setting* rather than by the data, it belongs there — the pipeline
+> cannot route around it, because metadata moves by change set only.
 
 Every transform's review CSVs feed this list. Findings sitting unread in `logs/` are exactly what it
 exists to prevent — see [logs/README.md](../logs/README.md).

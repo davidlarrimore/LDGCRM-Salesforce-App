@@ -394,8 +394,18 @@ Applications (one owns 54), so 442 of 696 would fail `DUPLICATE_VALUE`. **CHANGE
 `Build-ApplicationLoad.ps1` reads the live field definitions and **omits the two columns** — omitted,
 not blanked, because an empty column in an upsert *clears* the org's value. A plain re-run picks them
 up once the change set lands. Also pending: 6 team names exceed the 50-char field (8 Applications).
-`LDGCRM_PP_Issuer_Strings__c` stays unmigrated — `Text(40)` against 776 over-length values, 847
-Applications with more than one, and it is OE-maintained by hand.
+**`LDGCRM_PP_Issuer_Strings__c` is DEPRECATED and being retired** (user-confirmed 2026-08-13) — never
+migrated, and removing it is not a plain delete: `LDGCRM_Level_1_Complete_Pct__c` counts it as 1 of 9
+checklist items, and `LDGCRM_Launch_Checklist_Completion__c` hard-codes that 9 as a weight, so
+dropping one item silently moves a second metric.
+
+**Salesforce config changes the pipeline cannot make live in
+`docs/engineering/SALESFORCE-CHANGE-REQUESTS.md`** — the config-owner counterpart to the Airtable
+data-quality doc. Three open: the `Unique` flags above (CR-1), retiring
+`LDGCRM_PP_Issuer_Strings__c` with its two dependent formulas (CR-2), and a live reporting defect
+found on 2026-08-13 (CR-3) — **a blank `Launch Level` falls through the `CASE` in
+`LDGCRM_Launch_Checklist_Completion__c` to its else value of `1`, so 607 of 1,026 migrated
+Applications report 100% launch-complete purely because that field is empty.**
 
 **Current sandbox state (rebuilt 2026-08-13 — see `docs/engineering/ARCHITECTURE.md`'s "Production Account seed"
 section for the full rebuild):** the Account/Partner Account chain was deliberately hard-deleted
