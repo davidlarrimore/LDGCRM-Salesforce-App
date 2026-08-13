@@ -183,6 +183,35 @@ records but sacrifices the non-revert property on re-runs. That is a real tradeo
       ```
       A new environment is **not** guaranteed to have the same automation as Dev. Re-run this per
       environment; do not carry Dev's findings forward as fact.
+- [ ] **Verify every picklist target field: the right field, and every value it must accept.**
+      Two *different* failure modes, both of which have actually happened here. Run this per
+      environment — a field can be correct in Dev and wrong in QA, which is exactly the state
+      `priority_type__c` / `LDGCRM_Level_of_Priority__c` was found in on 2026-08-13.
+
+      1. **Right field?** Confirm the API name starts with `LDGCRM_`. This sandbox is shared with
+         TTS OTCRM and FCIC, which label their fields in the same business vocabulary, so a
+         Salesforce field whose **label** matches the Airtable column name is *not* evidence it is
+         ours. Opportunity has both `priority_type__c` (labelled "Priority Type", owned by TTS
+         OTCRM) and `LDGCRM_Level_of_Priority__c` (ours) — the un-prefixed one is the better label
+         match and the wrong answer. **If the best label match is un-prefixed, stop and ask the
+         field's owner.** Writing another app's field is worse than loading nothing.
+      2. **Every value present?** For each restricted picklist being loaded, diff the distinct
+         Airtable values against what the **record type** exposes — not what the field defines, and
+         not `sf sobject describe`, neither of which shows the record-type narrowing that the Bulk
+         API enforces:
+         ```
+         sf project retrieve start -m "CustomObject:<Object>" --target-org <alias> --target-metadata-dir <scratch> --unzip
+         ```
+         then read `recordTypes/<RecordType>.recordType-meta.xml` (values are URL-encoded:
+         `,`→`%2C`, `/`→`%2F`, `&`→`%26`, `'`→`%27`). Any Airtable value with no match is a row that
+         will fail with `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`.
+      - ⚠️ **Retrieve `CustomObject:<Object>`, never `RecordType:<Object>.<RT>` on its own.** The
+        targeted RecordType retrieve is **lossy** — it returned only 4 of 33 `<picklistValues>`
+        blocks and would have silently deleted the other 29 from the repo.
+      - ⚠️ **Missing values are fixed by change set, not from here.** Adding a picklist value is a
+        *promotion* and goes through outbound/inbound change sets. CLI deploys from this repo are
+        limited to **deleting** corrupted or incorrect metadata. Note QA can trail Dev by a change
+        set, so confirm against the environment you are actually loading.
 - [ ] **Decide whether to re-pull Airtable.** `Get-AirtableExport.ps1` **overwrites**
       `data/airtable-exports/` in place. A fresh pull reflects today's Airtable but shifts every count
       below. To keep this run comparable to the figures here, **do not re-pull**. Current export:
@@ -517,6 +546,14 @@ Market Segment (already loaded - do not touch)
       19/19 once on record-type picklist narrowing that `sf sobject describe` does not reveal.
 - [ ] Verify Market Segment came from the before-save Flow, and revenue formulas computed (~467
       non-zero).
+- [ ] ℹ️ **Level of Priority will be EMPTY on every Opportunity. That is expected, not a bug.**
+      Airtable's `Priority Type` (**462 of the 742** have a value) maps to
+      `LDGCRM_Level_of_Priority__c`, which is `restricted=true` and currently defines only
+      `Low`/`Medium`/`High` — none of Airtable's seven values. The transform deliberately does not
+      write it; loading it would fail every one of those rows. Unblocking it needs the seven values
+      added to the field **and** assigned to the `Login_gov` record type, promoted by change set.
+      **Do not "fix" this by writing `priority_type__c`** — that field belongs to TTS OTCRM despite
+      its matching "Priority Type" label. See `TRANSFORMATION-RULES.md`, the Priority Type section.
 
 ### 4e. `LDGCRM_application__c`
 

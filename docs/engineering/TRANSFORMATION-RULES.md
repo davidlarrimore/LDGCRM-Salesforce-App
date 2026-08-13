@@ -864,6 +864,7 @@ plain text into them loses data two ways:
 | `Account Record ID` (linked array) | `AccountId` (CSV column `Account.LDGCRM_External_ID__c`) | `@(...)[0]`. Rows whose Account isn't reconciled in gsa-peo are **skipped**, not blanked — an unresolvable lookup fails the whole row. |
 | `Opportunity Type` | `LDGCRM_Opportunity_Type__c` | Passthrough — after the record-type fix above. |
 | `Focus Level` | `LDGCRM_Focus_Level__c` (restricted) | **Leading-token map**: Airtable embeds the review cadence in the label (`"High (2 month update)"`, `"Backlog (12 month update)"`); Salesforce stores just `Highest`/`High`/`Backlog`/`Developing`. Same shape as Application's Ramp Up Approach rule. |
+| `Priority Type` | `LDGCRM_Level_of_Priority__c` (restricted) | **NOT MIGRATED — blocked, not excluded.** The field defines only `Low`/`Medium`/`High`; Airtable's 7 values are none of those. Needs the values added before it can load. See below. **462 of 742** rows waiting. |
 | `Likely Service Level Needed` | `LDGCRM_Likely_Service_Level_Needed__c` | Passthrough — after the record-type fix above. |
 | `Technical Readiness` | `LDGCRM_Technical_Readiness__c` (restricted) | `@(...)[0]` — a 1-element array. All 7 distinct values match the picklist exactly. |
 | `Estimate source` | `LDGCRM_Estimate_Source__c` (restricted) | Passthrough — both values match exactly. |
@@ -905,11 +906,48 @@ matching an HTML-tag pattern are all angle-bracket-wrapped URLs (`<https://…>`
 | `LDGCRM_Market_Segment__c` | Before-save Flow `LDGCRM_Opportunity_Before_Save_Assign_Account_and_Market_Segment` derives it from `Account.LDGCRM_Market_Segment__r` on create and on any `AccountId` change. Verified post-load: all 742 populated. |
 | `LDGCRM_Status_Summary_Modified_Datetime__c` | Owned by a before-save Flow that stamps it whenever `LDGCRM_Current_Status_Summary__c` changes. Any migrated value is stomped on the next update touching the summary, so writing it produces a misleading timestamp. |
 | `LDGCRM_Days_Since_Last_Activity__c`, `LDGCRM_Est_Annual_Revenue_fully_ramped__c`, `LDGCRM_Est_First_Year_Revenue__c`, `LDGCRM_Status_Summary_Indicator__c` | Formula fields. The two revenue ones compute *from* the estimate fields this script does set, so Airtable's own revenue columns aren't migrated — they recompute themselves. |
-| `priority_type__c` | Airtable's Priority Type values all exist at field level, but the Login_gov record type exposes **only a single malformed concatenated value** (`"HISP - High Volume, HISP - Lower Volume, Volume, Strategic, IDV Upgrade, Leadership Escalation"`). No valid target. Not force-fitted onto `LDGCRM_Level_of_Priority__c`, which is a different concept (Low/Medium/High). Flagged for the data owners. |
+| `priority_type__c` | **Do not write this field.** Un-prefixed, owned by TTS OTCRM, and shared with the `TTS_OTCRM_Opportunity` record type. Its *label* is "Priority Type", identical to the Airtable column name — which is exactly what makes it a trap. Airtable's Priority Type belongs in `LDGCRM_Level_of_Priority__c`; see below. |
 | `LDGCRM_Existing_Identity_Platforms__c`, `LDGCRM_Alternative_Identity_Platforms__c` | The Airtable columns hold `rec...` IDs pointing at a table this migration doesn't pull, while the Salesforce fields are multipicklists of vendor names. Unresolvable without that table — same open question as Partner Accounts' `Escalated User Support Cases`. |
 | `LDGCRM_Partner_Account__c` | **Structural mismatch — deliberately left blank pending a team decision, not an oversight.** See the dedicated analysis below. |
 | `Requested Features`, `Current Blockers`, `Opportunity Status Changes`, `Meetings`, `Opportunity Contacts`, `Applications` | Linked-record arrays that drive other objects/chunks (Meetings, OpportunityContactRole) or reference untracked tables. |
 | `Market Segment`, `Market Segment (from Account Name)`, `(c) *` rollups, `Created By`, `Updated?`, `Months in Status`, `Meeting Count`, `(legacy data) *` | Airtable-side rollups/computed/system columns, or superseded by the Flow-derived Market Segment. |
+
+### Priority Type: the right field is `LDGCRM_Level_of_Priority__c`, and it is BLOCKED
+
+**Status 2026-08-13: not migrated. 462 of the 742 loaded Opportunities have a value waiting.**
+
+**The target is `LDGCRM_Level_of_Priority__c` (user-confirmed). Do not write `priority_type__c`.**
+`priority_type__c` is un-prefixed, belongs to TTS OTCRM, and is assigned to the
+`TTS_OTCRM_Opportunity` record type as well as `Login_gov`. Its **label is "Priority Type"** —
+character-for-character the Airtable column name — which is precisely why it is easy to pick by
+mistake. This repo did pick it by mistake, briefly, on 2026-08-13.
+
+> **Generalise this.** The `LDGCRM_` prefix convention is the ownership signal in this org, not the
+> label. A field whose label matches an Airtable column name is *weaker* evidence than a field whose
+> API name carries the prefix, because the shared apps in this sandbox (TTS OTCRM, FCIC) label their
+> fields in the same business vocabulary. Same family of error as General Principle #7: the surface
+> appearance of a field is not its identity. When two candidate fields exist, **ask** — the cost of
+> confirming is a message; the cost of guessing is a wrong-field load into another app's data.
+
+**What blocks it:** `LDGCRM_Level_of_Priority__c` is `restricted=true` and defines exactly three
+values — `Low`, `Medium`, `High` — in **both Dev (`peodv8dvn`) and QA (`peodv15dvn`)**, verified by
+`sf sobject describe` against each org. Airtable's seven values (`Strategic`, `High Volume`,
+`IdV Upgrade`, `Leadership Escalation`, `HISP - High Volume`, `HISP - Low Volume`, `N/A`) intersect
+that set **not at all**. A restricted picklist rejects anything outside its defined values, so every
+one of the 462 rows would fail with `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`.
+
+**To unblock**, the seven values must be added to the field **and** assigned to the `Login_gov`
+record type. That is an *addition*, so per the org's change-control rule it is promoted by
+**outbound/inbound change set** — not by `sf project deploy` from this repo. Then re-enable the
+mapping per the comment block in `Build-OpportunityLoad.ps1`, sourcing the allowed list from
+`recordTypes/Login_gov.recordType-meta.xml` (the record type narrows the field, and the Bulk API
+enforces the narrowing — see the `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` section above), and prove
+it with a small test batch covering every distinct value.
+
+**Open question for the field's owner:** do `Low`/`Medium`/`High` survive alongside the seven, or are
+they replaced? They are a different concept (a *level*) from Airtable's Priority Type (a *reason*),
+and the field's own description says "Originally created for TTS OTCRM - Login.gov Opportunities",
+so the answer isn't obvious from the metadata.
 
 ### `LDGCRM_Partner_Account__c`: sparse, but structurally fine — and a lesson in not trusting a rollup
 

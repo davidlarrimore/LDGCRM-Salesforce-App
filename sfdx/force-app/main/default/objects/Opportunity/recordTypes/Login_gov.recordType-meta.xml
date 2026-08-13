@@ -1545,7 +1545,31 @@
     <picklistValues>
         <picklist>priority_type__c</picklist>
         <values>
-            <fullName>HISP - High Volume%2C HISP - Lower Volume%2C Volume%2C Strategic%2C IDV Upgrade%2C Leadership Escalation</fullName>
+            <fullName>HISP - High Volume</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>HISP - Lower Volume</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>High Volume</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>IdV Upgrade</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Leadership Escalation</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>N%2FA</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Strategic</fullName>
             <default>false</default>
         </values>
     </picklistValues>

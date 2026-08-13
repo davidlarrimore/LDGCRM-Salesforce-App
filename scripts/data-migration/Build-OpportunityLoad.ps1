@@ -37,11 +37,13 @@
         the two revenue formulas are computed FROM the estimate fields this
         script does set, so Airtable's own revenue columns are not migrated -
         the values recompute themselves.
-      - priority_type__c: Airtable's Priority Type values all exist at field
-        level, but the Login_gov record type exposes only a single malformed
-        concatenated value, so there is no valid target. Flagged for review
-        rather than force-fitted onto LDGCRM_Level_of_Priority__c, which is a
-        different concept (Low/Medium/High).
+      - LDGCRM_Level_of_Priority__c: the intended target for Airtable's
+        "Priority Type", but BLOCKED - the field is restricted and defines only
+        Low/Medium/High, none of which are Airtable's seven values. See the
+        detailed block below for what has to happen before it can load.
+      - priority_type__c: DO NOT WRITE. Labelled "Priority Type" - identical to
+        the Airtable column name - but un-prefixed and owned by TTS OTCRM. The
+        label match is a trap, not evidence. See the block below.
       - LDGCRM_Existing_Identity_Platforms__c / LDGCRM_Alternative_Identity_Platforms__c:
         the Airtable columns hold rec... IDs pointing at a table this migration
         doesn't pull, while the Salesforce fields are multipicklists of vendor
@@ -100,6 +102,34 @@ $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-Oppor
 # update)"); the Salesforce picklist stores just the level. Map by leading
 # token, same shape as Application's Ramp Up Approach rule.
 $FocusLevelPattern = '^(Highest|High|Backlog|Developing)'
+
+# Airtable's "Priority Type" column is NOT migrated yet - BLOCKED, not excluded.
+#
+# TARGET FIELD: LDGCRM_Level_of_Priority__c  (user-confirmed 2026-08-13).
+# Do NOT write priority_type__c. That field is un-prefixed, belongs to TTS
+# OTCRM, and is shared with the TTS_OTCRM_Opportunity record type - it is not
+# this app's field even though its label ("Priority Type") matches the Airtable
+# column name exactly. Matching labels are not evidence of ownership here.
+#
+# WHY IT'S BLOCKED: LDGCRM_Level_of_Priority__c is restricted=true and
+# currently defines only Low / Medium / High - in BOTH Dev (peodv8dvn) and QA
+# (peodv15dvn), verified 2026-08-13. Airtable's seven values (Strategic,
+# High Volume, IdV Upgrade, Leadership Escalation, HISP - High Volume,
+# HISP - Low Volume, N/A) are none of those, and a restricted picklist rejects
+# anything outside its defined set, so all 462 in-scope rows would fail.
+#
+# TO ENABLE, once the seven values exist on the field AND are assigned to the
+# Login_gov record type (an ADDITION - it must be promoted by change set, not
+# deployed from here):
+#   1. re-add the guarded passthrough, sourcing the allowed list from
+#      objects/Opportunity/recordTypes/Login_gov.recordType-meta.xml, NOT from
+#      the field metadata - the record type narrows it further and the Bulk API
+#      enforces that narrowing (see docs/engineering/TRANSFORMATION-RULES.md);
+#   2. add LDGCRM_Level_of_Priority__c to $OutputRow;
+#   3. prove it with a small test batch covering every distinct value before
+#      any full load.
+# 462 of the 742 currently loaded Opportunities have a value waiting in
+# Airtable, so this is worth unblocking.
 
 # Airtable literally stores "Gov?t Employees" with an ASCII question mark on
 # 25 rows - confirmed NOT an export artifact (82 curly apostrophes survive

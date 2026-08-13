@@ -306,15 +306,22 @@ correct `Gov't Employees` on load, so nothing is blocked.
 **What we need:** fix the value in Airtable so it stops propagating. It likely came from a paste out
 of a system that couldn't handle the apostrophe.
 
-### Opportunities: the "Priority Type" field can't be migrated
+### Opportunities: the "Priority Type" field can't be migrated yet
 
+**Still open, and still not an Airtable problem — no action needed from the Airtable data owners.**
 Airtable's Priority Type values (`Strategic`, `High Volume`, `IdV Upgrade`, `Leadership Escalation`,
-`HISP - High/Low Volume`, `N/A`) are all reasonable, but the matching Salesforce field is
-misconfigured — on the Login.gov record type it offers only a single nonsense option that is all six
-labels jammed into one string. This is a Salesforce configuration issue, not an Airtable data issue.
+`HISP - High Volume`, `HISP - Low Volume`, `N/A`) are all reasonable and are staying as they are.
 
-**What we need:** a decision from whoever owns the Salesforce config on whether Priority Type should
-be usable on Login.gov opportunities. Until then this field isn't migrated. (564 records have a value.)
+The hold-up is on the Salesforce side. The field these values belong in — Level of Priority — offers
+only `Low`, `Medium`, `High`, so there is nowhere for them to land. The seven values need to be added
+to that field before the data can migrate.
+
+**What we need:** whoever owns the Salesforce configuration to add the seven values, and to say
+whether `Low`/`Medium`/`High` should remain alongside them or be replaced — they describe a
+different thing (how important an opportunity is) than Priority Type does (why it's a priority).
+
+Until then this field isn't migrated. **564 Airtable records have a value**, 462 of them on
+Opportunities already loaded and waiting to receive it.
 
 ### Opportunities: identity-platform columns point at an untracked table
 
