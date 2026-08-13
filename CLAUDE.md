@@ -144,10 +144,17 @@ onto:
   once (backfill to the `rec...` ID for consistency, or keep matching by name since the segment list is
   small and stable) rather than let a load script silently create duplicates by upserting on the wrong
   value.
-- **`OpportunityContactRole.LDGCRM_External_ID__c` has `externalId=false`** in its field metadata (every
-  other object's copy is `externalId=true`). A Bulk API `upsert --external-id` call needs that flag set,
-  so this field needs a metadata fix (`sfdx-metadata-sync`) before the Opportunity Contacts pull can be
-  loaded idempotently.
+- **`OpportunityContactRole.LDGCRM_External_ID__c` has `externalId=false` and CANNOT be changed.**
+  Deploying `externalId=true` fails with *"Fields on Opportunity Contact Role do not support the
+  property Is External Identifier."* — Salesforce forbids External ID fields on this object entirely,
+  so no metadata fix exists (an earlier note here claimed one was needed; it isn't possible).
+  `OpportunityContactRole` is therefore **the one object loaded by INSERT + read-then-diff** rather
+  than upsert: `Build-OpportunityContactRoleLoad.ps1` queries what exists, keys it on
+  `(OpportunityId, ContactId, Role)`, and inserts only what's missing. The field is still populated
+  for traceability. **Loaded 2026-08-13: 515 rows.** Two source traps documented in
+  `docs/TRANSFORMATION-RULES.md`: `Opportunity Record ID` on that table is the row's OWN id (0 of 520
+  are real Opportunity ids — the real link is `Opportunity Record ID (from Opportunities)`), and the
+  table has no Contact link at all.
 - On every object, `LDGCRM_External_ID__c` is `externalId=true` but **`unique=false` and `required=false`**
   — Salesforce will not reject a duplicate value at the database level. A load script upserting on this
   field is safe (Bulk API upsert still matches correctly), but anything that inserts instead of upserts,

@@ -554,6 +554,95 @@ Re-running `Build-ApplicationLoad.ps1` afterward dropped its blank-Opportunity-l
 
 ---
 
+## OpportunityContactRole
+
+**Source:** Airtable `Opportunity Contacts` (520 rows).
+**Target:** `OpportunityContactRole`.
+**Script:** `Build-OpportunityContactRoleLoad.ps1`. **Mode: INSERT with a read-then-diff — the only
+object in the pipeline that cannot be upserted.**
+**Loaded 2026-08-13: 515 rows, 0 failures.**
+
+### The documented `externalId` fix does not exist
+
+`CLAUDE.md` recorded this object as "blocked on an `sfdx-metadata-sync` fix
+(`OpportunityContactRole.LDGCRM_External_ID__c` needs `externalId=true`)". **That fix is impossible.**
+Deploying it fails:
+
+> `Fields on Opportunity Contact Role do not support the property Is External Identifier.`
+
+Salesforce does not permit External ID fields on this object at all, so
+`sf data upsert bulk --external-id` can never work against it. The field is left at `false` with a
+comment recording why, so nobody retries it. It is still *populated* (`<airtableRowId>|<role>`) purely
+for traceability.
+
+**Idempotency instead comes from a read-then-diff**, the same shape `Build-AccountReconciliation.ps1`
+uses for Account: query what already exists, key it on `(OpportunityId, ContactId, Role)`, and emit an
+insert file containing only what's missing. Proven: after loading a 12-row test batch, the full re-run
+reported exactly `12 already in the org` and inserted the remaining 503.
+
+### Two column traps, one of which cost a whole failed run
+
+1. **`Opportunity Record ID` on this table is the row's OWN id, not a link.** Every other table in
+   this migration follows the convention that `<X> Record ID` *is* the link to X. Here it inverts:
+   **0 of 520** of its values are real Opportunity ids, and every one equals the row's own `.id`. The
+   real link is **`Opportunity Record ID (from Opportunities)`** (520/520 valid) — a lookup column
+   Airtable names after its source. Using the obvious-looking column skipped all 520 rows.
+2. **There is no Contact link at all** — just a name string and an email. 348 of 520 rows name people
+   who appear nowhere in the Contacts table. Those people are created as Contacts by
+   `Build-ContactLoad.ps1`, which folds this table in as a second source (see the Contact section);
+   this script re-derives the same grouping via `Get-AirtableContactGroups` to find each row's
+   surviving Contact, then resolves that external ID to a real Salesforce Id.
+
+### One record per role (user-confirmed)
+
+62 rows carry 2+ `Contact Type` values while `Role` holds one, so **each type becomes its own
+record**. Verified on the test batch that Salesforce permits multiple roles for the same contact on
+the same opportunity — `Ken` on `CIA - Vendor Portal ID26` correctly holds all three.
+
+**`IsPrimary` behaves per-contact, not per-role.** Salesforce allows one primary contact role per
+Opportunity, so the script sets the flag on at most one row per Opportunity — the highest-precedence
+role (`Decision Maker` > `Senior POC` > `Day-to-Day POC`). Confirmed in the output CSV: exactly one
+`true` per pair. **Salesforce then propagates it** to that contact's other role rows on the same
+opportunity, so all three of Ken's rows read `IsPrimary=true`. That is correct — the contact *is* the
+primary — not a bug in the transform.
+
+### The Role picklist was extended rather than mapped
+
+`Contact Type` uses `Day-to-Day POC` (405) and `Senior POC` (82); only `Decision Maker` matched the
+existing picklist. `Role` is unrestricted, so both would have loaded as ad-hoc values. User-confirmed
+decision: **add them properly** rather than map them onto approximate existing values, keeping the
+picklist authoritative and the source meaning intact.
+
+They live in the **StandardValueSet named `ContactRole`** — *not* `OpportunityContactRole`, which does
+not exist as an entity (`Entity of type 'StandardValueSet' named 'OpportunityContactRole' cannot be
+found`). Note also that listing org metadata of type `StandardValueSet` returns **nothing** for this
+org, so the name can't be discovered that way. `Role.field-meta.xml` has no `<valueSet>` block at all,
+so deploying the *field* carries none of this. Added to `manifest/package.xml`. **For a change set,
+the component is type `Standard Value Set`, name `ContactRole`** — and standard value sets are
+historically unreliable in change sets, so the values may need adding manually in the target org.
+
+### Field mapping
+
+| Airtable | Salesforce | Rule |
+| --- | --- | --- |
+| `Opportunity Record ID (from Opportunities)` | `OpportunityId` | Resolved to a real Id — **not** the similarly-named decoy column. |
+| *(row → merged Contact)* | `ContactId` | Via `Get-AirtableContactGroups`, then external ID → real Id. |
+| `Contact Type` | `Role` | One record per value. |
+| `Primary` | `IsPrimary` | At most one per Opportunity; Salesforce propagates across that contact's roles. |
+| *(row id + role)* | `LDGCRM_External_ID__c` | Traceability only — **cannot** be an upsert key. |
+
+### Load results
+
+| | Count |
+| --- | --- |
+| Airtable rows | 520 |
+| **Loaded** | **515** (12 test batch + 503) |
+| — Day-to-Day POC / Decision Maker / Senior POC | 338 / 111 / 66 |
+| — flagged `IsPrimary` | 361 (after Salesforce's propagation) |
+| Skipped — Opportunity or Contact unresolved | 83 |
+
+---
+
 ## Opportunity Impediment (junction)
 
 **Source:** the Airtable `Impediments` table's two linked-record columns — **not** a table of its own.
