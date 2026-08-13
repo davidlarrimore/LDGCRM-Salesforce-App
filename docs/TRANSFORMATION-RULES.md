@@ -468,37 +468,61 @@ matching an HTML-tag pattern are all angle-bracket-wrapped URLs (`<https://…>`
 | `Requested Features`, `Current Blockers`, `Opportunity Status Changes`, `Meetings`, `Opportunity Contacts`, `Applications` | Linked-record arrays that drive other objects/chunks (Meetings, OpportunityContactRole) or reference untracked tables. |
 | `Market Segment`, `Market Segment (from Account Name)`, `(c) *` rollups, `Created By`, `Updated?`, `Months in Status`, `Meeting Count`, `(legacy data) *` | Airtable-side rollups/computed/system columns, or superseded by the Flow-derived Market Segment. |
 
-### `LDGCRM_Partner_Account__c`: a structural mismatch, not a missing mapping
+### `LDGCRM_Partner_Account__c`: sparse, but structurally fine — and a lesson in not trusting a rollup
 
-Raised 2026-08-13 by the user ("did you link up the partner account to the opportunity?"). The short
-answer is no, and the reason turned out to be more interesting than a missed column.
+Raised 2026-08-13 by the user ("did you link up the partner account to the opportunity?"). The answer
+was no, and chasing it produced **a wrong intermediate conclusion worth recording, because the way it
+was wrong is a repeatable trap.**
 
-**The Airtable Opportunities table has no Partner Account column at all** — so there is nothing to map
-directly. (An earlier version of this script's header wrongly claimed the column existed but was
-empty; reading a non-existent property in PowerShell just returns `$null`, which is
-indistinguishable from an empty column unless you enumerate the actual key set. Corrected — and worth
-remembering as a distinct failure mode from the `@($null)` trap: *"the field is empty"* and *"the
-field doesn't exist"* look identical unless you check.)
+**The Airtable Opportunities table has no Partner Account column at all**, so there is nothing to map
+directly. (An earlier version of this script's header wrongly claimed the column *existed but was
+empty*. Reading a non-existent property in PowerShell returns `$null`, indistinguishable from an
+empty column unless you enumerate the actual key set — a distinct failure mode from the `@($null)`
+trap, and the reason the wrong claim survived review.)
 
-The relationship does exist, from the **other** side, and in a shape Salesforce can't hold:
+The Partner Accounts table *does* have an `Opportunities` column — 961 links over 469 Opportunities,
+which looks like a rich, authoritative relationship. **It is not one.** Counting those links
+per-Opportunity suggested 146 Opportunities were each claimed by up to 8 different Partner Accounts,
+which was written up (briefly, and incorrectly) as a many-to-many structural mismatch requiring a
+junction object.
 
-| Source of truth | Coverage | Shape |
-| --- | --- | --- |
-| Partner Accounts' `Opportunities` column | 961 links over **469** Opportunities | **many-to-many** — 146 Opportunities are claimed by 2+ Partner Accounts (max 8) |
-| Applications (which link to both) | 82 Opportunities | one-to-one, but **disagrees with the above on 12** of them |
+**What it actually is:** a roll-up of the Opportunities belonging to the Partner Account's *parent
+Account*. Proven by comparing each Partner Account's `Opportunities` set against the set of
+Opportunities whose own `Account Record ID` points at that same Account:
 
-Salesforce's `Opportunity.LDGCRM_Partner_Account__c` is a single Lookup, so the 146 multi-linked
-Opportunities are unrepresentable without a schema change. Against the 742 loaded records: 278 would
-resolve cleanly, 104 are multi-linked, 360 have no link at all.
+| Result | Partner Accounts |
+| --- | --- |
+| `Opportunities` list is an **exact match** for the parent Account's Opportunity set | **72** |
+| Strict subset of it | 0 |
+| Contains something not on the parent Account | 4 (`USDT-SSP` — the known two-Account row; `GSA-IAE`, `GSA-OIT` off by one; `GSA-OROS` 9 vs 4) |
 
-Populating it from the Applications path alone (the narrow, tempting fix — it is unambiguous for all
-82) would have silently encoded the *minority* interpretation of the relationship, disagreeing with
-the Partner Accounts table on 12 records and covering 11% of Opportunities. **Left blank on all 742
-instead**, with the decision written up for the data owners in
-`AIRTABLE-DATA-QUALITY-REQUESTS.md` — the three options being: treat the multi-links as data errors
-and clean them up, add a real junction object to Salesforce, or confirm the lookup is redundant given
-the Partner Account is already reachable via the Application (which is how `CLAUDE.md` describes the
-intended model). Nothing is blocked meanwhile; the field is optional.
+Hence the "8 Partner Accounts claiming one Opportunity" signal: all 8 DOD Partner Accounts share one
+parent Account, so all 8 roll up the identical 50 Opportunities — several of them named
+`(placeholder)` or `(INACTIVE AGREEMENT)`. **The giveaway was that all 8 had byte-identical
+Opportunity lists and the exact same count.** A real many-to-many relationship doesn't produce
+identical sets across unrelated records; a rollup does.
+
+**Lesson: before treating a linked-record column as an authored relationship, check whether it's
+derivable from a parent.** Airtable lookup/rollup fields arrive over the API as ordinary arrays of
+`rec...` IDs — structurally indistinguishable from a directly-authored link. The test that settles it
+is cheap: compare the set against what the parent would produce. Same family of mistake as trusting a
+column *name* (General Principle #1) or a field's declared *type* (#7) — here it was trusting a
+column's *shape*.
+
+**Conclusion (user-confirmed 2026-08-13): the single Lookup is the right structure; there is simply
+much less linkage than the Airtable views imply.** The only genuinely authored Opportunity → Partner
+Account path is via **Applications**, which reference both: 82 Opportunities, every one unambiguous
+(zero conflicts), 66 with both sides present in gsa-peo today. That is ~9% of the 928 Airtable
+Opportunities — the real coverage, versus the 469 the rollup appeared to offer. No junction object,
+no schema change.
+
+**Implemented as `Build-OpportunityPartnerAccountLink.ps1`**, a second pass rather than part of the
+main Opportunity transform, because it sources from a different table (Applications) and joins
+differently from every other field on the object. It writes only `LDGCRM_External_ID__c` (as the
+upsert match key) plus the lookup, so re-running it can't disturb anything the main load set.
+**Loaded 2026-08-13: 66/66 succeeded**, 16 pending until both sides exist, 0 conflicts. It still
+collects the *full* set of Partner Accounts per Opportunity rather than taking the first match, so if
+two Applications ever disagree the row goes to a conflict CSV instead of being silently resolved.
 
 ### Load results (2026-08-13)
 

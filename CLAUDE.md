@@ -52,14 +52,16 @@ objects carrying custom fields: Account, Contact, Opportunity, `OpportunityConta
   Opportunity (filtered to the `Login_gov` record type).
 - **`LDGCRM_Partner_Account__c`** is the true Master-Detail child of **Account** (via `LDGCRM_Account__c`,
   filtered to the `Federal` Account record type) and relates to Opportunity indirectly through
-  `LDGCRM_Application__c`. Opportunity *also* carries a direct `LDGCRM_Partner_Account__c` lookup, but
-  **the migration deliberately leaves it blank**: Airtable models this relationship many-to-many (on
-  the Partner Accounts table's `Opportunities` column — 146 Opportunities are linked to 2+ Partner
-  Accounts, max 8), which a single Salesforce lookup cannot represent. Resolving it needs a design
-  decision (clean up the multi-links, add a junction object, or drop the redundant lookup) — see
-  `docs/AIRTABLE-DATA-QUALITY-REQUESTS.md`'s "Structural mismatch" section. Don't populate this field
-  from the Applications path without that decision; it covers only 82 Opportunities and disagrees with
-  the Partner Accounts table on 12 of them.
+  `LDGCRM_Application__c`. Opportunity *also* carries a direct `LDGCRM_Partner_Account__c` lookup; the
+  single-lookup structure is correct, but **the real linkage is far sparser than Airtable suggests**.
+  The Partner Accounts table's `Opportunities` column looks like a rich relationship (961 links over
+  469 Opportunities) but is actually a **roll-up of the parent Account's Opportunities** — verified
+  exact-match for 72 of 76 Partner Accounts, which is why all 8 DOD Partner Accounts show the same
+  identical 50 Opportunities. The only authored path is via `LDGCRM_application__c` (which references
+  both): **82 Opportunities, all unambiguous, ~9% coverage**. See
+  `docs/TRANSFORMATION-RULES.md`'s Opportunity section — it also records the wrong intermediate
+  conclusion this produced, and the "identical sets across unrelated records = rollup, not
+  relationship" tell that caught it.
 - **Account** has an Owner (User), a parent Account lookup, and a lookup to `LDGCRM_Market_Segment__c`.
 - **`LDGCRM_Opportunity_Impediment__c`** is a true junction with **two Master-Detail relationships** —
   to `LDGCRM_Impediment__c` and to Opportunity — so both parents must exist before a junction row can
