@@ -169,14 +169,101 @@ for the field-by-field mapping rules and every data-quality gotcha found per obj
 non-developer-facing list of Airtable data issues blocking the migration — that's the file to hand to
 whoever maintains the Airtable base.
 
-**Loaded into `gsa-peo` so far:** Market Segment, Account (588 reconciled of 1,350), Partner Account
-(74), Impediment (39), Application (688), Opportunity (742), Contact (1,483), and the
+**Loaded into the Dev sandbox so far:** Market Segment, Account (588 reconciled of 1,350), Partner
+Account (74), Impediment (39), Application (688), Opportunity (742), Contact (1,483), and the
 Application↔Contact junction (1,880), the Impediment↔Opportunity junction (267), and
-OpportunityContactRole (515). Meetings and the Notes chunk are not built yet — see `docs/README.md`
-for per-script build status.
+OpportunityContactRole (515). Meetings are deferred pending Einstein Activity Capture; every other
+chunk, Notes included, is built — see `docs/README.md` for per-script build status.
+
+### The load sequence
+
+Every step is **run by hand, one at a time**: run the transform, read its review CSVs, load, verify,
+*then* start the next one. Order is not a style preference — a lookup resolves by external ID at load
+time, and the Bulk API rejects the **whole row** when the record it points at doesn't exist yet, so
+loading out of order silently withholds records rather than erroring loudly.
+
+```mermaid
+flowchart TD
+    AIR["PULL — Get-AirtableExport.ps1<br/>Airtable REST API into data/airtable-exports/*.json"]
+    CLEAN["optional reset — Invoke-OrgCleanup.ps1<br/>hard-delete in reverse order, then bootstrap Accounts"]
+
+    MS["Market Segment<br/>already loaded — no script, never wiped"]
+    BOOT["1a. Account — Invoke-AccountBootstrap.ps1<br/>names + hierarchy + owners, multi-pass INSERT, own loader"]
+    ACC["1b. Account — Build-AccountReconciliation.ps1<br/>UPDATE by Id, not upsert"]
+    PA["2. LDGCRM_Partner_Account__c — Build-PartnerAccountLoad.ps1"]
+    CON["3. Contact — Build-ContactLoad.ps1<br/>needs -DisableTriggerControl Contact"]
+    OPP["4. Opportunity — Build-OpportunityLoad.ps1"]
+    APP["5. LDGCRM_application__c — Build-ApplicationLoad.ps1"]
+    APP2["5b. Application, 2nd pass — broker-parent CSV<br/>no separate script: the same run writes it"]
+    OI["6. LDGCRM_Opportunity_Impediment__c — Build-OpportunityImpedimentLoad.ps1"]
+    AC["7. LDGCRM_Application_Contact__c — Build-ApplicationContactLoad.ps1"]
+    OCR["8. OpportunityContactRole — Build-OpportunityContactRoleLoad.ps1<br/>INSERT + read-then-diff, the one object that cannot be upserted"]
+    NOTES["9. Notes — Build-NotesLoad.ps1 then Invoke-NotesLoad.ps1<br/>ContentNote + ContentDocumentLink, own 3-step loader, must be last"]
+
+    IMP["LDGCRM_Impediment__c — Build-ImpedimentLoad.ps1<br/>no parents: load any time before step 6"]
+    MEET["Meetings / Activity<br/>DEFERRED — needs Einstein Activity Capture"]
+
+    AIR --> BOOT
+    CLEAN -.-> BOOT
+    MS -.->|must already exist| BOOT
+    BOOT --> ACC --> PA --> CON --> OPP --> APP --> APP2 --> OI --> AC --> OCR --> NOTES
+    NOTES -.-> MEET
+    AIR -.-> IMP
+    IMP -.->|master-detail parent| OI
+    OPP -.->|master-detail parent| OI
+    CON -.->|lookup parent| AC
+    CON -.->|lookup parent| OCR
+
+    classDef deferred fill:#f4f4f4,stroke:#999999,color:#555555
+    classDef side fill:#eaf3fc,stroke:#5a8fc7,color:#1c3d5a
+    class MEET,CLEAN deferred
+    class IMP,MS side
+```
+
+Solid arrows are the order you run things in; dotted arrows are the lookups that *force* that order.
+
+Every step goes through `Invoke-SalesforceLoad.ps1 -Operation Upsert`, keyed on
+`LDGCRM_External_ID__c`, **except the four rows below that say otherwise** — two objects bring their
+own loader, one is an Id-keyed update, and one can only be inserted:
+
+| # | Object | Transform script | Load file → operation |
+| --- | --- | --- | --- |
+| — | `LDGCRM_Market_Segment__c` | *(none — already loaded, excluded from cleanup)* | — |
+| 1a | Account *(create)* | `Invoke-AccountBootstrap.ps1` | *loads itself* → multi-pass INSERT |
+| 1b | Account *(reconcile)* | `Build-AccountReconciliation.ps1` | `Account-update.csv` → **Update** (Id-keyed) |
+| 2 | `LDGCRM_Partner_Account__c` | `Build-PartnerAccountLoad.ps1` | `LDGCRM_Partner_Account__c-upsert.csv` |
+| 3 | Contact | `Build-ContactLoad.ps1` | `Contact-upsert.csv` → **+ `-DisableTriggerControl "Contact"`** |
+| 4 | Opportunity | `Build-OpportunityLoad.ps1` | `Opportunity-upsert.csv` |
+| 5 | `LDGCRM_application__c` | `Build-ApplicationLoad.ps1` | `LDGCRM_application__c-upsert.csv` |
+| 5b | `LDGCRM_application__c` *(self-lookup)* | *(no second script — same run writes it)* | `LDGCRM_application__c-broker-parent-upsert.csv` |
+| — | `LDGCRM_Impediment__c` *(no parents — any time before 6)* | `Build-ImpedimentLoad.ps1` | `LDGCRM_Impediment__c-upsert.csv` |
+| 6 | `LDGCRM_Opportunity_Impediment__c` | `Build-OpportunityImpedimentLoad.ps1` | `LDGCRM_Opportunity_Impediment__c-upsert.csv` |
+| 7 | `LDGCRM_Application_Contact__c` | `Build-ApplicationContactLoad.ps1` | `LDGCRM_Application_Contact__c-upsert.csv` |
+| 8 | `OpportunityContactRole` | `Build-OpportunityContactRoleLoad.ps1` | `OpportunityContactRole-insert.csv` → **Insert** |
+| 9 | Notes (`ContentNote`) | `Build-NotesLoad.ps1` | `Invoke-NotesLoad.ps1` → **its own 3-step loader** |
+
+Four things about that sequence are load-order traps rather than preferences:
+
+- **Opportunity before Application**, even though Application's Opportunity lookup is *optional* —
+  "optional" means *may be blank*, not *may point at something that doesn't exist*. Getting this
+  backwards cost 99 rows on the first real load.
+- **Application's second pass is a separate load, not a separate script.** A self-referential lookup
+  can't resolve against another row in its own batch, so `Build-ApplicationLoad.ps1` writes a second
+  CSV that must be loaded *after* the main one.
+- **`OpportunityContactRole` can never be upserted** — Salesforce forbids External ID fields on that
+  object outright, so it reads what exists and inserts only the difference. Re-running is safe; a
+  half-cleaned org is not.
+- **Notes are last by definition.** A note attaches to a parent record, so every other object has to
+  exist first.
 
 ⚠️ **Loading Contact temporarily disables another app's Apex trigger** (`-DisableTriggerControl`) —
 read "Loading Contact" in [docs/README.md](docs/README.md) before running it.
+
+For a full wipe-and-reload rehearsal, work through
+[docs/RELOAD-QA-CHECKLIST.md](docs/RELOAD-QA-CHECKLIST.md) instead of this summary — it carries the
+per-step expected counts, the verification queries, and the side-effect sweep.
+
+### Running a single chunk
 
 ```powershell
 # Pull every table straight from the Airtable REST API into data/airtable-exports/<Table>.json
@@ -186,7 +273,7 @@ powershell scripts/data-migration/Get-AirtableExport.ps1
 # Transform a pulled table into a load-ready CSV in data/salesforce-loads/
 powershell scripts/data-migration/Build-ImpedimentLoad.ps1
 
-# Load a prepped CSV into gsa-peo (prompts "Type LOAD to continue")
+# Load a prepped CSV into the target org (prompts "Type LOAD to continue")
 powershell scripts/data-migration/Invoke-SalesforceLoad.ps1 `
     -ObjectApiName "LDGCRM_Impediment__c" `
     -CsvFile "data/salesforce-loads/LDGCRM_Impediment__c-upsert.csv"

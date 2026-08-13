@@ -321,9 +321,10 @@ Airtable pull of 2026-08-12.
 | `Build-ApplicationContactLoad.ps1` | Prep — Application↔Contact junction (needs Application + Contact loaded) | Built and **loaded 2026-08-13: 1,880/1,880**. Uses a **composite external ID** (`<contact>\|<application>`) so uniqueness is structural — the object's duplicate-check Flow throws on duplicates *and* misses intra-batch ones. 884 pairs pending their other side. |
 | `Build-OpportunityImpedimentLoad.ps1` | Prep — Impediment↔Opportunity junction (two Master-Details, both required) | Built and **loaded 2026-08-13: 267/267**. Composite external ID; severity comes from *which* Airtable column an Opportunity appears in. **Excludes the placeholder Impediment named "None"** (465 links, 53% of the loadable set) — see `TRANSFORMATION-RULES.md`. 44 pairs pending an unloaded Opportunity. |
 | `Build-OpportunityContactRoleLoad.ps1` | Prep — OpportunityContactRole. **The one object that cannot be upserted** | Built and **loaded 2026-08-13: 515 rows**. The previously-documented `externalId=true` fix is **impossible** — Salesforce forbids External ID fields on this object entirely — so it uses an INSERT + read-then-diff for idempotency instead. Extended the `ContactRole` StandardValueSet with 2 new Role values. 83 rows skipped pending an unresolved Opportunity/Contact. |
-| `Build-MeetingLoad.ps1` | Prep — Activity/Event, needs a default-duration convention for synthesized `StartDateTime`/`EndDateTime` | Not built |
+| `Build-MeetingLoad.ps1` | Prep — Activity/Event | **Not built, and the approach changed 2026-08-13.** Airtable holds a date but no time, and synthesizing one fabricates scheduling history. Instead: stand up **Einstein Activity Capture**, let real calendar events sync, and fuzzy-match Airtable's meetings onto them (date + organizer + attendee overlap + subject), enriching the real event rather than inventing one. Depends on org configuration outside this repo and an unresolved spike — see `BACKLOG.md` §2. |
 | `Invoke-SalesforceLoad.ps1` | Load — generic `sf data upsert bulk`/`sf data update bulk` wrapper, any object | Built |
-| `Build-NotesLoad.ps1` (name TBD) | Notes — `ContentNote`/`ContentDocumentLink` for freeform columns, last chunk | Not started |
+| `Build-NotesLoad.ps1` | Notes — prep `ContentNote`/`ContentDocumentLink` for freeform columns, last chunk | Built 2026-08-13. ~537 notes ready; ~59 placeholder values (`None`/`N/A`) skipped, ~200 waiting on a parent the Account data-quality issue withheld. Diffs against what is already attached, which is what makes a re-run safe. |
+| `Invoke-NotesLoad.ps1` | Notes — load. **The one chunk with its own loader**, not `Invoke-SalesforceLoad.ps1` | Built 2026-08-13. Attaching a note is three steps against two objects (insert `ContentNote` → read back each `ContentDocumentId` → insert `ContentDocumentLink`), and `ContentNote` has no external ID, so created note Ids are written to disk before anything else is attempted. Has an access preflight for the org's unmanaged `ContentDocumentLinkTrigger`, whose kill switch is inert. |
 | `Build-ProdAccountSeed.ps1` | Bootstrap — production Account **name** seeding, not a regular pipeline chunk | **Superseded 2026-08-13** by `Invoke-AccountBootstrap.ps1`. Still runs (now via the shared parser). Its name-dedupe is what left 31 rows unmappable for the hierarchy pass — see "Rebuilding an org's Account tree". |
 | `Invoke-AccountBootstrap.ps1` | Bootstrap — production Account **names + parent hierarchy**, multi-pass, any environment | Built 2026-08-13. Dry-run against Dev: 1,360 planned Accounts, 0 to insert (already seeded), 1,087 parent links to set, 31 unmappable + 1 unresolvable parent + 1 conflict reported. **Not yet applied** — awaiting a live run. |
 
@@ -345,7 +346,7 @@ Market Segment (already migrated)
   -> LDGCRM_Opportunity_Impediment__c (needs LDGCRM_Impediment__c + Opportunity first)
   -> LDGCRM_Application_Contact__c
   -> OpportunityContactRole (blocked, see above)
-  -> Activity / Meetings (needs Account + Opportunity first)
+  -> Activity / Meetings  [DEFERRED - depends on Einstein Activity Capture, see BACKLOG.md 2]
 ```
 
 **Opportunity must be loaded before Application** — this is a real ordering dependency, not just a
@@ -362,11 +363,27 @@ self-referential lookup (Application → Application) resolved by external ID. `
 originally guessed Bulk API might resolve these within a single upsert batch since the parent row is
 in the same file — **it does not**: the same 2026-08-13 load failed 68 rows with `Foreign key external
 ID ... not found ... in entity LDGCRM_application__c`, referencing parent Applications that were
-present in the very same CSV. `Build-ApplicationLoad.ps1` therefore no longer writes this column at
-all; a follow-up pass (not yet built) has to re-upsert just `LDGCRM_External_ID__c` +
-`LDGCRM_Broker_App_Parent__r.LDGCRM_External_ID__c` once every Application row already exists in the
-org. General rule for any future self-referential lookup in this pipeline: it always needs its own
-second pass.
+present in the very same CSV. `Build-ApplicationLoad.ps1` therefore keeps this column out of the main
+file and **writes a separate second-pass file automatically** (built 2026-08-13):
+`data/salesforce-loads/LDGCRM_application__c-broker-parent-upsert.csv`, carrying just
+`LDGCRM_External_ID__c` + `LDGCRM_Broker_App_Parent__r.LDGCRM_External_ID__c`.
+
+**There is no second transform script to run** — that was the point. Only the *load* is a separate
+step, and it must come after the main Application load; the transform prints the exact command when
+it finishes. A link is emitted only when both sides will exist once the main load completes (the
+planned set plus whatever is already in the org), so a re-run picks up newly-resolvable links with no
+code change.
+
+Current state: 70 Airtable rows carry a Broker App Parent → **63 ready**, 6 waiting on an Application
+withheld by the Account data-quality issue, 1 dropped as a **self-reference** (one Application lists
+itself as its own parent; the script drops that single link and records it in the review CSV — the
+record migrates normally otherwise, nothing else is affected, and it is deliberately *not* raised as
+a data-quality ask). No cycles, and the deepest chain is 1,
+so no multi-pass hierarchy walk is needed here — unlike `Invoke-AccountBootstrap.ps1`, which goes four
+levels deep.
+
+General rule for any future self-referential lookup in this pipeline: it always needs its own second
+pass, and that pass should be generated by the same script rather than left to a human to remember.
 
 ## Running what's built so far
 
@@ -500,7 +517,11 @@ submitting them (the first load attempt submitted 442 such rows and got 442 erro
 
 - `data/salesforce-loads/LDGCRM_application__c-upsert.csv` — external-ID-keyed rows whose parent
   Partner Account is confirmed present in the org. Deliberately does **not** include
-  `LDGCRM_Broker_App_Parent__c` (needs a second pass, see "Load order").
+  `LDGCRM_Broker_App_Parent__c` — that goes in the auto-generated second-pass file below.
+- `data/salesforce-loads/LDGCRM_application__c-broker-parent-upsert.csv` — the **second pass**
+  (63 rows), written automatically. Load it *after* the main Application file; see "Load order".
+- `logs/data-migration/Application-broker-parent-skipped-<timestamp>.csv` — Broker App Parent links
+  not emitted: one side withheld by the Account data-quality issue, or a self-reference.
 - `logs/data-migration/Application-skipped-<timestamp>.csv` — rows skipped for a missing required
   Partner Account, split by reason: no Partner Account linked in Airtable at all, vs. linked but not
   loaded in the org (the latter almost always traces to an unresolved Account — see
