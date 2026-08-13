@@ -219,6 +219,70 @@ Values `"Q1 - FY'23"` and `"146"` don't match any real Ramp Up Approach (`Gradua
 is optional, so these two records will migrate fine with it left blank), but worth a quick fix in
 Airtable if there's a real value that belongs there.
 
+### Opportunities: 28 records have no Status, so they can't migrate
+
+Salesforce requires every Opportunity to have a stage, and there's no sensible default to invent, so
+these 28 are skipped. All were created on **2026-07-22** within the same batch, and most also have no
+Account link — they read as an unfinished bulk import. Examples: `DOC - OSSD(Office of Solution`
+(name looks truncated mid-word), `TSA CFMS (Certified Facility Management System)`,
+`eNativeTrust Family Portal`, `CA - LACERA`, `US Coast Guard`, `Service`, `DOL OUIM Expansion (legacy`
+(also truncated), `DHS-Trusted Traveler Programs`.
+
+**What we need:** set a Status (and ideally an Account link) on these, or confirm they're abandoned
+drafts we should ignore. Full list in `logs/data-migration/Opportunity-skipped-*.csv`.
+
+### Opportunities: 16 records have no Account link
+
+Same situation as the Partner Accounts above — an Opportunity with no Account can't get its Market
+Segment either (Salesforce derives that from the Account automatically). Skipped rather than loaded
+half-connected.
+
+### Opportunities: 142 more are blocked by the duplicate-Account problem
+
+These point at Airtable Account rows that don't match a Salesforce Account — the same issue described
+at the top of this document. **They will migrate automatically once those Accounts are resolved**, no
+further work needed on the Opportunity records themselves.
+
+### Opportunities: 729 records have no estimated go-live date
+
+Salesforce requires a Close Date on every Opportunity. Only 199 of 928 have an `Est. Go Live` value —
+and the gap is understandable rather than sloppy: 524 of 531 `Identified` opportunities have none,
+because a go-live date isn't estimated until a deal qualifies. To load at all, we fall back to the
+record's last status-change date, then its created date. **These are not real forecast dates** and
+shouldn't be read as such in Salesforce reporting until a genuine estimate exists.
+
+**What we need:** nothing blocking — but any opportunity that's far enough along to have a realistic
+go-live estimate would be more useful in Salesforce with `Est. Go Live` filled in. We re-read this
+every run, so filling them in later automatically corrects the Close Date. Affected records are
+listed in `logs/data-migration/Opportunity-closedate-fallback-*.csv`.
+
+### Opportunities: "Gov?t Employees" has a corrupted apostrophe
+
+25 records have the Demographic Served value **`Gov?t Employees`** — a literal question mark where an
+apostrophe should be (`Gov't`). We confirmed this is genuinely stored that way in Airtable, not a
+glitch in our export (other curly apostrophes in the same data come through fine). We map it to the
+correct `Gov't Employees` on load, so nothing is blocked.
+
+**What we need:** fix the value in Airtable so it stops propagating. It likely came from a paste out
+of a system that couldn't handle the apostrophe.
+
+### Opportunities: the "Priority Type" field can't be migrated
+
+Airtable's Priority Type values (`Strategic`, `High Volume`, `IdV Upgrade`, `Leadership Escalation`,
+`HISP - High/Low Volume`, `N/A`) are all reasonable, but the matching Salesforce field is
+misconfigured — on the Login.gov record type it offers only a single nonsense option that is all six
+labels jammed into one string. This is a Salesforce configuration issue, not an Airtable data issue.
+
+**What we need:** a decision from whoever owns the Salesforce config on whether Priority Type should
+be usable on Login.gov opportunities. Until then this field isn't migrated. (564 records have a value.)
+
+### Opportunities: identity-platform columns point at an untracked table
+
+`Existing Identity Platforms` (259 records) and `Alternative Identity Platforms` (176 records) link to
+a separate Airtable table that isn't part of the nine this migration reads, so we can't resolve them
+to the vendor names Salesforce expects. Same open question as Partner Accounts'
+`Escalated User Support Cases` below.
+
 ## Recommended cleanup — not blocking, but worth doing
 
 - **Impediments: 2 completely empty rows** (`recA9LjxxE56gV73J`, `recXyF5tOHJh07laz`) — no Name,

@@ -115,8 +115,8 @@ non-developer-facing list of Airtable data issues blocking the migration — tha
 whoever maintains the Airtable base.
 
 **Loaded into `gsa-peo` so far:** Market Segment, Account (588 reconciled of 1,346), Partner Account
-(74), Impediment (39), Application (688). Contact, Opportunity, the junction objects, Meetings, and
-the Notes chunk are not built yet — see `docs/README.md` for per-script build status.
+(74), Impediment (39), Application (688), Opportunity (742). Contact, the junction objects,
+Meetings, and the Notes chunk are not built yet — see `docs/README.md` for per-script build status.
 
 ```powershell
 # Pull every table straight from the Airtable REST API into data/airtable-exports/<Table>.json

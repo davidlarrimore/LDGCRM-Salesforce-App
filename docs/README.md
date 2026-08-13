@@ -138,7 +138,8 @@ script's skipped/unmapped review CSVs should feed into this list as they're foun
 | `Build-AccountReconciliation.ps1` | Prep — Account (update, not upsert) | Built |
 | `Build-ImpedimentLoad.ps1` | Prep — Impediment (independent parent, straight upsert) | Built |
 | `Build-PartnerAccountLoad.ps1` | Prep — Partner Account (Master-Detail to Account, requires Account loaded first) | Built |
-| `Build-ContactLoad.ps1`, `Build-OpportunityLoad.ps1` | Prep — independent parents | Not built |
+| `Build-OpportunityLoad.ps1` | Prep — Opportunity (needs Account reconciled first) | Built and **loaded 2026-08-13: 742/742 succeeded**. Required a Login_gov record-type picklist fix found by a test batch (see `TRANSFORMATION-RULES.md`) and an `LDGCRM_App_Description__c` LongTextArea deploy. 186 rows withheld (142 unreconciled Accounts, 28 no Status, 16 no Account link). |
+| `Build-ContactLoad.ps1` | Prep — Contact (independent parent, no Account dependency) | Not built |
 | `Build-ApplicationLoad.ps1` | Prep — Application, needs Partner Account **and Opportunity** loaded first (see "Load order") | Built and **loaded 2026-08-13: 688/688 succeeded, 0 failures**. Took three attempts — the first failed 1,045 of 1,047 rows — which drove six fixes (Service Level array unwrap, Broker App Parent moved to a second pass, Name/URL platform-limit handling across *all* Url fields, out-of-range date check, live Partner Account/Opportunity preflight, plus an `Invoke-SalesforceQuery` array bug). 359 rows remain skipped pending Airtable Account fixes; 92 Opportunity links pending the Opportunity load. See `TRANSFORMATION-RULES.md`'s Application section for the full 55-field mapping and the failure post-mortem. |
 | `Build-OpportunityImpedimentLoad.ps1`, `Build-ApplicationContactLoad.ps1` | Prep — dependent/junction objects | Not built |
 | `Build-OpportunityContactRoleLoad.ps1` | Prep — blocked on an `sfdx-metadata-sync` fix (`OpportunityContactRole.LDGCRM_External_ID__c` needs `externalId=true`) | Not built |
@@ -194,6 +195,7 @@ scripts\data-migration\Get-AirtableExport.ps1
 scripts\data-migration\Build-AccountReconciliation.ps1
 scripts\data-migration\Build-ImpedimentLoad.ps1
 scripts\data-migration\Build-PartnerAccountLoad.ps1
+scripts\data-migration\Build-OpportunityLoad.ps1
 scripts\data-migration\Build-ApplicationLoad.ps1
 
 # Actually load a prepped CSV into gsa-peo (prompts "Type LOAD to continue"):
@@ -280,7 +282,23 @@ submitting them (the first load attempt submitted 442 such rows and got 442 erro
 
 Re-running it is the intended way to pick up newly-fixed data: rows skipped for an unresolved parent,
 and Opportunity links blanked because Opportunity wasn't loaded yet, both resolve on a later run with
-no code change.
+no code change. **Demonstrated 2026-08-13**: loading Opportunity and re-running this script dropped
+the blank-Opportunity-link count from 92 to 7 with no edits.
+
+`Build-OpportunityLoad.ps1` queries Salesforce for the Login_gov RecordTypeId and the reconciled
+Account set (read-only), then writes:
+
+- `data/salesforce-loads/Opportunity-upsert.csv` — external-ID-keyed rows. **Requires
+  `Account-update.csv` loaded first**; rows whose Account isn't reconciled are skipped, not blanked,
+  because an unresolvable lookup fails the whole row.
+- `logs/data-migration/Opportunity-skipped-<timestamp>.csv` — split by reason: no Status (StageName is
+  required with no default), no Account link in Airtable, or Account not reconciled in the org.
+- `logs/data-migration/Opportunity-closedate-fallback-<timestamp>.csv` — **read this one.** Salesforce
+  requires `CloseDate` but only 199 of 928 rows have a real `Est. Go Live`, so the rest fall back to
+  the last status-change date, then the created date. Every fallback row is listed here with the field
+  used, so a synthesized date is never mistaken for a forecast.
+- `logs/data-migration/Opportunity-value-review-<timestamp>.csv` — values blanked or dropped
+  (non-URL text in Url fields, over-length URLs, unmappable Focus Level or Demographic values).
 
 See the full mapping table and current sandbox-state notes in the root `CLAUDE.md` under
 "Airtable → Salesforce mapping".

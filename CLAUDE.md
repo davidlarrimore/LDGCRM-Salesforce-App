@@ -209,8 +209,25 @@ a normal writable field, but each is actually a formula computed from other fiel
 migrated (mostly checkboxes) — Salesforce rejects direct writes to a formula field outright. Caught
 before `Build-ApplicationLoad.ps1` was written, not after a failed load. Same instinct as checking a
 picklist's restricted values or a TextArea's real length before trusting a field's surface
-appearance — see `docs/TRANSFORMATION-RULES.md`'s General Principle #6 and the
+appearance — see `docs/TRANSFORMATION-RULES.md`'s General Principle #7 and the
 Application section's dedicated note for the full example.
+
+**Opportunity is loaded as of 2026-08-13: 742 records** (742/742 succeeded). All 742 have their
+Account lookup resolved and Market Segment populated by the before-save Flow; 467 compute a non-zero
+revenue. 186 rows withheld (142 unreconciled Accounts, 28 no Status, 16 no Account link). Two
+metadata fixes were required first: `LDGCRM_App_Description__c` TextArea(255)→LongTextArea, and
+**adding 6 picklist values to the `Login_gov` record type** — see the next paragraph, it's the most
+transferable lesson from this object.
+
+**Record-type picklist restrictions ARE enforced by the Bulk API, and `sf sobject describe` does not
+show them.** A 19-row Opportunity test batch failed 19/19 with
+`INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` on `LDGCRM_Opportunity_Type__c` and
+`LDGCRM_Likely_Service_Level_Needed__c` — both values verified valid against the describe output,
+which reports *field*-level values only. **When a target object has more than one record type (as
+Opportunity does: `Login_gov` and `TTS_OTCRM_Opportunity`), also read
+`objects/<Object>/recordTypes/<RecordType>.recordType-meta.xml`**, whose `fullName` entries are
+URL-encoded (`,`→`%2C`, `/`→`%2F`, `(`/`)`→`%28`/`%29`, `&`→`%26`, `'`→`%27`). Always prove a new
+object's picklist assumptions with a small test batch before a full load.
 
 **Application is loaded as of 2026-08-13: 688 records** (688/688 succeeded, 0 failures; 691 total on
 the object including 3 pre-existing test records). 359 more Airtable rows are deliberately withheld
@@ -290,9 +307,21 @@ Current scripts:
   itself isn't duplicated per run). See "Airtable API" above for auth/connection details. `-Tables`
   limits the pull to a subset; defaults to all nine tables in the "Airtable table → Salesforce object"
   mapping above.
-- `scripts/data-migration/` is otherwise still a placeholder for the upsert/load scripts (Airtable ->
-  Salesforce) — not built yet. Those should follow the same `Common.ps1` logging/PII conventions as
-  the rest of `scripts/`.
+- `scripts/data-migration/Build-*.ps1` — one transform per object, each reading the Airtable JSON
+  (and, where it has lookups, querying gsa-peo read-only) and writing a load-ready CSV to
+  `data/salesforce-loads/` plus review CSVs to `logs/data-migration/`. Built so far:
+  `Build-AccountReconciliation.ps1`, `Build-PartnerAccountLoad.ps1`, `Build-ImpedimentLoad.ps1`,
+  `Build-OpportunityLoad.ps1`, `Build-ApplicationLoad.ps1`, plus the one-off
+  `Build-ProdAccountSeed.ps1`. **They never write to Salesforce** — that's `Invoke-SalesforceLoad.ps1`,
+  a separate explicit step behind a typed `LOAD` confirmation.
+- `scripts/data-migration/Invoke-SalesforceLoad.ps1` — wraps `sf data upsert bulk` /
+  `sf data update bulk` / `sf data import bulk` (`-Operation Upsert|Update|Insert`) against any
+  object/CSV, with preflight counts and a typed confirmation gate.
+- **Still to build:** `Build-ContactLoad.ps1`, the junction objects
+  (`LDGCRM_Opportunity_Impediment__c`, `LDGCRM_Application_Contact__c`), `OpportunityContactRole`
+  (blocked on an `externalId` metadata fix), Meetings, an Application **second pass** for the
+  `LDGCRM_Broker_App_Parent__c` self-lookup, and the final Notes chunk. See `docs/README.md` for
+  per-script status.
 
 ## sfdx/ commands
 

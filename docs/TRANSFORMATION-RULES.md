@@ -51,7 +51,15 @@ wrong in this migration:
    after `Build-AccountReconciliation.ps1` was already built and "working" against a small sample —
    it hadn't actually been loaded yet, so no bad data resulted, but it's a reminder to check a
    transform's *values*, not just that it runs without error, before considering it done.)
-6. **A field's declared type doesn't mean it's writable.** `<type>Percent</type>` (or `Number`,
+6. **A picklist's field-level values are NOT the values a record type will accept, and the API
+   enforces the record type's narrower set.** `sf sobject describe` reports the field's full value
+   set; if the object has more than one record type, that is not what a load can actually write. An
+   Opportunity test batch failed 19/19 on two picklists whose values were "verified" against the
+   describe output. When the target object has multiple record types, also read
+   `objects/<Object>/recordTypes/<RecordType>.recordType-meta.xml` — and note its `fullName` entries
+   are URL-encoded (`,`→`%2C`, `/`→`%2F`, `(`/`)`→`%28`/`%29`, `&`→`%26`, `'`→`%27`), so compare
+   decoded values, not raw strings. See the Opportunity section.
+7. **A field's declared type doesn't mean it's writable.** `<type>Percent</type>` (or `Number`,
    `Text`, etc.) looks like a plain writable field, but check for a `<formula>` tag before mapping
    anything to it — Application's `LDGCRM_Level_1_Complete_Pct__c`/`Level_3`/`Level_4`/
    `Launch_Checklist_Completion__c` are all formula fields computed from other fields already being
@@ -317,6 +325,163 @@ flagged there as its own open question, not assumed to be a Notes candidate.
   (`elizabeth.mays@gsa.gov`, `tony.parrilla@gsa.gov`) match no User at all in gsa-peo — those rows'
   owner is left blank (the field isn't required) and written to
   `PartnerAccount-unmapped-owner-<ts>.csv` for review, rather than the whole row being skipped.
+
+---
+
+## Opportunity
+
+**Source:** Airtable `Opportunities` table (928 rows, **72 distinct columns** as of 2026-08-13 — note
+the first record only exposes ~35 keys, since Airtable omits empty fields per record; enumerate keys
+across *all* rows, not just `[0]`, or you'll silently miss half the table).
+**Target:** `Opportunity`, `Login_gov` record type.
+**Script:** `Build-OpportunityLoad.ps1`. **Mode: upsert on `LDGCRM_External_ID__c`.** Queries
+Salesforce read-only for the Login_gov RecordTypeId and the reconciled Account set.
+**Loaded 2026-08-13: 742/742 succeeded, 0 failures** (after a 21-row test batch caught a blocker —
+see below).
+
+### The record type silently blocks picklist values — and the API DOES enforce it
+
+**This is the most important finding on this object, and it contradicts a common assumption.** A
+19-row test batch failed 19/19 with `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` on two fields whose
+values were verified valid at *field* level:
+
+| Field | Airtable needs | Login_gov record type exposed |
+| --- | --- | --- |
+| `LDGCRM_Opportunity_Type__c` | `OM - New Agreement` (433), `AM - Account Growth` (272), `AM - Renewal` (9) | only 5 generic TTS values (`New Business`, `Add-on/Mod`, `Follow-on`, `Renewal`, `Winback`) |
+| `LDGCRM_Likely_Service_Level_Needed__c` | `Basic IdV` (232), `Authentication Only` (170), `Enhanced IdV (IAL2)` (82) | only `IdV, Auth-only` — a value that appears nowhere in Airtable |
+
+**Lesson: `sf sobject describe` reports a picklist's FIELD-level values, which is not the set a given
+record type will accept.** Checking the describe output — the habit that worked for every other
+object — is *not sufficient* when the target has more than one record type. Read
+`objects/<Object>/recordTypes/<RecordType>.recordType-meta.xml` too, and remember its `fullName`
+entries are URL-encoded (`,`→`%2C`, `/`→`%2F`, `(`/`)`→`%28`/`%29`, `&`→`%26`, `'`→`%27`) so a naive
+string compare against field values will report false mismatches.
+
+**Resolution (user-confirmed 2026-08-13): expose the 6 missing values on the Login_gov record type**
+rather than dropping the fields or redirecting to the standard `Type` field. Justification, in order
+of weight:
+1. **This object's own revenue formula proves intent**:
+   `LDGCRM_Est_Annual_Revenue_fully_ramped__c` = `MAX(IF(ISPICKVAL(LDGCRM_Opportunity_Type__c, "OM - New Agreement"), 30000, 0), …)`.
+   The formula is keyed on a value the record type wouldn't allow anyone to select — self-evidently a
+   record-type configuration gap, not a deliberate restriction. Verified post-load: 467 Opportunities
+   now compute a non-zero revenue, which would have been 0 had the values gone to the standard `Type`
+   field instead (the formula doesn't read `Type`).
+2. The 3 service-level values are byte-identical to what `LDGCRM_application__c.LDGCRM_Service_Level__c`
+   already uses in production.
+
+Deployed via `sf project deploy start --metadata "RecordType:Opportunity.Login_gov" --test-level NoTestRun`
+and **re-verified by re-running the identical test batch, which then passed 21/21** — not assumed from
+a successful deploy.
+
+### Three required standard fields, and only one has a complete source
+
+`Name`, `StageName`, and `CloseDate` are required by the platform (the Login.gov business process
+defines **no default stage**, so `StageName` must be supplied explicitly on every insert).
+
+- **`Name` ← `Opportunity Name`** — present on all 928 rows, max length 100 against the standard 120
+  cap. No handling needed.
+- **`StageName` ← `Status`** — a clean passthrough: all 7 Airtable values (`Identified`,
+  `Prospecting`, `Qualified`, `Scoped`, `Agreements`, `Closed Won`, `Closed Lost`) are exactly the 7
+  stages in the Login.gov business process. **28 rows have a blank Status and are skipped** — they
+  cannot load. Do **not** also map `Status` onto `LDGCRM_Status__c`: that field's Login_gov record
+  type strips the six values that overlap, and it's a different concept (a granular sales-motion
+  status, not a stage).
+- **`CloseDate` ← a documented 3-step fallback.** Only 199 of 928 rows have `Est. Go Live`, and the
+  gap is structural rather than sloppy: 524 of 531 `Identified` opportunities have none, because a
+  go-live date isn't estimated until a deal qualifies. Since the field is mandatory, the script falls
+  back `Est. Go Live` → `(c) Last Status Change Date` → `Created`, **always a real date from the
+  record's own history, never invented**, and writes every fallback row to
+  `Opportunity-closedate-fallback-<ts>.csv` (576 rows on the first load) so nobody mistakes these for
+  real forecast dates. `Est. Go Live` is *also* mapped independently to
+  `LDGCRM_Estimated_Go_Live_Date__c`, so the genuine estimate is never conflated with the synthesized
+  CloseDate.
+
+### Rich text fields need escaping AND `<br>` — they are Html, not LongTextArea
+
+`LDGCRM_Current_Status_Summary__c`, `LDGCRM_Recent_Conversations__c` and
+`LDGCRM_Estimate_Rationale__c` are **`Html`** (rich text) fields. This inverts the Impediment lesson,
+where the fix was choosing LongTextArea *over* Html — here the fields are already Html, and writing
+plain text into them loses data two ways:
+1. **Bare `<`/`>`/`&` are parsed as markup.** 7 `Recent Conversations` values contain
+   `<https://…>` autolinks that would vanish entirely, and 63 values across the three fields contain a
+   bare `&`. Escaped first (`&`→`&amp;`, `<`→`&lt;`, `>`→`&gt;`).
+2. **Newlines don't render.** All 559 `Recent Conversations` values and 119 `Current Status Summary`
+   values are multi-line dated logs that would collapse into one unreadable paragraph. Newlines become
+   `<br>` — **after** escaping, never before, or the generated tags get escaped too.
+
+### Field mapping
+
+| Airtable field | Salesforce field | Transformation rule |
+| --- | --- | --- |
+| `id` | `LDGCRM_External_ID__c` | Passthrough — the upsert key. |
+| `Opportunity Name` | `Name` | Passthrough. |
+| `Status` | `StageName` | Passthrough; row skipped if blank. |
+| *(derived)* | `RecordTypeId` | The `Login_gov` RecordTypeId, queried at runtime. **Must be set explicitly** — Opportunity has two active record types, unlike `LDGCRM_application__c` which has one and could rely on the default. |
+| `Est. Go Live` → `(c) Last Status Change Date` → `Created` | `CloseDate` | 3-step fallback, see above. |
+| `Account Record ID` (linked array) | `AccountId` (CSV column `Account.LDGCRM_External_ID__c`) | `@(...)[0]`. Rows whose Account isn't reconciled in gsa-peo are **skipped**, not blanked — an unresolvable lookup fails the whole row. |
+| `Opportunity Type` | `LDGCRM_Opportunity_Type__c` | Passthrough — after the record-type fix above. |
+| `Focus Level` | `LDGCRM_Focus_Level__c` (restricted) | **Leading-token map**: Airtable embeds the review cadence in the label (`"High (2 month update)"`, `"Backlog (12 month update)"`); Salesforce stores just `Highest`/`High`/`Backlog`/`Developing`. Same shape as Application's Ramp Up Approach rule. |
+| `Likely Service Level Needed` | `LDGCRM_Likely_Service_Level_Needed__c` | Passthrough — after the record-type fix above. |
+| `Technical Readiness` | `LDGCRM_Technical_Readiness__c` (restricted) | `@(...)[0]` — a 1-element array. All 7 distinct values match the picklist exactly. |
+| `Estimate source` | `LDGCRM_Estimate_Source__c` (restricted) | Passthrough — both values match exactly. |
+| `Demographic Served` | `LDGCRM_Demographic_Served__c` (multiselect) | Array whose elements are themselves semicolon-joined (`"General Population; Gov?t Employees"`) — split on `;`, map, re-join. See the apostrophe note below. **No picklist expansion needed**, unlike Application: all 6 Airtable values map to the field's existing 6. |
+| `Est. Go Live` | `LDGCRM_Estimated_Go_Live_Date__c` | Passthrough of the genuine estimate (distinct from CloseDate). |
+| `Est. Annual IdV Users (fully ramped)` | `LDGCRM_Est_Annual_Idv_Users__c` | Passthrough. |
+| `Est. Annual Auth-only Users (fully ramped)` | `LDGCRM_Est_Annual_Auth_Only_Users__c` | Passthrough. |
+| `Est. Auth-only Avg Active Months` | `LDGCRM_Est_Auth_Only_Avg_Active_Months__c` | Passthrough. |
+| `Est. First Year Ramp %` | `LDGCRM_Est_First_Year_Ramp__c` (`Percent`, scale 0) | **×100.** Airtable stores a 0–1 fraction (`0.5`); Salesforce Percent fields take the raw 0–100 number over the API. Rounded to a whole number since the field's scale is 0. This is the conversion that was moot on Application because every Percent field there was a formula — here it is live. |
+| `App Description` | `LDGCRM_App_Description__c` | Passthrough — **after a metadata fix**, see below. |
+| `Current Status Summary` | `LDGCRM_Current_Status_Summary__c` (`Html`) | Escape + `<br>`, see above. |
+| `Recent Conversations` | `LDGCRM_Recent_Conversations__c` (`Html`) | Escape + `<br>`. |
+| `Estimate rationale` | `LDGCRM_Estimate_Rationale__c` (`Html`) | Escape + `<br>`. |
+| `Cost Estimate URL`, `Summary URL`, `Sandbox URL` | matching `Url` fields | Shared helper: strip Airtable's angle-bracket autolink wrapper (`<https://…>`), drop `N/A`/`None`/`TBD` placeholders, require `^https?://`, and blank anything over the 255-char platform cap. |
+
+**The `Gov?t Employees` apostrophe trap (three different characters, one concept):**
+- Airtable literally stores **`Gov?t Employees`** — an ASCII `?` (U+003F), on 25 rows. Confirmed *not*
+  an export artifact: 82 curly apostrophes survive intact elsewhere in the same JSON file, so the
+  corruption is in Airtable itself (logged in `AIRTABLE-DATA-QUALITY-REQUESTS.md`).
+- `Opportunity.LDGCRM_Demographic_Served__c` (the target) uses a **straight** apostrophe `Gov't Employees` (U+0027).
+- `Opportunity.Demographic_Served__c` (deprecated, not touched) uses a **curly** `Gov’t Employees` (U+2019).
+- `LDGCRM_application__c`'s Global Value Set uses **`Gov't Employees (Contractors)`** — a different
+  string again. **Do not share a Demographic mapping table between Application and Opportunity.**
+
+### A metadata fix that WAS ours to make (unlike Name/Url)
+
+`LDGCRM_App_Description__c` was `TextArea` with no `<length>` — the 255-char trap, hit for the third
+time in this migration (after Impediment's Description/Talking Point and Partner Account's Current
+Status Summary). 95 of 379 values exceed it, up to 1,711 chars. Deployed as `LongTextArea`
+(32768/6 lines) before the load. Confirmed plain LongTextArea was right, not `Html`: the 17 values
+matching an HTML-tag pattern are all angle-bracket-wrapped URLs (`<https://…>`), not markup.
+**Contrast with `Name` (80) and `Url` (255) on Application, which are platform hard limits with no
+`<length>` override** — always determine which kind you're facing before reaching for a metadata fix.
+
+### Fields deliberately excluded
+
+| Field | Why |
+| --- | --- |
+| `LDGCRM_Market_Segment__c` | Before-save Flow `LDGCRM_Opportunity_Before_Save_Assign_Account_and_Market_Segment` derives it from `Account.LDGCRM_Market_Segment__r` on create and on any `AccountId` change. Verified post-load: all 742 populated. |
+| `LDGCRM_Status_Summary_Modified_Datetime__c` | Owned by a before-save Flow that stamps it whenever `LDGCRM_Current_Status_Summary__c` changes. Any migrated value is stomped on the next update touching the summary, so writing it produces a misleading timestamp. |
+| `LDGCRM_Days_Since_Last_Activity__c`, `LDGCRM_Est_Annual_Revenue_fully_ramped__c`, `LDGCRM_Est_First_Year_Revenue__c`, `LDGCRM_Status_Summary_Indicator__c` | Formula fields. The two revenue ones compute *from* the estimate fields this script does set, so Airtable's own revenue columns aren't migrated — they recompute themselves. |
+| `priority_type__c` | Airtable's Priority Type values all exist at field level, but the Login_gov record type exposes **only a single malformed concatenated value** (`"HISP - High Volume, HISP - Lower Volume, Volume, Strategic, IDV Upgrade, Leadership Escalation"`). No valid target. Not force-fitted onto `LDGCRM_Level_of_Priority__c`, which is a different concept (Low/Medium/High). Flagged for the data owners. |
+| `LDGCRM_Existing_Identity_Platforms__c`, `LDGCRM_Alternative_Identity_Platforms__c` | The Airtable columns hold `rec...` IDs pointing at a table this migration doesn't pull, while the Salesforce fields are multipicklists of vendor names. Unresolvable without that table — same open question as Partner Accounts' `Escalated User Support Cases`. |
+| `LDGCRM_Partner_Account__c` | The Airtable column exists but is empty on all 928 rows. |
+| `Requested Features`, `Current Blockers`, `Opportunity Status Changes`, `Meetings`, `Opportunity Contacts`, `Applications` | Linked-record arrays that drive other objects/chunks (Meetings, OpportunityContactRole) or reference untracked tables. |
+| `Market Segment`, `Market Segment (from Account Name)`, `(c) *` rollups, `Created By`, `Updated?`, `Months in Status`, `Meeting Count`, `(legacy data) *` | Airtable-side rollups/computed/system columns, or superseded by the Flow-derived Market Segment. |
+
+### Load results (2026-08-13)
+
+742 of 928 rows loaded; **742/742 submitted rows succeeded**. Verified post-load: all 742 have the
+Account lookup resolved, all 742 have Market Segment populated by the Flow, and 467 compute a
+non-zero revenue. The 186 not loaded:
+
+| Reason | Rows | Resolution |
+| --- | --- | --- |
+| Account not reconciled in gsa-peo | 142 | The duplicate/unmatched Airtable Account problem — fix the Accounts and re-run. |
+| No Status (StageName required) | 28 | Needs a Status in Airtable. |
+| No Account link in Airtable at all | 16 | Needs an Account link in Airtable. |
+
+Re-running `Build-ApplicationLoad.ps1` afterward dropped its blank-Opportunity-link count from 92 to
+7 and the reload wrote those links (85 Applications now linked to an Opportunity).
 
 ---
 

@@ -3,9 +3,11 @@
     <fullName>LDGCRM_App_Description__c</fullName>
     <description>A couple sentences explaining the use case of an application or multiple applications, including name and URL.</description>
     <label>App Description</label>
+    <length>32768</length>
     <required>false</required>
     <trackFeedHistory>false</trackFeedHistory>
     <trackHistory>false</trackHistory>
     <trackTrending>false</trackTrending>
-    <type>TextArea</type>
+    <type>LongTextArea</type>
+    <visibleLines>6</visibleLines>
 </CustomField>

@@ -690,9 +690,33 @@
             <fullName>IdV%2C Auth-only</fullName>
             <default>false</default>
         </values>
+        <values>
+            <fullName>Authentication Only</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Basic IdV</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Enhanced IdV %28IAL2%29</fullName>
+            <default>false</default>
+        </values>
     </picklistValues>
     <picklistValues>
         <picklist>LDGCRM_Opportunity_Type__c</picklist>
+        <values>
+            <fullName>OM - New Agreement</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>AM - Account Growth</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>AM - Renewal</fullName>
+            <default>false</default>
+        </values>
         <values>
             <fullName>Add-on%2FMod</fullName>
             <default>false</default>
