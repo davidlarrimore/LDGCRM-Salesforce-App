@@ -516,13 +516,26 @@ Account path is via **Applications**, which reference both: 82 Opportunities, ev
 Opportunities — the real coverage, versus the 469 the rollup appeared to offer. No junction object,
 no schema change.
 
-**Implemented as `Build-OpportunityPartnerAccountLink.ps1`**, a second pass rather than part of the
-main Opportunity transform, because it sources from a different table (Applications) and joins
-differently from every other field on the object. It writes only `LDGCRM_External_ID__c` (as the
-upsert match key) plus the lookup, so re-running it can't disturb anything the main load set.
-**Loaded 2026-08-13: 66/66 succeeded**, 16 pending until both sides exist, 0 conflicts. It still
-collects the *full* set of Partner Accounts per Opportunity rather than taking the first match, so if
-two Applications ever disagree the row goes to a conflict CSV instead of being silently resolved.
+**Implemented inside `Build-OpportunityLoad.ps1`, not as a separate pass.** It was briefly built as a
+standalone script (`Build-OpportunityPartnerAccountLink.ps1`, since deleted) on the reasoning that it
+sources from a different table. **That was a code-organization argument, not a technical dependency,
+and it was wrong to split on it** — the user caught it by asking whether a full clean run would
+include the linkage automatically. It wouldn't have: an operator would have had to remember an extra
+step, and forgetting it would leave every Opportunity's Partner Account silently blank.
+
+There is no ordering obstacle: **Partner Accounts load before Opportunity** (see the load order in
+`docs/README.md`), so the lookup resolves during the same load, and the derivation only needs the
+local Applications JSON export — not Applications loaded into Salesforce. Verified by consolidating
+and re-running: identical 66 links, 742/742 succeeded.
+
+**The distinction worth carrying forward:** a second pass is only justified when the data genuinely
+cannot resolve in one — Application's `LDGCRM_Broker_App_Parent__c` qualifies (self-referential, its
+parents are in its own batch, proven to fail). "The source is a different table" does not qualify.
+
+The transform still collects the *full* set of Partner Accounts per Opportunity rather than taking
+the first match, so if two Applications ever disagree the row is left blank and flagged to the review
+CSV instead of being silently resolved to whichever came first. Currently 0 such conflicts; 6 more
+Opportunities have a known Partner Account that isn't loaded yet and fill in on a re-run.
 
 ### Load results (2026-08-13)
 

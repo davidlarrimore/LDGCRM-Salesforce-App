@@ -46,15 +46,22 @@
         the Airtable columns hold rec... IDs pointing at a table this migration
         doesn't pull, while the Salesforce fields are multipicklists of vendor
         names. Unresolvable without that table.
-      - LDGCRM_Partner_Account__c: NOT set by this script - see the note at the
-        bottom of this header and Build-OpportunityPartnerAccountLink.ps1.
-        The Airtable Opportunities table has no Partner Account column, and the
-        Partner Accounts table's "Opportunities" column is a roll-up of the
-        parent ACCOUNT's opportunities (exact-match for 72 of 76 Partner
-        Accounts), not an authored link - so it cannot say which Partner
-        Account an individual Opportunity belongs to. The only authored path is
-        via Applications, which reference both; that is a separate pass because
-        it needs Application data, not Opportunity data.
+    LDGCRM_Partner_Account__c is set here, but is derived from the APPLICATIONS
+    export rather than the Opportunities one - the Airtable Opportunities table
+    has no Partner Account column at all. Do NOT source it from the Partner
+    Accounts table's "Opportunities" column: that is a roll-up of the parent
+    ACCOUNT's opportunities (verified exact-match for 72 of 76 Partner
+    Accounts), not an authored link, so it cannot say which Partner Account an
+    individual Opportunity belongs to. All 8 Partner Accounts under the
+    Department of Defense carry byte-identical 50-Opportunity lists, several
+    named "(placeholder)". See docs/TRANSFORMATION-RULES.md.
+
+    This needs no separate pass: Partner Accounts load BEFORE Opportunity (see
+    the load order in docs/README.md), so the lookup resolves during this same
+    load, and the derivation only needs the local Applications JSON export, not
+    Applications loaded into Salesforce. (Contrast Application's
+    LDGCRM_Broker_App_Parent__c, which is genuinely a second pass because it is
+    self-referential - its parents are in its own batch.)
 #>
 
 param(
@@ -213,11 +220,47 @@ foreach ($Acct in $LoadedAccounts) {
 }
 Write-Host "$($LoadedAccountIds.Count) reconciled Accounts present in $OrgAlias."
 
+# --- Opportunity -> Partner Account, derived from the Applications export ---
+# See the header for why this is derived from Applications and not from the
+# Partner Accounts table's (rollup) "Opportunities" column. Collect the full
+# SET per Opportunity rather than taking the first match, so a genuine
+# disagreement between two Applications surfaces instead of being silently
+# resolved to whichever row happened to come first.
+Write-Host ""
+Write-Host "Deriving Opportunity -> Partner Account links from the Applications export..." -ForegroundColor Cyan
+$AirtableApplications = Import-AirtableTable -Label "Applications"
+
+$OppToPartnerAccounts = @{}
+foreach ($App in $AirtableApplications) {
+    $RawAppOpp = $App.fields.'Opportunity Record ID'
+    $RawAppPa = $App.fields.'Partner Account Record ID (from Partner Agreement)'
+    if (-not $RawAppOpp -or -not $RawAppPa) { continue }
+
+    $AppOppId = @($RawAppOpp)[0]
+    if (-not $OppToPartnerAccounts.ContainsKey($AppOppId)) {
+        $OppToPartnerAccounts[$AppOppId] = [System.Collections.Generic.HashSet[string]]::new()
+    }
+    $OppToPartnerAccounts[$AppOppId].Add(@($RawAppPa)[0]) | Out-Null
+}
+Write-Host "$($OppToPartnerAccounts.Count) Opportunities have a Partner Account recorded via an Application."
+
+Write-Host "Querying $OrgAlias for loaded Partner Accounts..." -ForegroundColor Cyan
+$LoadedPartnerAccounts = @(Invoke-SalesforceQuery `
+    -Soql "SELECT LDGCRM_External_ID__c FROM LDGCRM_Partner_Account__c WHERE LDGCRM_External_ID__c != null" `
+    -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
+$LoadedPartnerAccountIds = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
+foreach ($Pa in $LoadedPartnerAccounts) {
+    if ($Pa.LDGCRM_External_ID__c) { $LoadedPartnerAccountIds.Add($Pa.LDGCRM_External_ID__c) | Out-Null }
+}
+Write-Host "$($LoadedPartnerAccountIds.Count) Partner Accounts present in $OrgAlias."
+
 $UpsertRows = [System.Collections.Generic.List[object]]::new()
 $SkippedRows = [System.Collections.Generic.List[object]]::new()
 $ValueReviewRows = [System.Collections.Generic.List[object]]::new()
 $CloseDateFallbackRows = [System.Collections.Generic.List[object]]::new()
 $DroppedDemographicCount = 0
+$UnresolvedPartnerAccountCount = 0
 
 foreach ($Row in $AirtableOpportunities) {
     $RecId = $Row.id
@@ -331,6 +374,35 @@ foreach ($Row in $AirtableOpportunities) {
         $TechnicalReadiness = @($Row.fields.'Technical Readiness')[0]
     }
 
+    # --- Partner Account, derived from Applications (see header) ---
+    $PartnerAccountId = ""
+    if ($OppToPartnerAccounts.ContainsKey($RecId)) {
+        $PaSet = $OppToPartnerAccounts[$RecId]
+        if ($PaSet.Count -gt 1) {
+            # Two Applications on the same Opportunity naming different Partner
+            # Accounts. A single Lookup can't hold both - leave blank, flag it.
+            $ValueReviewRows.Add([PSCustomObject]@{
+                AirtableRecordId = $RecId
+                Field            = "Partner Account (derived from Applications)"
+                OriginalValue    = ($PaSet -join "; ")
+                AppliedValue     = ""
+                Reason           = "Applications on this Opportunity reference more than one Partner Account; a single Lookup can't represent that. Left blank - needs a human decision on which is correct."
+            })
+        }
+        else {
+            $CandidatePa = @($PaSet)[0]
+            if ($LoadedPartnerAccountIds.Contains($CandidatePa)) {
+                $PartnerAccountId = $CandidatePa
+            }
+            else {
+                # Partner Account not loaded (its parent Account is likely
+                # unreconciled). Blank rather than skip - the field is optional,
+                # and re-running once it loads fills this in.
+                $UnresolvedPartnerAccountCount++
+            }
+        }
+    }
+
     # --- Est. First Year Ramp %: Airtable stores a 0-1 fraction; Salesforce
     # Percent fields take the raw 0-100 number over the API, and this one has
     # scale 0 so it must be a whole number. ---
@@ -346,6 +418,7 @@ foreach ($Row in $AirtableOpportunities) {
         StageName                                   = $Status
         CloseDate                                   = $CloseDate
         "Account.LDGCRM_External_ID__c"             = $AccountId
+        "LDGCRM_Partner_Account__r.LDGCRM_External_ID__c" = $PartnerAccountId
         LDGCRM_Opportunity_Type__c                  = $Row.fields.'Opportunity Type'
         LDGCRM_Focus_Level__c                       = $FocusLevel
         LDGCRM_Likely_Service_Level_Needed__c       = $Row.fields.'Likely Service Level Needed'
@@ -404,6 +477,8 @@ Write-Host ("{0,-50} {1,8:N0}" -f "Ready for upsert", $UpsertRows.Count)
 Write-Host ("{0,-50} {1,8:N0}" -f "Skipped - no Status (StageName required)", $SkippedNoStatus)
 Write-Host ("{0,-50} {1,8:N0}" -f "Skipped - no Account link in Airtable", $SkippedNoAccount)
 Write-Host ("{0,-50} {1,8:N0}" -f "Skipped - Account not reconciled in org", $SkippedAccountUnreconciled)
+Write-Host ("{0,-50} {1,8:N0}" -f "Partner Account linked (via Applications)", @($UpsertRows | Where-Object { $_.'LDGCRM_Partner_Account__r.LDGCRM_External_ID__c' }).Count)
+Write-Host ("{0,-50} {1,8:N0}" -f "Partner Account known but not loaded yet", $UnresolvedPartnerAccountCount)
 Write-Host ("{0,-50} {1,8:N0}" -f "CloseDate came from a fallback field", $CloseDateFallbackRows.Count)
 Write-Host ("{0,-50} {1,8:N0}" -f "Demographic tags dropped (unmapped)", $DroppedDemographicCount)
 Write-Host ("{0,-50} {1,8:N0}" -f "Other values blanked for review", $ValueReviewRows.Count)
