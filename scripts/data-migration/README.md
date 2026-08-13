@@ -1,7 +1,7 @@
 # Airtable → Salesforce migration pipeline
 
 This directory holds the scripts that move Login.gov applicant data from Airtable into the
-`gsa-peo` Salesforce sandbox (and eventually production). The pipeline has three stages that run
+`gsa-peo` Salesforce sandbox (and eventually production). The pipeline has four stages that run
 in order:
 
 1. **Pull** — `Get-AirtableExport.ps1` pulls current data from the Airtable REST API into
@@ -22,6 +22,12 @@ in order:
    transform scripts — would need to change. Built and proven: loaded all 39 Impediment records into
    gsa-peo this way (see `TRANSFORMATION-RULES.md`'s Impediment section for what that first real load
    surfaced).
+4. **Notes** — freeform/journal-style Airtable columns that don't belong in a dedicated field become
+   `ContentNote` records (Enhanced Notes, confirmed via the Account layout's `RelatedContentNoteList`)
+   attached to their parent record. **Must be the last chunk built** — a Note needs its parent record
+   to already exist, so this can't run until every other object's records are loaded. Not started; see
+   `TRANSFORMATION-RULES.md`'s "Notes" section for the mechanism, candidate fields found so far, and
+   the proposed (not yet implemented) Title/Body heuristic.
 
 ## ⚠️ Coordination: two people can load into gsa-peo
 
@@ -82,11 +88,13 @@ covers pipeline architecture, build status, and how to run things.
 | `Common.DataMigration.ps1` | shared helpers (Airtable JSON loading, Data Loader CSV writing, read-only SOQL) | Built |
 | `Build-AccountReconciliation.ps1` | Prep — Account (update, not upsert) | Built |
 | `Build-ImpedimentLoad.ps1` | Prep — Impediment (independent parent, straight upsert) | Built |
-| `Build-PartnerAccountLoad.ps1`, `Build-ContactLoad.ps1`, `Build-OpportunityLoad.ps1` | Prep — independent parents | Not built |
+| `Build-PartnerAccountLoad.ps1` | Prep — Partner Account (Master-Detail to Account, requires Account loaded first) | Built |
+| `Build-ContactLoad.ps1`, `Build-OpportunityLoad.ps1` | Prep — independent parents | Not built |
 | `Build-ApplicationLoad.ps1`, `Build-OpportunityImpedimentLoad.ps1`, `Build-ApplicationContactLoad.ps1` | Prep — dependent/junction objects | Not built |
 | `Build-OpportunityContactRoleLoad.ps1` | Prep — blocked on an `sfdx-metadata-sync` fix (`OpportunityContactRole.LDGCRM_External_ID__c` needs `externalId=true`) | Not built |
 | `Build-MeetingLoad.ps1` | Prep — Activity/Event, needs a default-duration convention for synthesized `StartDateTime`/`EndDateTime` | Not built |
 | `Invoke-SalesforceLoad.ps1` | Load — generic `sf data upsert bulk`/`sf data update bulk` wrapper, any object | Built |
+| `Build-NotesLoad.ps1` (name TBD) | Notes — `ContentNote`/`ContentDocumentLink` for freeform columns, last chunk | Not started |
 
 ## Load order
 
@@ -113,6 +121,7 @@ Market Segment (already migrated)
 scripts\data-migration\Get-AirtableExport.ps1
 scripts\data-migration\Build-AccountReconciliation.ps1
 scripts\data-migration\Build-ImpedimentLoad.ps1
+scripts\data-migration\Build-PartnerAccountLoad.ps1
 
 # Actually load a prepped CSV into gsa-peo (prompts "Type LOAD to continue"):
 scripts\data-migration\Invoke-SalesforceLoad.ps1 `
@@ -124,14 +133,20 @@ scripts\data-migration\Invoke-SalesforceLoad.ps1 `
     -ObjectApiName "Account" `
     -CsvFile "data\salesforce-loads\Account-update.csv" `
     -Operation Update
+
+# Partner Account is Master-Detail to Account - load Account first, or its
+# parent lookup won't resolve:
+scripts\data-migration\Invoke-SalesforceLoad.ps1 `
+    -ObjectApiName "LDGCRM_Partner_Account__c" `
+    -CsvFile "data\salesforce-loads\LDGCRM_Partner_Account__c-upsert.csv"
 ```
 
 `Build-AccountReconciliation.ps1` is read-only against Salesforce (a single SOQL query) and only
 writes local files:
 
 - `data/salesforce-loads/Account-update.csv` — matched rows (`Id`, `LDGCRM_External_ID__c`,
-  `LDGCRM_Market_Segment__c`, `Type`) ready for a Data Loader **update** (not upsert) once Stage 3
-  exists.
+  `LDGCRM_Market_Segment__r.LDGCRM_External_ID__c`, `Type`) ready for a Data Loader **update** (not
+  upsert) once Stage 3 exists.
 - `logs/data-migration/Account-reconciliation-unmatched-<timestamp>.csv` — Airtable rows with no
   confident Salesforce match, for human review.
 - `logs/data-migration/Account-reconciliation-ambiguous-<timestamp>.csv` — Airtable rows matching
@@ -152,6 +167,17 @@ objects, so there's nothing to reconcile) and writes:
 - `logs/data-migration/Impediment-unmapped-category-<timestamp>.csv` — rows whose Category value
   doesn't match the script's mapping table; loaded anyway with Category left blank rather than
   blocked, but flagged for human review.
+
+`Build-PartnerAccountLoad.ps1` queries Salesforce once (to resolve `Account Owner` emails to `User`
+records — see `TRANSFORMATION-RULES.md` for why that lookup can't use the usual external-ID
+passthrough) and writes:
+
+- `data/salesforce-loads/LDGCRM_Partner_Account__c-upsert.csv` — external-ID-keyed rows. Requires
+  `Account-update.csv` already loaded first (`LDGCRM_Account__c` is Master-Detail to Account).
+- `logs/data-migration/PartnerAccount-skipped-<timestamp>.csv` — rows with no parent Account, or
+  more than one (Master-Detail only supports one parent).
+- `logs/data-migration/PartnerAccount-unmapped-owner-<timestamp>.csv` — rows whose owner email
+  matches no Salesforce User; loaded anyway with Owner left blank.
 
 See the full mapping table and current sandbox-state notes in the root `CLAUDE.md` under
 "Airtable → Salesforce mapping".

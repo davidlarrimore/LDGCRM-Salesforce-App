@@ -45,6 +45,17 @@ $ErrorActionPreference = "Stop"
 
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-AccountReconciliation"
 
+# Airtable's Accounts table "Market Segment" text values don't exactly match the
+# 5 real LDGCRM_Market_Segment__c records' Name/LDGCRM_External_ID__c (which
+# store the segment name) in 3 of 5 cases - confirmed by querying gsa-peo
+# directly rather than assumed. "Benefits" and "Infrastructure" already match
+# and don't need an entry here.
+$MarketSegmentMap = @{
+    "Defense & National Security"       = "Defense"
+    "Finance (Regulation & Compliance)" = "Finance & Regulation"
+    "State & Local (SLTT)"              = "State & Local"
+}
+
 function Get-NormalizedName {
     param([string]$Name)
 
@@ -121,7 +132,13 @@ $AlreadyCurrentCount = 0
 foreach ($AirtableRow in $AirtableAccounts) {
     $RecId = $AirtableRow.id
     $AtName = $AirtableRow.fields.Name
-    $AtSegment = $AirtableRow.fields.'Market Segment'
+    $RawSegment = $AirtableRow.fields.'Market Segment'
+    $AtSegment = $RawSegment
+
+    if ($RawSegment -and $MarketSegmentMap.ContainsKey($RawSegment)) {
+        $AtSegment = $MarketSegmentMap[$RawSegment]
+    }
+
     $DesiredType = if ($AirtableRow.fields.'States + DC/PR') { "State" } else { "Federal" }
 
     $MatchedSfAccount = $null
@@ -181,10 +198,10 @@ foreach ($AirtableRow in $AirtableAccounts) {
     }
 
     $UpdateRows.Add([PSCustomObject]@{
-        Id                       = $MatchedSfAccount.Id
-        LDGCRM_External_ID__c    = $RecId
-        LDGCRM_Market_Segment__c = $AtSegment
-        Type                     = $DesiredType
+        Id                                            = $MatchedSfAccount.Id
+        LDGCRM_External_ID__c                         = $RecId
+        "LDGCRM_Market_Segment__r.LDGCRM_External_ID__c" = $AtSegment
+        Type                                           = $DesiredType
     })
 }
 

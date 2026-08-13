@@ -65,8 +65,16 @@ objects carrying custom fields: Account, Contact, Opportunity, `OpportunityConta
   tied only to an Account (no Opportunity) gets `WhatId` = that Account directly.
 
 Nine record-triggered **Flows** (`force-app/main/default/flows/`) implement the automation layer:
-duplicate-record checks on the two junction objects, Market Segment assignment on Application/Opportunity
-save, Partner Account re-parent cascades, and status/blocked-revenue rollups. Sharing is managed via
+duplicate-record checks on the two junction objects, Partner Account re-parent cascades, and
+status/blocked-revenue rollups. Three before-save Flows assign `LDGCRM_Market_Segment__c`
+automatically from the related Account, cascading down the hierarchy — **data-migration load scripts
+must never set this field themselves on these three objects**, only rely on the Flow:
+`LDGCRM_Partner_Account_Before_Save_Create_Update_Market_Segment` (from
+`LDGCRM_Account__r.LDGCRM_Market_Segment__r`), `LDGCRM_Opportunity_Before_Save_Assign_Account_and_Market_Segment`
+(from `Account.LDGCRM_Market_Segment__r`), and `LDGCRM_Application_Before_Save_Assign_Market_Segment`
+(from `LDGCRM_Partner_Account__r.LDGCRM_Account__r.LDGCRM_Market_Segment__r`) — Account itself has no
+such Flow and is the one object in this chain whose Market Segment the migration sets directly (see
+`Build-AccountReconciliation.ps1`). Sharing is managed via
 explicit **SharingRules** (owner + criteria based) on Account, Contact, Opportunity, and the three
 `LDGCRM_` objects with org-wide-default-restricted sharing, plus three **PermissionSets**
 (`LDGCRM_Partnership_Team_Member_CRE`, `LDGCRM_Partnership_Viewer_R`, `LDGCRM_Production_Support_CRED`)
@@ -146,7 +154,7 @@ value map, etc.) — this section is the short cross-object summary.
 | Airtable table | Salesforce object | Airtable link columns → Salesforce lookup |
 | --- | --- | --- |
 | Accounts | Account (`Federal` record type) | *(already migrated — see below)*; also `States + DC/PR` (checkbox) → `Type` (`"State"` if checked, else `"Federal"` — confirmed against gsa-peo's existing data, not just Airtable's field name; see below) |
-| Partner Accounts | `LDGCRM_Partner_Account__c` | `Account Record ID` → `LDGCRM_Account__c` (Master-Detail) |
+| Partner Accounts | `LDGCRM_Partner_Account__c` | `Account Record ID` → `LDGCRM_Account__c` (Master-Detail, requires Account loaded first); `Name`/`LDGCRM_Agreement_Short_Name__c` ← `Agreement Short Name` (no dedicated Name column exists) |
 | Applications | `LDGCRM_application__c` (`LDGCRM_Application` record type) | `Partner Account Record ID (from Partner Agreement)` → `LDGCRM_Partner_Account__c`; `Opportunity Record ID` → `LDGCRM_Opportunity__c` |
 | Contacts | Contact (`Federal` record type) | no direct Account/Application lookup on Contact itself — relationships go through the junctions below |
 | Applications × Contacts (embedded in Contacts/Applications exports) | `LDGCRM_Application_Contact__c` | needs both the Application's and the Contact's `rec...` IDs; splits Airtable's comma-joined multi-value cells into one junction row per pair |
@@ -182,12 +190,26 @@ field (and `LDGCRM_Blocked_Revenue__c` is itself a roll-up Summary field compute
 `LDGCRM_Opportunity_Impediment__c` — Salesforce rejects direct writes to it), so none of those are
 migrated.
 
+**Not every "no destination" Airtable column is actually excluded forever, though.** Freeform/
+journal-style columns with nowhere to land (e.g. Partner Accounts' `Account Description`, `Known
+Blockers`) become `ContentNote` records (Enhanced Notes — confirmed enabled in gsa-peo, not the
+legacy `Note` object) attached to their parent record, in a dedicated **Notes chunk that has to be
+built last**, after every other object's records exist. This is forward-only — it does not apply to
+columns already migrated as dedicated fields (Partner Account's `Current Status Summary`,
+Impediment's `Description`/`Talking Point` stay exactly as built). See
+`scripts/data-migration/TRANSFORMATION-RULES.md`'s "Notes" section for the full mechanism, current
+candidate-field list, and open questions (e.g. Partner Accounts' `Escalated User Support Cases`
+appears to reference an Airtable table this migration doesn't currently pull at all).
+
 **Current sandbox state (checked 2026-08-12, re-verified same day via
 `Build-AccountReconciliation.ps1`):** Account and Market Segment are effectively **pre-migrated** —
 588 Accounts now exist (all `Federal` record type; this count moved from an earlier same-day
-reading of 531, so treat it as a moving target, not a fixed baseline), 584 already carry a `rec...`
-`LDGCRM_External_ID__c`, and all 6 Market Segments exist. Every other object is essentially empty
-(2 Opportunities, 3 Contacts, 2 Partner Accounts, 4 Applications, 1 Impediment, 0 Tasks/Events/
+reading of 531, so treat it as a moving target, not a fixed baseline), 585 now carry a `rec...`
+`LDGCRM_External_ID__c` after the Account reconciliation backfill load, and all 6 Market Segments
+exist. **Impediment (40 records) and Partner Account (76 records) are now loaded** via
+`Build-ImpedimentLoad.ps1`/`Build-PartnerAccountLoad.ps1` + `Invoke-SalesforceLoad.ps1` — see
+`scripts/data-migration/TRANSFORMATION-RULES.md` for what each load surfaced. Every other object is
+still essentially empty (2 Opportunities, 3 Contacts, 4 Applications, 0 Tasks/Events/
 OpportunityContactRoles) — a handful of obvious test/sample rows (`Test Account`, `HHS - Test`,
 `Test Partner Account`, `Test Market Segment`, …). Airtable has 757 Account rows against those 588
 Salesforce Accounts, so **don't assume 1:1** — reconcile by external ID first, then by name, and treat

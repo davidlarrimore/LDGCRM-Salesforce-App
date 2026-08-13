@@ -165,10 +165,18 @@ Write-Host ""
 $JobInfo = $LoadResult.result.jobInfo
 
 if ($JobInfo) {
+    # Shape used by `sf data upsert bulk`.
     Write-Host ("{0,-35} {1}" -f "Job ID", $JobInfo.id)
     Write-Host ("{0,-35} {1}" -f "State", $JobInfo.state)
     Write-Host ("{0,-35} {1:N0}" -f "Records processed", $JobInfo.numberRecordsProcessed)
     Write-Host ("{0,-35} {1:N0}" -f "Records failed", $JobInfo.numberRecordsFailed)
+}
+elseif ($null -ne $LoadResult.result.processedRecords) {
+    # Flat shape used by `sf data update bulk`.
+    Write-Host ("{0,-35} {1}" -f "Job ID", $LoadResult.result.jobId)
+    Write-Host ("{0,-35} {1:N0}" -f "Records processed", $LoadResult.result.processedRecords)
+    Write-Host ("{0,-35} {1:N0}" -f "Records successful", $LoadResult.result.successfulRecords)
+    Write-Host ("{0,-35} {1:N0}" -f "Records failed", $LoadResult.result.failedRecords)
 }
 else {
     Write-Host "Full result written to:" -ForegroundColor Cyan
