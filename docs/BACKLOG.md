@@ -315,6 +315,72 @@ stops being a small final chunk. Settle item 2's spike before sizing this one.
 
 ---
 
+## 4a. Rollback — thought through 2026-08-13, not yet built
+
+**Status:** designed, deliberately not built yet. The pre-work it depends on (a restore point) now
+exists; the script does not.
+
+### The asymmetry that defines the whole problem
+
+**Undoing an insert is easy. Undoing an update is not.**
+
+Most of this migration *creates* records — delete them by external ID and the org is back where it
+started. That is what `Invoke-SandboxFactoryReset.ps1` already does.
+
+But the pipeline also **updates records it does not own**:
+
+| What | Overwrites | Recoverable by deleting? |
+| --- | --- | --- |
+| `Build-AccountReconciliation.ps1` | `LDGCRM_External_ID__c`, `Type`, Market Segment on **pre-existing** Accounts | **No** |
+| Ownership pass | `OwnerId` on Opportunity/Application/Contact | Only if the record is deleted entirely |
+| `Invoke-AccountBootstrap.ps1` | `ParentId` on Accounts that had none | **No** |
+
+Deleting a migrated record does not restore an updated one. Once those fields are overwritten the
+previous values are gone unless something wrote them down first — and until 2026-08-13 nothing did.
+`Invoke-FullMigrationLoad.ps1` now captures a **pre-image of every Account** plus baseline counts into
+`logs/data-migration/full-load-<ts>/` before it writes anything. That file is the only thing that
+makes an Account rollback possible at all.
+
+### Why the factory reset is not the answer for production
+
+It deletes **everything carrying an external ID**, which in a sandbox is the same set the migration
+created. In production it is not: a second migration run would delete the *first* run's records too.
+A production rollback has to be **scoped to one run**, not to the external-ID filter. And the factory
+reset is deliberately blocked from production anyway.
+
+### What a rollback script should do
+
+1. Take a **run directory** (`full-load-<ts>/`), not a set of objects — so it undoes exactly one run.
+2. **Delete only what that run created** — external IDs present in the run's load CSVs and *absent*
+   from the pre-run baseline. Records that already existed are updated back, never deleted.
+3. **Restore the Account pre-image** for the fields the migration overwrote.
+4. Delete notes from the run's `created-note-ids.csv` — `ContentNote` has no external ID, so that
+   file is the only handle on them.
+5. Reverse order: children and junctions before parents, same as the factory reset.
+6. Its own typed token (`-Confirmation "ROLLBACK"`), and the separate production token on top.
+
+### What it will never be able to do — state this before anyone relies on it
+
+- **Hard deletes are irreversible.** Rollback deletes; it cannot resurrect. Anything the factory
+  reset removed is gone short of Salesforce's paid Data Recovery service.
+- **It clobbers post-load human edits.** Restoring the Account pre-image overwrites whatever anyone
+  changed since. **Rollback has a shelf life** — it is safe in the minutes after a load and
+  increasingly destructive after users touch the data. That window, not the script, is the real
+  constraint.
+- **Cascades delete more than the run created.** Removing an Account takes its Master-Detail Partner
+  Accounts and their children with it, including any that pre-dated the run.
+- **Flows, triggers and roll-ups fire on the way back out**, and the FCIC and PureCloud automation is
+  outside this repo's control.
+
+### The honest recommendation for production
+
+A script-level rollback is a **best-effort tidy-up, not a safety net**. The actual safety net for a
+production migration is a backup taken immediately before the run and a rehearsed restore path —
+plus loading in stages small enough that "stop and fix forward" beats "undo". Build the script, but
+do not let its existence justify skipping the backup.
+
+---
+
 ## 5. Re-run after Airtable cleanup
 
 **Status:** ongoing, no engineering work required.
