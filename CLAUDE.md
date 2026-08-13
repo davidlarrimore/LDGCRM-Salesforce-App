@@ -380,7 +380,7 @@ Applications (one owns 54), so 442 of 696 would fail `DUPLICATE_VALUE`. **CHANGE
 `Unique = false` on both** (neither is an External ID; nothing keys on them). Until then
 `Build-ApplicationLoad.ps1` reads the live field definitions and **omits the two columns** — omitted,
 not blanked, because an empty column in an upsert *clears* the org's value. A plain re-run picks them
-up once the change set lands. Also pending: 8 team names exceed the 50-char field.
+up once the change set lands. Also pending: 6 team names exceed the 50-char field (8 Applications).
 `LDGCRM_PP_Issuer_Strings__c` stays unmigrated — `Text(40)` against 776 over-length values, 847
 Applications with more than one, and it is OE-maintained by hand.
 

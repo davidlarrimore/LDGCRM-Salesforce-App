@@ -2031,14 +2031,32 @@ on, write the Application once. That framing is what decides the handling of dis
 that doesn't agree is duplicated data that has *drifted*, i.e. a defect to fix at source, never a
 signal that an Application legitimately has two teams.
 
+**The ingestion rules, in full.** These are also written up in plain language for the Airtable owners
+in [AIRTABLE-DATA-QUALITY-REQUESTS.md](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) ("how the
+migration currently reads this table") — **keep the two in step**, since that version is what the data
+owners are being asked to agree with.
+
+| # | Rule | Implemented by |
+| --- | --- | --- |
+| 1 | Team Name / Team UUID are read only from the Issuer Strings table. | `Import-AirtableTable -Label "Issuer Strings"` |
+| 2 | The Application is written once, from the value its issuer strings agree on. | `Get-PortalTeamByApplication` returns one entry per Application |
+| 3 | `#N/A` is a value, not an empty — strip it before anything else. | `Get-CleanIssuerStringValue` |
+| 4–7 | Agreement handling — see the table below. | `Get-PortalTeamByApplication` |
+| 8 | Team name over the field's length → blank the name, keep the UUID, report. | length check against the **live** `describe` length, not a literal |
+| 9 | Issuer strings with no Application link are ignored and counted. | `$OrphanIssuerStrings` |
+| 10 | Issuer string values themselves are never written. | no `LDGCRM_PP_Issuer_Strings__c` column |
+
 Measured across the 2026-08-13 export (901 issuer strings → 887 distinct Applications):
 
-| Outcome | Applications | Handling |
-| --- | --- | --- |
-| Identical team on **every** issuer string | **678** | Migrated. Clean. |
-| Team on **some** issuer strings, blank/`#N/A` on others | **18** | Migrated (unambiguous) + `INCOMPLETE` review row. |
-| **Two different Team UUIDs** | **9** | Both fields left blank + `CONFLICT` review row. |
-| No Team UUID anywhere | 182 | Nothing to carry over. |
+| Rule | Outcome | Applications | Handling |
+| --- | --- | --- | --- |
+| 4 | Identical team on **every** issuer string | **678** | Migrated. Clean. |
+| 5 | Team on **some** issuer strings, blank/`#N/A` on others | **18** | Migrated (unambiguous) + `INCOMPLETE` review row. |
+| 6 | **Two different Team UUIDs** | **9** | Both fields left blank + `CONFLICT` review row. |
+| 7 | No Team UUID anywhere | 182 | Nothing to carry over. Not reported. |
+
+Rule 6 is the only one that loses data. Rule 5 is the one most likely to be misread as a failure —
+it is not; those 18 Applications get the correct team.
 
 The 9 are a genuine source defect — one Airtable Application whose issuer strings carry two different
 teams, typically a dev/test string under one and a prod string under another. **There is no
@@ -2090,9 +2108,11 @@ there.
 them. After it lands, a plain re-run populates both — no code change, same contract as the Opportunity
 lookup.
 
-One further metadata ask, lower priority and independent of the above: **8 team names exceed the
-50-char field length** (longest 75). Those load with a UUID and a blank name rather than a truncated
-one — a truncated team name reads as real while not matching the portal. Widening the field fixes it.
+One further metadata ask, lower priority and independent of the above: **6 distinct team names exceed
+the 50-char field length** (longest 75), affecting **8 Applications** — `GSA Financial Management
+Services - Payment, WebVendors, Fedpay` alone covers three. Those load with a UUID and a blank name
+rather than a truncated one — a truncated team name reads as real while not matching the portal.
+Widening the field fixes it.
 
 #### `LDGCRM_PP_Issuer_Strings__c` is still not migrated, and now for measured reasons
 

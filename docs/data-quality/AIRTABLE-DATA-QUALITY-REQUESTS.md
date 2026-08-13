@@ -298,82 +298,193 @@ filled in) and because it makes the table read as 92% complete when the real fig
 lookup was meant to produce — a team that's missing here is a team that can't migrate. Low urgency,
 but the sooner it's fixed the less it spreads.
 
-### Issuer Strings: Team Name / Team UUID are duplicated per issuer string, and 9 copies have drifted apart — 🔴 OPEN
+### Issuer Strings: how the migration currently reads this table
 
-**New 2026-08-13.** **The partner-portal team is a property of the Application** (confirmed by the
-project owner). Airtable stores it on each **issuer string** instead, so it's copied onto every issuer
-string an Application has — and **every copy is meant to be identical**. Salesforce stores it once, on
-the Application, which is where it belongs.
+**Read this before the two cleanup lists below** — it explains why some rows are asks and some are
+just notes. These are the rules as they stand on 2026-08-13; if any of them is the wrong call, say so
+and we'll change the rule rather than the data.
 
-That makes this a de-duplication rather than a merge: we read the one value the copies agree on and
-write it to the Application a single time. **They almost always do agree — 678 Applications are
-identical across every issuer string.** The rest are copies that have drifted:
+**The starting point: the partner-portal team belongs to the *Application*** (confirmed by the project
+owner). Airtable stores `Team Name` and `Team UUID` on each **issuer string** instead, so the same
+values are copied onto every issuer string an Application has, and **every copy is meant to be
+identical**. Salesforce stores the team once, on the Application.
 
-**9 Applications have issuer strings naming two genuinely different teams.** Because the copies are
-supposed to match, this isn't an Application that legitimately has two teams — it's an error. Both
-fields are left blank on these:
+So this is a **de-duplication, not a merge**: we read the one value all the copies agree on and write
+it to the Application a single time. That single decision is what the rest of the rules follow from —
+in particular, copies that *don't* agree are a mistake to fix, never an Application that genuinely has
+two teams.
 
-| Application's issuer strings are split between | and |
-| --- | --- |
-| `z_inactive` | `formsgov_production` |
-| `SDSFIE` | `CWBI` |
-| `CISA OKTA PRO` | `Partner Preview Test` |
-| `RAM Vetting Service` | `Sunil Kumar` |
-| `DOI - FWS - ECOS` | `DOI-FWS-ECOSphere` |
-| `Made In America Production` | `MIAO_formio` |
-| `USA Learning` | `USAP_TEAM` |
-| `PRIMIS-IAS` | `PRIMIS-IAC` |
-| `IAM Team` | `NSF-LoginGov Integration` |
+| # | Rule | Why |
+| --- | --- | --- |
+| 1 | We read `Team Name` and `Team UUID` **only** from this table. | It's the only place they're recorded. |
+| 2 | The Application is updated **once**, from the value its issuer strings agree on. | The team belongs to the Application; the per-issuer-string copies are duplication. |
+| 3 | **`#N/A` is treated as empty**, not as text. | It's a failed-lookup artifact. Loading it would put the literal text `#N/A` into Salesforce as if it were a team name. |
+| 4 | If the copies **all agree** → migrated. | Nothing to decide. **678 Applications.** |
+| 5 | If **some copies are filled in and the rest are blank**, and the filled ones agree → **migrated normally**, using that value. The blanks are reported but change nothing. | The answer is unambiguous. Blocking here would withhold correct data over a cosmetic gap. **18 Applications** — list below. |
+| 6 | If the copies name **two different teams** → **both fields left blank**, Application reported. | There's no defensible way to pick a winner; "first one wins" would just mean whichever row happened to sort first. **9 Applications** — list below. |
+| 7 | If **no** issuer string has a team → both fields left blank, not reported. | Nothing to migrate and nothing obviously wrong. **182 Applications.** |
+| 8 | A **team name over 50 characters** is left blank, but the Team UUID still migrates. | The Salesforce field holds 50. A cut-off team name would look real while not matching the portal. **6 teams, 8 Applications.** |
+| 9 | Issuer strings linked to **no Application** are ignored. | There's no record to put the team on. **7 rows.** |
+| 10 | **The issuer string values themselves are not migrated.** Only the team is. | See the note at the very bottom of this document — the Salesforce field is one 40-character value, and most issuer strings are longer than that. |
 
-The usual shape is a **test/dev issuer string carrying one team and a production one carrying
-another**, filed under a single Application row. Two look like they may just be the same team recorded
-under two spellings (`DOI - FWS - ECOS` / `DOI-FWS-ECOSphere`, and possibly `PRIMIS-IAS` /
-`PRIMIS-IAC`), which would be the easiest kind to fix. One (`Sunil Kumar`) is a **person's name in a
-team field**, which is likely just wrong.
+Two consequences worth being explicit about, because they're easy to misread:
 
-**We are not guessing which copy wins** — that would mean picking whichever issuer string happened to
-sort first.
+- **Rule 6 is the only one that loses data**, and it affects 9 Applications. Everything else either
+  migrates or had nothing to migrate.
+- **Fixing any of this is a re-run, not a code change.** Every transform re-reads Airtable from
+  scratch, so corrected rows are picked up automatically.
 
-**What we need:** for each of the 9, decide which team is correct and make **every** one of that
-Application's issuer strings say the same thing. (If some of those issuer strings genuinely belong to
-a different application, moving them to the right Application row fixes it just as well.)
+### Issuer Strings: 9 Applications where the team copies disagree — 🔴 OPEN — **needs a decision**
 
-**Separately, 18 Applications have the team on only *some* of their issuer strings** — the rest are
-blank or `#N/A`. **Nothing is blocked and these migrate correctly**, since the copies that do exist
-agree; they're listed only because the copies should all match. Examples: `DFC-CMS` (1 of 4 blank),
-`data.gov` (2 of 3), `RRB - Benefit Connect` (2 of 3), `DOL - OASAM - OCIO` (three separate
-Applications).
+**New 2026-08-13.** These hit rule 6 above: one Application's issuer strings name two different teams.
+Because the copies are supposed to be identical, this is drifted data rather than an Application with
+two teams. **Both fields are currently left blank on all 9.**
 
-Both kinds are in `logs/data-migration/Application-portal-team-review-*.csv`, tagged `CONFLICT`
-(blocks the fields) or `INCOMPLETE` (tidy-up only).
+Full list, so these can be opened directly in Airtable. **The fix is to make every row for a given
+Application say the same thing.**
+
+| Application | Team Name on that row | Team UUID | Issuer String |
+| --- | --- | --- | --- |
+| **Research.gov** | `IAM Team` | `aba63f37-0687-494a-9ef0-0e92f59385ae` | `urn:gov:nsf:openidconnect.profiles:sp:sso:nsf:research_gov` |
+| | `NSF-LoginGov Integration` | `16a70d46-3faa-4ce8-bffb-3d645033c007` | `https://identity.research.gov/sso/sp` |
+| **Forms.gov Developer Portal** | `z_inactive` | `5dba269a-50a0-43c1-97b9-fd6a6b030a3f` | `urn:gov:gsa:SAML:2.0.profiles:sp:sso:gsa:prodlogin_mainportal_ial1` |
+| | `formsgov_production` | `34a8967a-d5a9-40c2-a3b7-dc85d2049c53` | `urn:gov:gsa:SAML:2.0.profiles:sp:sso:gsa:fs_formio_epa_portal` |
+| | *(blank)* | *(blank)* | `urn:gov:gsa:SAML:2.0.profiles:sp:sso:gsa:prodlogin_mainportal` |
+| **Made in America** | `Made In America Production` | `c9aff7f4-8d08-4f59-81b5-c50d6075f970` | `urn:gov:gsa:openidconnect.profiles:sp:sso:gsa:miaprod` |
+| | `MIAO_formio` | `e1018e8b-3a15-4c34-afcd-c3b8226a177d` | `urn:gov:gsa:SAML:2.0.profiles:sp:sso:gsa:miao_formio_prod_portal` |
+| **USA Performance (USAP)** | `USA Learning` | `c7929ce7-2c73-451d-bf72-44854dd4c71d` | `urn:gov:gsa:SAML:2.0.profiles:sp:sso:opm:usaplmstest` |
+| | `USA Learning` | `c7929ce7-2c73-451d-bf72-44854dd4c71d` | `urn:gov:gsa:SAML:2.0.profiles:sp:sso:opm:usaplmsdev` |
+| | `USAP_TEAM` | `420edf51-eed7-4482-b8d7-6ff779277a17` | `urn:gov:gsa:openidconnect.profiles:sp:sso:opm_prod:usaperformance` |
+| **CISA OKTA Partner Platform** | `CISA OKTA PRO` | `5d75b29b-40f0-4208-b15f-ea8800ec3261` | `https://cisa-partner.okta.com` |
+| | `Partner Preview Test` | `bf4794c0-5138-4cf5-a86b-c1a137bd5873` | `cisa-partner-dev.oktapreview.com` *(has a trailing space)* |
+| **SDSFIE (Spatial Data Standard…)** | `SDSFIE` | `f93a1f17-c09e-4c6a-88cf-6dc281bafa27` | `urn:gov:gsa:openidconnect.profiles:sp:sso:DOD:SDSFIE-PRD` |
+| | `CWBI` | `3f6e4f4b-831f-433f-812b-66216315932a` | `urn:gov:gsa:openidconnect.profiles:sp:sso:DOD:SDSFIE-IDENTITY-PROD` |
+| **RAM Portal** | `RAM Vetting Service` | `33a71c9e-de85-4a83-9c57-c9795a1d39f6` | `urn:gov:gsa:openidconnect.profiles:sp:sso:state:ramportal` |
+| | `Sunil Kumar` ⚠️ | `c407325b-4f71-4b33-bb9e-5198b96f23a7` | `urn:gov:gsa:SAML:2.0.profiles:sp:sso:dos:raiportal` |
+| **PHMSA - PRIMS** | `PRIMIS-IAS` | `1b659757-0a00-4141-ab96-fff530d80102` | `urn:gov:gsa:openidconnect.profiles:sp:sso:phmsa:primis-ias-dev` |
+| | `PRIMIS-IAC` | `39143673-8e40-4c25-979b-401417696143` | `urn:gov:gsa:openidconnect.profiles:sp:sso:phmsa:primis-iac` |
+| **IPaC** | `DOI - FWS - ECOS` | `5add6a5b-1ede-404d-b107-666d7eedb357` | `urn:gov:doi:openidconnect.profiles:sp:sso:fws:ipacProduction` |
+| | `DOI-FWS-ECOSphere` | `2cac5b4a-a9d1-42b9-914b-7563abb8e30f` | `urn:gov:doi:openidconnect.profiles:sp:sso:doi-fws-ecosphere:ipac-production` |
+| | `DOI - FWS - ECOS` | `5add6a5b-1ede-404d-b107-666d7eedb357` | `urn:gov:doi:openidconnect.profiles:sp:sso:fws:ipacBeta` |
+
+**Patterns worth knowing before you start** — most of these should be quick:
+
+- **Same team, two spellings** (likely just a naming inconsistency, easiest fix): `DOI - FWS - ECOS`
+  vs `DOI-FWS-ECOSphere` on **IPaC**; possibly `PRIMIS-IAS` vs `PRIMIS-IAC` on **PHMSA - PRIMS**.
+  Note the UUIDs differ too, so these are genuinely two portal teams — confirm whether they should be
+  merged in the portal, not just renamed here.
+- **A test/dev issuer string under a different team from the production one** — the most common shape.
+  **USA Performance (USAP)** is the clearest: two `usaplms` test/dev strings under `USA Learning`, and
+  the actual `usaperformance` production string under `USAP_TEAM`. Those `usaplms` strings look like
+  they belong to a *USA Learning* application, not this one.
+- ⚠️ **`Sunil Kumar` is a person's name in a team field** (RAM Portal) — almost certainly wrong
+  regardless of what else is decided.
+- **`z_inactive`** (Forms.gov Developer Portal) reads as a retired-team placeholder. That Application
+  also has a third issuer string with no team at all.
+
+**What we need:** for each of the 9, confirm which team is correct and make every one of that
+Application's issuer strings match it. Where issuer strings actually belong to a *different*
+Application, moving them there fixes it just as well.
+
+### Issuer Strings: 18 Applications have the team on only some rows — 🔴 OPEN — **tidy-up, not blocking**
+
+**New 2026-08-13.** These hit rule 5: some of the Application's issuer strings carry the team, the
+rest are blank or `#N/A`. **The team is unambiguous, so all 18 migrate correctly and nothing is
+blocked.** Listed only because the copies are supposed to match — filling the gaps stops the table
+reading as though the team is only partly known.
+
+The issuer strings named here are **the blank ones** — the rows needing the value added:
+
+| Application | Team it should say | Blank rows | Issuer String missing the team |
+| --- | --- | --- | --- |
+| OASAM - OCIO - OSHA Information System (OIS) | `DOL - OASAM - OCIO` | 1 of 2 | `urn:gov:dol:SAML:2.0.profiles:sp:sso:prd-osha:ois` |
+| OIS | `DOL - OASAM - OCIO` | 1 of 2 | `urn:gov:dol:SAML:2.0.profiles:sp:sso:prd-osha:ois` |
+| OSHA-SF-UAT-Partner | `DOL - OASAM - OCIO` | 2 of 3 | `https://alliancecommunity.my.site.com/Alliance` |
+| | | | `https://alliancecommunity.force.com/Alliance` |
+| Data.gov Catalog | `data.gov` | 2 of 3 | `urn:gov:gsa:SAML:2.0.profiles:sp:sso:gsa:datagov-staging-catalog` |
+| | | | `urn:gov:gsa:SAML:2.0.profiles:sp:sso:gsa:datagov-production-catalog` |
+| MyRRB | `RRB - Benefit Connect` | 2 of 3 | `urn:gov:gsa:SAML:2.0.profiles:sp:sso:RRB:BOS-Pre-Prod` |
+| | | | `urn:gov:gsa:openidconnect.profiles:sp:sso:RRB:BOS_AA1_Prod` |
+| CMS (Credit Management System) | `DFC-CMS` | 1 of 4 | *(a completely empty row — `reckfaCTqTTXlW5Fb`, no issuer string either; safe to delete)* |
+| MyPBA | `PBGC - myPBA` | 1 of 2 | `urn:gov:gsa:openidconnect.profiles:sp:sso:pbgc:mypba` |
+| E-Grants Release 1 EGov (MSHA eGOV) | `DOL - OCIO` | 1 of 2 | `urn:gov:dol:openidconnect.profiles:sp:sso:ocio:MSHAEGov3` |
+| SEC - eFAP (OracleAM) \| SEC eFAP12 | `SEC - eFAP` | 1 of 2 | `urn:gov:gsa:SAML:2.0.profiles:sp:sso:sec:oam12_prd` |
+| EFFS | `SEC - EFFS and ETR` | 1 of 2 | `effssrtsweb.sec.gov` |
+| NPS - NAMA | `NPS-NAMA` | 1 of 2 | `urn:gov:gsa:SAML:2.0.profiles:sp:ssp:NPS:NAMA` |
+| Wildlife TRACS | `DOI - USFWS - Wildlife and Sport Fish Restoration` | 1 of 4 | `gov:usfws:openidconnect.profiles:sp:sso:tracs-prod` |
+| Online Retirement Application (ORA) | `Online Retirement Application` | 1 of 2 | `urn:gov:gsa:SAML:2.0.profiles:sp:sso:opm:ora` |
+| ACERS Industry | `ACERS` | 1 of 2 | `https://usdotdtc.my.site.com/industry` |
+| CBP Trusted Traveler Programs | `CBP Trusted Traveler Programs` | 1 of 2 | `urn:gov:dhs.cbp.jobs:openidconnect:aws-cbp-ttp` |
+| FAA - Delphi Elnvoicing | `DOT - eInvoicing` | 1 of 2 | `SP:EINVOICE_DCC_PROD` |
+| PFPA Application Portal | `DOD - PFPA` | 1 of 2 | `https://pfpa.my.salesforce.com` |
+| Gulf Restoration Test Team Site | `Gulf Restoration - Team Site` | 1 of 3 | `urn:gov:gsa:openidconnect.profiles:sp:sso:doi:gro-team-site` |
+
+**One thing to check while you're in here:** `OASAM - OCIO - OSHA Information System (OIS)` and `OIS`
+are two separate Applications sharing the **same** issuer string
+(`urn:gov:dol:SAML:2.0.profiles:sp:sso:prd-osha:ois`). That looks like a duplicate Application rather
+than two real ones — worth confirming, since it isn't something the missing team value explains.
+
+Both lists are also produced as a CSV on every run —
+`logs/data-migration/Application-portal-team-review-*.csv`, with an `Issue` column marking each row
+`CONFLICT` (the 9) or `INCOMPLETE` (the 18).
 
 **The root fix, if it's ever on the table:** because the team belongs to the Application, storing it
 on the Applications table directly — rather than copying it onto each issuer string — would make all
 27 of these impossible by construction. Not needed for the migration, which handles the current shape
 fine; worth knowing if the Airtable base is ever restructured.
 
-**Also worth a look:** **7 issuer strings aren't linked to any Application at all**, so whatever team
-they name can't reach Salesforce, and **2 rows are completely empty** (no issuer string, no team —
-same as the blank Impediment rows noted further down; safe to delete). And 182 Applications have no
-team on any of their issuer strings — that may be entirely legitimate, but it's a quarter of the
-table, so it's worth confirming it's expected rather than a gap.
+### Issuer Strings: 7 rows aren't linked to any Application, and 2 have no issuer string — 🔴 OPEN
 
-### Issuer Strings: 8 partner-portal team names are too long for Salesforce — 🔴 OPEN
+**New 2026-08-13.** Small, but concrete enough to act on.
 
-**New 2026-08-13.** The Salesforce field holds 50 characters. These 8 team names are longer (up to
-75), so **the team name is left blank on those Applications**. The Team UUID still migrates, so the
-team is still correctly identified — just not labelled.
+**7 rows have no Application link**, so whatever team they name has no record to land on and is
+ignored (rule 9). Most have no usable team anyway, but two are worth a look:
+
+| Issuer String | Team Name | Note |
+| --- | --- | --- |
+| `https://caia-dev.treasury.gov` | `#N/A` | dev/test |
+| `urn:gov:gsa:testing:automation` | `#N/A` | test automation |
+| `partnerportal-test` | `[Test] QA Dream Team` | test row — probably safe to delete |
+| `urn:gov:gsa:openidconnect.profiles:sp:sso:gsa:pmsam` | `#N/A` | **looks real** — should this be linked to an Application? |
+| `urn:gov:gsa:openidconnect.profiles:sp:sso:gsa:sam` | `#N/A` | **looks real** — should this be linked to an Application? |
+| `https://doledp-edwprod.snowflakecomputing.com` | *(blank)* | production-looking; no team, no Application |
+| *(none — row `recxcJQgTtruy4uqF`)* | *(blank)* | an all-but-empty row; only `Migrated to the partner portal` is set. Safe to delete. |
+
+**2 rows have no issuer string value at all:**
+
+- `recxcJQgTtruy4uqF` — the empty row in the table above.
+- `reckfaCTqTTXlW5Fb` — this one *is* linked to an Application (*CMS (Credit Management System)*, where
+  it appears in the tidy-up list above) and carries a Partner Portal Admin Email, but has no issuer
+  string and no team. So it isn't blank so much as unfinished — worth checking whether an issuer string
+  was meant to be entered, rather than just deleting it.
+
+**Also worth confirming, though nothing looks wrong:** **182 Applications have no team on any of their
+issuer strings.** These are *not* reported individually — there's simply nothing to migrate. But it's
+a quarter of the table, so it's worth a sanity check that the gap is expected.
+
+### Issuer Strings: 6 partner-portal team names are too long for Salesforce — 🔴 OPEN
+
+**New 2026-08-13.** The Salesforce field holds 50 characters. **6 distinct team names are longer**
+(up to 75), affecting **8 Applications** — one team covers three of them. Per rule 8, **the team name
+is left blank on those Applications while the Team UUID still migrates**, so the team is correctly
+identified, just not labelled.
 
 We're deliberately **not truncating** these. A cut-off team name would look like a real one while not
 matching what the partner portal actually shows, which is worse than an empty field.
 
-Examples: `USACE - ERDC - MRSI (MILCON Requirements, Standardization, and Integration)` (75),
-`GSA Financial Multiple Shared Tenant Application (MSA) - Momentum` (65),
-`GSA Financial Management Services - Payment, WebVendors, Fedpay` (63).
+| Len | Team Name | Application(s) affected |
+| --- | --- | --- |
+| 75 | `USACE - ERDC - MRSI (MILCON Requirements, Standardization, and Integration)` | MRSI Wizard |
+| 65 | `GSA Financial Multiple Shared Tenant Application (MSA) - Momentum` | Pegasys MSA Momentum |
+| 63 | `GSA Financial Management Services - Payment, WebVendors, Fedpay` | FedPay Vendor; Pegasys Payment Search (PPS); Web Vendor (WV) |
+| 61 | `DOD - Office of Small Business - Mentor Protege Program (MPP)` | Mentor-Protégé Program (MPP) |
+| 61 | `DOT - Airline Performance Economic Information System (APEIS)` | OST-APEIS |
+| 59 | `DOT - National Transport Library Workroom - Digital Library` | OST- Library Systems (Work Room) |
 
-**What we need:** either a shorter name for these teams in the partner portal, or a decision from the
-Salesforce config owner to widen the field — it's a plain text field and extending it is
+**What we need — either one fixes it:** a shorter name for these teams in the partner portal, **or**
+the Salesforce config owner widens the field. It's a plain text field and extending it is
 straightforward, unlike the Application Name limit above, which is a platform cap we can't change.
+Widening is probably the better answer — these names look deliberate rather than sloppy.
 
 ### Applications: the Partner Portal Team fields can't be loaded yet — a Salesforce setting blocks them — 🔴 OPEN
 

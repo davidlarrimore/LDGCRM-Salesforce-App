@@ -429,8 +429,9 @@ function Get-PortalTeamByApplication {
         $ResolvedName = $null
         if ($DistinctNames.Count -eq 1) { $ResolvedName = $DistinctNames[0] }
 
-        # Text(50) in Salesforce; 8 team names in the 2026-08-13 export are
-        # longer (up to 75). Blank the NAME rather than truncate it, and keep
+        # Text(50) in Salesforce; 6 distinct team names in the 2026-08-13
+        # export are longer (up to 75), hitting 8 Applications - one team
+        # covers three. Blank the NAME rather than truncate it, and keep
         # the UUID - the UUID is the field that identifies the team, and a
         # truncated display name would read as a real one while quietly not
         # matching what the partner portal shows. Reported for review either way.
