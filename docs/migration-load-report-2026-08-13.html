@@ -290,6 +290,59 @@
     .wrap { padding: 2rem 1.1rem 4rem; }
     .why { min-width: 14rem; }
   }
+
+  /* ---------- print / PDF ----------
+     Selectors mirror the dark-theme blocks exactly. A bare :root here would
+     LOSE to :root:not([data-theme="light"]) on specificity and the PDF would
+     render dark-on-white. */
+  @media print {
+    :root,
+    :root:not([data-theme="light"]),
+    :root[data-theme="dark"] {
+      --ink:        #17293D;
+      --ink-soft:   #40566E;
+      --ink-faint:  #5E7185;
+      --paper:      #FFFFFF;
+      --surface:    #FFFFFF;
+      --rule:       #C9D2DC;
+      --rule-soft:  #E1E7ED;
+      --accent:     #245C57;
+      --accent-bg:  #EAF2F1;
+      --positive:   #23664A;
+      --positive-bg:#E8F2EC;
+      --caution:    #7F580E;
+      --caution-bg: #F7F0E1;
+      --critical:   #85312A;
+      --critical-bg:#F8E9E7;
+    }
+
+    /* Keep chips, callouts and table banding visible on paper. */
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+    @page { margin: 16mm 14mm; }
+
+    body { font-size: 10.5pt; line-height: 1.45; }
+    .wrap { max-width: none; padding: 0; }
+
+    /* Don't strand a heading at the foot of a page. */
+    h1, h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
+    h2 { margin-top: 0; }
+    section { break-inside: auto; margin-top: 1.6rem; }
+
+    /* These read as units - splitting them across pages loses the argument. */
+    .callout, .decision, .stat, .ask { break-inside: avoid; page-break-inside: avoid; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    thead { display: table-header-group; }   /* repeat headers on each page */
+
+    /* Tables scroll on screen; on paper they must fit. */
+    .scroll { overflow: visible; }
+    table { font-size: 8.7pt; }
+    thead th, tbody td { padding: 0.4rem 0.5rem; }
+    .why { min-width: 0; font-size: 8.4pt; }
+
+    .glance { break-inside: avoid; }
+    footer { break-inside: avoid; }
+  }
 </style>
 
 <div class="wrap">

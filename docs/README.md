@@ -94,11 +94,18 @@ script's skipped/unmapped review CSVs should feed into this list as they're foun
 `logs/data-migration/` unnoticed.
 
 **For the stakeholder-facing status report — written for the Login.gov Partnerships lead, not for
-engineers — see [`migration-load-report-2026-08-13.html`](migration-load-report-2026-08-13.html)**
-(open it in a browser; GitHub won't render it). It reconciles every Airtable table against the
-records now in gsa-peo with counts, differences and percentages, explains the transformations in
-plain language, and lists the decisions needed from the Partnerships team in order of how many
-records each one unblocks.
+engineers — see [`migration-load-report-2026-08-13.pdf`](migration-load-report-2026-08-13.pdf)**
+(the [HTML source](migration-load-report-2026-08-13.html) is kept alongside it). It reconciles every
+Airtable table against the records now in gsa-peo with counts, differences and percentages, shows how
+much of the automated pipeline is built per data set, explains the transformations in plain language,
+and lists the decisions needed from the Partnerships team in order of how many records each one
+unblocks.
+
+**Send the PDF, not the HTML.** Google Drive won't render a standalone `.html` file — it displays the
+raw markup — so the HTML is only useful opened directly in a browser. Regenerate the PDF with
+`scripts/data-migration/Export-ReportPdf.ps1` after editing the HTML; it renders through headless
+Chrome and verifies the page count, because a failed render still writes a valid-looking one-page
+file.
 
 **It is a point-in-time snapshot, deliberately dated in the filename.** Both Airtable and gsa-peo stay
 in active use and these counts have already moved several times within a single day, so don't edit
