@@ -464,9 +464,41 @@ matching an HTML-tag pattern are all angle-bracket-wrapped URLs (`<https://…>`
 | `LDGCRM_Days_Since_Last_Activity__c`, `LDGCRM_Est_Annual_Revenue_fully_ramped__c`, `LDGCRM_Est_First_Year_Revenue__c`, `LDGCRM_Status_Summary_Indicator__c` | Formula fields. The two revenue ones compute *from* the estimate fields this script does set, so Airtable's own revenue columns aren't migrated — they recompute themselves. |
 | `priority_type__c` | Airtable's Priority Type values all exist at field level, but the Login_gov record type exposes **only a single malformed concatenated value** (`"HISP - High Volume, HISP - Lower Volume, Volume, Strategic, IDV Upgrade, Leadership Escalation"`). No valid target. Not force-fitted onto `LDGCRM_Level_of_Priority__c`, which is a different concept (Low/Medium/High). Flagged for the data owners. |
 | `LDGCRM_Existing_Identity_Platforms__c`, `LDGCRM_Alternative_Identity_Platforms__c` | The Airtable columns hold `rec...` IDs pointing at a table this migration doesn't pull, while the Salesforce fields are multipicklists of vendor names. Unresolvable without that table — same open question as Partner Accounts' `Escalated User Support Cases`. |
-| `LDGCRM_Partner_Account__c` | The Airtable column exists but is empty on all 928 rows. |
+| `LDGCRM_Partner_Account__c` | **Structural mismatch — deliberately left blank pending a team decision, not an oversight.** See the dedicated analysis below. |
 | `Requested Features`, `Current Blockers`, `Opportunity Status Changes`, `Meetings`, `Opportunity Contacts`, `Applications` | Linked-record arrays that drive other objects/chunks (Meetings, OpportunityContactRole) or reference untracked tables. |
 | `Market Segment`, `Market Segment (from Account Name)`, `(c) *` rollups, `Created By`, `Updated?`, `Months in Status`, `Meeting Count`, `(legacy data) *` | Airtable-side rollups/computed/system columns, or superseded by the Flow-derived Market Segment. |
+
+### `LDGCRM_Partner_Account__c`: a structural mismatch, not a missing mapping
+
+Raised 2026-08-13 by the user ("did you link up the partner account to the opportunity?"). The short
+answer is no, and the reason turned out to be more interesting than a missed column.
+
+**The Airtable Opportunities table has no Partner Account column at all** — so there is nothing to map
+directly. (An earlier version of this script's header wrongly claimed the column existed but was
+empty; reading a non-existent property in PowerShell just returns `$null`, which is
+indistinguishable from an empty column unless you enumerate the actual key set. Corrected — and worth
+remembering as a distinct failure mode from the `@($null)` trap: *"the field is empty"* and *"the
+field doesn't exist"* look identical unless you check.)
+
+The relationship does exist, from the **other** side, and in a shape Salesforce can't hold:
+
+| Source of truth | Coverage | Shape |
+| --- | --- | --- |
+| Partner Accounts' `Opportunities` column | 961 links over **469** Opportunities | **many-to-many** — 146 Opportunities are claimed by 2+ Partner Accounts (max 8) |
+| Applications (which link to both) | 82 Opportunities | one-to-one, but **disagrees with the above on 12** of them |
+
+Salesforce's `Opportunity.LDGCRM_Partner_Account__c` is a single Lookup, so the 146 multi-linked
+Opportunities are unrepresentable without a schema change. Against the 742 loaded records: 278 would
+resolve cleanly, 104 are multi-linked, 360 have no link at all.
+
+Populating it from the Applications path alone (the narrow, tempting fix — it is unambiguous for all
+82) would have silently encoded the *minority* interpretation of the relationship, disagreeing with
+the Partner Accounts table on 12 records and covering 11% of Opportunities. **Left blank on all 742
+instead**, with the decision written up for the data owners in
+`AIRTABLE-DATA-QUALITY-REQUESTS.md` — the three options being: treat the multi-links as data errors
+and clean them up, add a real junction object to Salesforce, or confirm the lookup is redundant given
+the Partner Account is already reachable via the Application (which is how `CLAUDE.md` describes the
+intended model). Nothing is blocked meanwhile; the field is optional.
 
 ### Load results (2026-08-13)
 

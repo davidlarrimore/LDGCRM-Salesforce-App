@@ -46,8 +46,14 @@
         the Airtable columns hold rec... IDs pointing at a table this migration
         doesn't pull, while the Salesforce fields are multipicklists of vendor
         names. Unresolvable without that table.
-      - LDGCRM_Partner_Account__c: the Airtable column exists but is empty on
-        all 928 rows.
+      - LDGCRM_Partner_Account__c: left unset pending a team decision. The
+        Airtable Opportunities table has NO Partner Account column at all, but
+        the relationship does exist from the other side (Partner Accounts'
+        "Opportunities" column, 961 links over 469 Opportunities) - and it is
+        MANY-TO-MANY there, which a single Salesforce lookup cannot represent:
+        146 Opportunities are claimed by 2+ Partner Accounts (up to 8). See
+        docs/AIRTABLE-DATA-QUALITY-REQUESTS.md; this needs a structural
+        decision, not a transform tweak.
 #>
 
 param(

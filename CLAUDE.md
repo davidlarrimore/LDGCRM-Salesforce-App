@@ -52,7 +52,14 @@ objects carrying custom fields: Account, Contact, Opportunity, `OpportunityConta
   Opportunity (filtered to the `Login_gov` record type).
 - **`LDGCRM_Partner_Account__c`** is the true Master-Detail child of **Account** (via `LDGCRM_Account__c`,
   filtered to the `Federal` Account record type) and relates to Opportunity indirectly through
-  `LDGCRM_Application__c`.
+  `LDGCRM_Application__c`. Opportunity *also* carries a direct `LDGCRM_Partner_Account__c` lookup, but
+  **the migration deliberately leaves it blank**: Airtable models this relationship many-to-many (on
+  the Partner Accounts table's `Opportunities` column — 146 Opportunities are linked to 2+ Partner
+  Accounts, max 8), which a single Salesforce lookup cannot represent. Resolving it needs a design
+  decision (clean up the multi-links, add a junction object, or drop the redundant lookup) — see
+  `docs/AIRTABLE-DATA-QUALITY-REQUESTS.md`'s "Structural mismatch" section. Don't populate this field
+  from the Applications path without that decision; it covers only 82 Opportunities and disagrees with
+  the Partner Accounts table on 12 of them.
 - **Account** has an Owner (User), a parent Account lookup, and a lookup to `LDGCRM_Market_Segment__c`.
 - **`LDGCRM_Opportunity_Impediment__c`** is a true junction with **two Master-Detail relationships** —
   to `LDGCRM_Impediment__c` and to Opportunity — so both parents must exist before a junction row can

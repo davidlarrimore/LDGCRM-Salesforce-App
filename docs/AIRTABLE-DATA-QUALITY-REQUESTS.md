@@ -299,6 +299,52 @@ to the vendor names Salesforce expects. Same open question as Partner Accounts'
   action needed unless there's a reason to preserve them, in which case they'd need a Partner Account
   link added.
 
+## Structural mismatch — needs a design decision before it can migrate
+
+### Partner Account ↔ Opportunity is many-to-many in Airtable, but one-to-many in Salesforce
+
+**This is the one place found so far where the two systems model a relationship differently, so it
+can't be resolved by fixing data — it needs a decision about how the relationship should work.**
+
+In Salesforce, `Opportunity` has a single **Partner Account** lookup: one Opportunity points at at
+most one Partner Account.
+
+In Airtable, the same relationship is recorded on the **Partner Accounts** table's `Opportunities`
+column (the Opportunities table itself has no Partner Account column at all), and there it is
+many-to-many — **961 links across 469 distinct Opportunities**:
+
+| | Opportunities |
+| --- | --- |
+| Linked to exactly **1** Partner Account — fits Salesforce today | 323 |
+| Linked to **2 or more** Partner Accounts — **cannot be stored** in Salesforce as-is (one has 8) | 146 |
+
+Restricted to the 742 Opportunities currently migrated: 278 would get a Partner Account cleanly, 104
+are multi-linked and can't, and 360 have no Partner Account link in Airtable at all.
+
+There is also a **second, disagreeing path** to the same relationship. Applications link to both an
+Opportunity and a Partner Account, so a Partner Account can be inferred that way too — but it covers
+only 82 Opportunities, and on 12 of them it disagrees with the Partner Accounts table's own
+`Opportunities` column about which Partner Account is correct.
+
+**What we need — one of:**
+1. **Confirm one Opportunity really should have only one Partner Account.** Then the 146 multi-linked
+   rows are data errors, and someone needs to pick the correct Partner Account for each. This is the
+   smallest change on the Salesforce side (no schema work) but the largest data cleanup.
+2. **Confirm the many-to-many relationship is real and needed in Salesforce.** Then Salesforce needs a
+   new junction object (Opportunity ↔ Partner Account), which is a schema change and a new migration
+   chunk — not something the current field can hold.
+3. **Confirm the relationship isn't needed on Opportunity at all.** The Partner Account is already
+   reachable from an Opportunity through its Applications, which is how `CLAUDE.md` currently
+   describes the intended model ("relates to Opportunity indirectly through
+   `LDGCRM_application__c`"). If that's the intent, the `Partner Account` lookup on Opportunity is
+   redundant and should probably be removed from the page layout to stop people filling it in.
+
+**Also needs answering either way:** where should the relationship be authored going forward — on the
+Partner Accounts table, on Applications, or both? Right now both exist and they don't fully agree.
+
+**Current behavior:** the migration leaves `Opportunity.Partner Account` **blank on all 742 records**
+rather than guessing. Nothing is blocked by this; the field is optional.
+
 ## Open questions — need a decision, not just a fix
 
 - **"Escalated User Support Cases" column on Partner Accounts** links to records that aren't in any
