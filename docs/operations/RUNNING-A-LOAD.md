@@ -309,8 +309,24 @@ walk these regardless.
 ### Automatic
 
 `Invoke-FullMigrationLoad.ps1` finishes with a **POST-LOAD VALIDATION** block covering before/after
-counts per object, junk Accounts created, the trigger switch, records owned by inactive users, and
-records missing a Market Segment. Anything it finds is printed as a problem and exits non-zero.
+counts per object, junk Accounts created, the trigger switch, records owned by inactive users,
+records missing a Market Segment, and — added 2026-08-13 — **whether the partner-portal fields
+actually landed**. Anything it finds is printed as a problem and exits non-zero.
+
+Those last checks compare the org against **the load file that was just written**, not a hard-coded
+number, so they re-baseline themselves whenever Airtable changes instead of going stale and being
+ignored. They exist because the Issuer Strings-sourced fields can go missing with no load error at
+all: a stale export, or the admin email match ceasing to resolve, both produce a CSV that loads 100%
+successfully with a field left blank.
+
+Two things to know when reading that block:
+
+- **`KNOWN INCOMPLETE` is a separate section from `PROBLEMS`, and does not fail the run.** It reports
+  data that is legitimately missing while something outside this repo is pending — currently the
+  Partner Portal Team fields, which are withheld until a change set clears their `Unique` setting.
+  Kept separate deliberately: a run that is always red stops being read.
+- **Only *fewer* records than intended is a problem.** More is normal — an upsert never deletes, so
+  the org keeps rows from earlier, larger runs whose Airtable source has since been withheld.
 
 ### By hand
 
@@ -330,7 +346,19 @@ sf data query -q "SELECT COUNT() FROM Opportunity WHERE Owner.IsActive = false A
 
 # The trigger switch must be back on
 sf data query -q "SELECT Name, On__c FROM TriggerControls__c WHERE Name = 'Contact'" --target-org peodv8dvn
+
+# Partner Portal Admin flags. A count of 0 means the SOURCE broke, not that nobody
+# is an admin - both Contacts.Roles and Issuer Strings would have to be silent at
+# once, which in practice means the Airtable export is missing Issuer Strings.json.
+sf data query -q "SELECT COUNT() FROM LDGCRM_Application_Contact__c WHERE LGDCRM_P3_Partner_Portal_Admin__c = true" --target-org peodv8dvn
+
+# Partner Portal Team. Expect 0 until the change set clears Unique on both fields;
+# after that, ~422 of the loaded Applications.
+sf data query -q "SELECT COUNT() FROM LDGCRM_application__c WHERE LDGCRM_P3_Team_UUID__c != null" --target-org peodv8dvn
 ```
+
+Then walk **Phase 5b** of [RELOAD-QA-CHECKLIST.md](RELOAD-QA-CHECKLIST.md) — it covers the same
+ground with the expected figures and what each failure actually means.
 
 ### Side effects — the things that go wrong quietly
 

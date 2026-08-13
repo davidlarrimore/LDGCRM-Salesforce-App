@@ -389,7 +389,11 @@ function Invoke-PostLoadValidation {
     Write-Host " POST-LOAD VALIDATION" -ForegroundColor Cyan
     Write-Host "============================================================" -ForegroundColor Cyan
 
+    # Problems FAIL the run (exit 1). Notices are known, currently-expected
+    # incompletenesses - reported just as loudly, but they must not turn every
+    # run red, because a run that is always red stops being read.
     $Problems = [System.Collections.Generic.List[string]]::new()
+    $Notices = [System.Collections.Generic.List[string]]::new()
 
     # 1. Counts, before vs after.
     Write-Host ""
@@ -456,7 +460,75 @@ function Invoke-PostLoadValidation {
         Write-Host ("  {0,-38} {1} migrated record(s) with no Market Segment" -f $Object, $Blank)
     }
 
-    return $Problems
+    # 6. WROTE-WHAT-WE-INTENDED, for the two fields that can go empty in silence.
+    #
+    #    Both are sourced from the Issuer Strings table, which is newer than the
+    #    rest of the pipeline and has two failure modes that produce a load the
+    #    Bulk API calls a complete success:
+    #      - the export is missing/stale, so the source is simply absent;
+    #      - the email match that finds Partner Portal Admins stops resolving.
+    #    In both cases the CSV is written, every row loads, and a field is just
+    #    blank. Nothing in a success count would show it.
+    #
+    #    Checked against the LOAD FILE rather than a hard-coded expectation, so
+    #    the check re-baselines itself every time Airtable changes instead of
+    #    going stale and being ignored - which is how a check like this dies.
+    #
+    #    THE COMPARISON IS DELIBERATELY ONE-SIDED: only actual < intended is a
+    #    problem. actual > intended is normal and must not fail the run - an
+    #    upsert never deletes, so the org keeps rows from earlier runs whose
+    #    Airtable source has since been withheld (e.g. its Application became
+    #    unloadable). Measured 2026-08-13: 664 admin flags in the org against 573
+    #    in the current file, purely from a larger earlier load.
+    $LoadDirectory = Get-SalesforceLoadDirectory
+
+    $ApplicationCsv = Join-Path $LoadDirectory "LDGCRM_application__c-upsert.csv"
+    if (Test-Path -LiteralPath $ApplicationCsv) {
+        $AppRows = @(Import-Csv -LiteralPath $ApplicationCsv)
+        $HasTeamColumn = $AppRows.Count -gt 0 -and
+            ($AppRows[0].PSObject.Properties.Name -contains "LDGCRM_P3_Team_UUID__c")
+
+        if ($HasTeamColumn) {
+            $IntendedTeam = @($AppRows | Where-Object { $_.LDGCRM_P3_Team_UUID__c }).Count
+            $ActualTeam = @(Invoke-SalesforceQuery `
+                -Soql ("SELECT Id FROM LDGCRM_application__c " +
+                       "WHERE LDGCRM_P3_Team_UUID__c != null AND LDGCRM_External_ID__c != null") `
+                -OrgAlias $Org -ApiVersion $Version).Count
+            Write-Host ("  Partner Portal Team UUID               {0} intended, {1} in the org" -f $IntendedTeam, $ActualTeam)
+            if ($ActualTeam -lt $IntendedTeam) {
+                $Problems.Add("Partner Portal Team UUID is set on only $ActualTeam Application(s) but $IntendedTeam were submitted - $($IntendedTeam - $ActualTeam) did not land.")
+            }
+        }
+        else {
+            # Not a regression - the transform withholds these columns while the
+            # fields are still unique=true. Reported so a run cannot look
+            # complete while two fields are empty org-wide.
+            Write-Host "  Partner Portal Team                    WITHHELD from the load (see notice below)" -ForegroundColor Yellow
+            $Notices.Add("Partner Portal Team Name/UUID were NOT loaded: Build-ApplicationLoad.ps1 withholds both columns while they are unique=true in this org. Every Application will have them empty. Needs a CHANGE SET setting Unique = false on both, then a plain re-run. Not a regression.")
+        }
+    }
+
+    $JunctionCsv = Join-Path $LoadDirectory "LDGCRM_Application_Contact__c-upsert.csv"
+    if (Test-Path -LiteralPath $JunctionCsv) {
+        $JunctionRows = @(Import-Csv -LiteralPath $JunctionCsv)
+        $IntendedAdmin = @($JunctionRows | Where-Object { $_.LGDCRM_P3_Partner_Portal_Admin__c -eq "true" }).Count
+        $ActualAdmin = @(Invoke-SalesforceQuery `
+            -Soql ("SELECT Id FROM LDGCRM_Application_Contact__c " +
+                   "WHERE LGDCRM_P3_Partner_Portal_Admin__c = true AND LDGCRM_External_ID__c != null") `
+            -OrgAlias $Org -ApiVersion $Version).Count
+        Write-Host ("  Partner Portal Admin flag              {0} intended, {1} in the org" -f $IntendedAdmin, $ActualAdmin)
+
+        if ($ActualAdmin -lt $IntendedAdmin) {
+            $Problems.Add("Partner Portal Admin is set on only $ActualAdmin junction row(s) but $IntendedAdmin were submitted - $($IntendedAdmin - $ActualAdmin) did not land.")
+        }
+        if ($IntendedAdmin -eq 0 -and $JunctionRows.Count -gt 0) {
+            # Both sources silent at once means the source broke, not that
+            # nobody administers anything.
+            $Problems.Add("No Application-Contact row was flagged Partner Portal Admin. Both sources (Contacts.Roles and Issuer Strings' Partner Portal Admin Email) came back empty - check the Airtable export is current and includes Issuer Strings.")
+        }
+    }
+
+    return [PSCustomObject]@{ Problems = $Problems; Notices = $Notices }
 }
 
 function Invoke-ChildScript {
@@ -747,7 +819,9 @@ if ($PlanOnly) {
     Write-Host "Restore point and baseline counts: $RunDirectory" -ForegroundColor DarkGray
 }
 else {
-    $Problems = Invoke-PostLoadValidation -Org $OrgAlias -Version "67.0" -Baseline $Baseline -Directory $RunDirectory
+    $Validation = Invoke-PostLoadValidation -Org $OrgAlias -Version "67.0" -Baseline $Baseline -Directory $RunDirectory
+    $Problems = $Validation.Problems
+    $Notices = $Validation.Notices
 
     Write-Host ""
     if ($Problems.Count -gt 0) {
@@ -758,6 +832,14 @@ else {
     }
     else {
         Write-Host "Post-load validation passed." -ForegroundColor Green
+    }
+
+    if ($Notices.Count -gt 0) {
+        Write-Host ""
+        Write-Host "KNOWN INCOMPLETE - loaded correctly, but data is still missing:" -ForegroundColor Yellow
+        foreach ($Notice in $Notices) { Write-Host "  - $Notice" -ForegroundColor Yellow }
+        Write-Host ""
+        Write-Host "These do not fail the run. They are waiting on something outside this repo." -ForegroundColor DarkGray
     }
 
     Write-Host ""

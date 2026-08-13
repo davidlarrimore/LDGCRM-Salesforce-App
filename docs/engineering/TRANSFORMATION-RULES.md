@@ -1365,6 +1365,8 @@ loader that allows blank Applications would.
 
 ### Load results
 
+**What actually loaded on 2026-08-13** (kept as the record of that run, not as a target to reproduce):
+
 | | Count |
 | --- | --- |
 | Raw (Airtable row, Application) pairs | 2,797 |
@@ -1376,7 +1378,22 @@ loader that allows blank Applications would.
 | Skipped — neither | 4 |
 | Flagged Partner Portal Admin | 666 |
 
-The 884 skipped are overwhelmingly Applications withheld by the unreconciled-Account data-quality
+**⚠️ Re-baselined later the same day** — after the Airtable re-pull *and* the addition of Issuer
+Strings as a second admin source. Do not treat the figures above as pass/fail:
+
+| | Count |
+| --- | --- |
+| Raw (Airtable row, Application) pairs | 2,747 |
+| Distinct pairs from the Contacts table | 2,741 |
+| — collisions collapsed by the Contact merge | 6 |
+| — **associations added by Issuer Strings** | **86** |
+| Total distinct pairs | 2,827 |
+| **Ready for upsert** | **1,779** |
+| Skipped — a side isn't loaded | 1,048 |
+| Flagged Partner Portal Admin (in the load) | 573 |
+| — of which Issuer Strings supplied the association | 42 |
+
+The skipped rows are overwhelmingly Applications withheld by the unreconciled-Account data-quality
 issue. **They need no code change** — re-running after those Accounts are fixed picks them up.
 
 Also worth noting for any future cleanup: `LDGCRM_contact__c` has `deleteConstraint = Restrict`, so a

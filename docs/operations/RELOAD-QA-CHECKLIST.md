@@ -745,10 +745,15 @@ Market Segment (already loaded - do not touch)
       | Object | Expect own owner | Expect fallback (`peter.marks@gsa.gov`) |
       | --- | --- | --- |
       | Opportunity | 471 | 271 |
-      | `LDGCRM_application__c` | 511 | 177 |
+      | `LDGCRM_application__c` | 360 | 329 |
       | Contact | 1,553 | 0 |
       | `LDGCRM_Impediment__c` | 0 | 39 |
-      | `LDGCRM_Application_Contact__c` | 0 | 1,880 |
+      | `LDGCRM_Application_Contact__c` | 0 | 1,779 |
+
+      ⚠️ **Re-baselined 2026-08-13** against the re-pulled Airtable export. Application's split moved
+      a long way (was 511/177) on an unchanged rule, and the junction dropped from 1,880 — neither is
+      a regression. Every figure in this table is a moving target; diff the *transform's* reasoning,
+      not the absolute number.
 
       ```
       sf data query -q "SELECT OwnerId, Owner.Name, COUNT(Id) FROM Opportunity GROUP BY OwnerId, Owner.Name ORDER BY COUNT(Id) DESC" --target-org <alias> --result-format csv
@@ -769,6 +774,60 @@ Market Segment (already loaded - do not touch)
 - [ ] **Sharing recalculation:** these objects use org-wide-default-restricted sharing with
       owner-based rules, so changing ~2,000 owners triggers a recalculation. Allow time before judging
       visibility, and spot-check that a record is visible to the expected group.
+
+---
+
+## Phase 5b — Partner portal data verification (Issuer Strings)
+
+**Why this phase exists:** everything sourced from the **Issuer Strings** table can go missing
+*without any load error*. The table is newer than the rest of the pipeline, and its two failure modes
+— a missing/stale export, or the admin email match ceasing to resolve — both produce a CSV that loads
+100% successfully with a field simply left blank. **Success counts will not catch this.** Neither
+will the owner checks above.
+
+`Invoke-FullMigrationLoad.ps1` now runs checks 1–3 automatically in post-load validation (comparing
+the org against the load file, so it re-baselines itself rather than going stale). Run them by hand
+too if you loaded object-by-object rather than through the orchestrator.
+
+- [ ] **1. Partner Portal Admin flag landed.** Compare the load file against the org — these must
+      match, and the count must not be zero:
+      ```powershell
+      $csv = @(Import-Csv "data\salesforce-loads\LDGCRM_Application_Contact__c-upsert.csv")
+      @($csv | Where-Object { $_.LGDCRM_P3_Partner_Portal_Admin__c -eq "true" }).Count   # expect 573
+      ```
+      ```
+      sf data query -q "SELECT COUNT() FROM LDGCRM_Application_Contact__c WHERE LGDCRM_P3_Partner_Portal_Admin__c = true" --target-org <alias>
+      ```
+      ⚠️ **A count of 0 means the source broke, not that nobody is an admin.** Both sources
+      (`Contacts.Roles` *and* Issuer Strings' `Partner Portal Admin Email`) would have to be silent
+      at once — check the Airtable export is current and actually includes `Issuer Strings.json`.
+- [ ] **2. The Issuer-Strings-created associations exist.** Expect **86 built**, **42 in the load**
+      (the rest wait on their Application). These are junction rows that exist *only* because Issuer
+      Strings names an admin — the Contacts table never links those people to those Applications. The
+      build step prints the count; if it says 0, the second source is not running.
+- [ ] **3. Partner Portal Team Name / UUID.** Behaviour depends on whether the change set has landed:
+      - **Change set NOT yet applied (current state):** both columns are **absent from the CSV** and
+        both fields will be **empty on every Application**. Expected. The orchestrator reports this as
+        a `KNOWN INCOMPLETE` notice rather than a failure. ⚠️ **Do not sign off treating this as
+        done** — it means two fields carry no data at all.
+      - **Change set applied (`Unique = false` on both):** re-run `Build-ApplicationLoad.ps1`, confirm
+        the columns appear, then verify they landed:
+        ```
+        sf data query -q "SELECT COUNT() FROM LDGCRM_application__c WHERE LDGCRM_P3_Team_UUID__c != null" --target-org <alias>
+        ```
+        Expect ~**422** of 689 loaded Applications (696 resolve, but only those whose Application is
+        loadable get written), and **2** with a UUID but a blank Team Name (name over 50 chars).
+      - ⚠️ If the columns are present but the load **fails with `DUPLICATE_VALUE`**, the change set
+        did not actually clear `Unique` — one portal team owns many Applications by design.
+- [ ] **4. Review the two Issuer Strings review CSVs** and confirm the counts still match what the
+      data-quality doc tells the Airtable owners — if they have diverged, the doc is now lying to
+      them and needs updating in the same change:
+      - `Application-portal-team-review-*.csv` — expect **9 `CONFLICT`**, **18 `INCOMPLETE`**.
+      - `ApplicationContact-admin-source-*.csv` — expect **882 `BOTH` / 117 `Contacts.Roles only` /
+        86 `Issuer Strings only`**, and **0** admin emails matching no Contact.
+- [ ] **5. Spot-check one record end to end.** Open an Application in the UI that should have a portal
+      team, confirm the team fields and that its Application Contacts show the right person with
+      **Partner Portal Admin checked**. A count proves rows exist; only this proves they are right.
 
 ---
 
@@ -807,12 +866,16 @@ was found this way, never in a success count.
 | Opportunity | 744 | | |
 | `LDGCRM_application__c` | 691 | | |
 | `LDGCRM_Opportunity_Impediment__c` | 268 | | |
-| `LDGCRM_Application_Contact__c` | 1,884 | | |
+| `LDGCRM_Application_Contact__c` | 1,779 + pre-existing | | |
 | `OpportunityContactRole` | 515 | | |
 | `LDGCRM_Market_Segment__c` | 6 | | |
 | Junk FCIC Accounts created | 0 | | |
 | `TriggerControls__c` restored | true | | |
 | Records owned by inactive users | 0 | | |
+| **Partner Portal Admin flags** | **573** (0 = source broke, not "no admins") | | |
+| **Associations added by Issuer Strings** | **86 built / 42 loaded** | | |
+| **Partner Portal Team UUID populated** | **0 until the change set lands**, then ~422 | | |
+| Admin emails matching no Contact | 0 | | |
 
 ---
 
@@ -833,3 +896,13 @@ Expected, documented, not to be logged as failures:
   everything else by definition, so it is a step at the end of this reload rather than a known gap.
   537 notes ready; 200 wait on parents the Account data-quality issue withheld.
 - **Contact ownership meaningfulness** — see D2.
+- **Partner Portal Team Name / Team UUID on Application** — **will be empty on every record**, and
+  that is expected until a change set sets `Unique = false` on both fields. The transform withholds
+  the columns rather than failing 442 of 696 Applications with `DUPLICATE_VALUE`; the orchestrator
+  reports it as a `KNOWN INCOMPLETE` notice. **This is the one gap here that a re-run alone fixes** —
+  once the change set lands, re-run `Build-ApplicationLoad.ps1` and load again, no code change.
+- **9 Applications with no portal team at all** — their issuer strings name two different teams, so
+  both fields are deliberately left blank pending an Airtable fix. Not a load failure.
+- **Partner Portal Admins recorded in two places that disagree** — 117 pairs asserted only by
+  `Contacts.Roles`, 86 only by Issuer Strings. Both are honoured (union), so nothing is lost, but the
+  underlying duplication is an Airtable question rather than something this reload closes.
