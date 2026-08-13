@@ -142,7 +142,7 @@ script's skipped/unmapped review CSVs should feed into this list as they're foun
 | `Build-ContactLoad.ps1` | Prep — Contact (independent parent; optional Account/Partner Account lookups) | Built and **loaded 2026-08-13: 1,483 of 1,487** (4 rejected by an org duplicate rule). **Merges rows sharing an email** (1,599 → 1,532) since Airtable lacks a person↔Application junction; also emits `Contact-identity-map.csv` for the junction chunk. Loaded with `-DisableTriggerControl "Contact"` — see "Loading Contact" below. |
 | `Build-ApplicationLoad.ps1` | Prep — Application, needs Partner Account **and Opportunity** loaded first (see "Load order") | Built and **loaded 2026-08-13: 688/688 succeeded, 0 failures**. Took three attempts — the first failed 1,045 of 1,047 rows — which drove six fixes (Service Level array unwrap, Broker App Parent moved to a second pass, Name/URL platform-limit handling across *all* Url fields, out-of-range date check, live Partner Account/Opportunity preflight, plus an `Invoke-SalesforceQuery` array bug). 359 rows remain skipped pending Airtable Account fixes; 92 Opportunity links pending the Opportunity load. See `TRANSFORMATION-RULES.md`'s Application section for the full 55-field mapping and the failure post-mortem. |
 | `Build-ApplicationContactLoad.ps1` | Prep — Application↔Contact junction (needs Application + Contact loaded) | Built and **loaded 2026-08-13: 1,880/1,880**. Uses a **composite external ID** (`<contact>\|<application>`) so uniqueness is structural — the object's duplicate-check Flow throws on duplicates *and* misses intra-batch ones. 884 pairs pending their other side. |
-| `Build-OpportunityImpedimentLoad.ps1` | Prep — Impediment↔Opportunity junction (both parents loaded; two Master-Details) | Not built |
+| `Build-OpportunityImpedimentLoad.ps1` | Prep — Impediment↔Opportunity junction (two Master-Details, both required) | Built and **loaded 2026-08-13: 267/267**. Composite external ID; severity comes from *which* Airtable column an Opportunity appears in. **Excludes the placeholder Impediment named "None"** (465 links, 53% of the loadable set) — see `TRANSFORMATION-RULES.md`. 44 pairs pending an unloaded Opportunity. |
 | `Build-OpportunityContactRoleLoad.ps1` | Prep — blocked on an `sfdx-metadata-sync` fix (`OpportunityContactRole.LDGCRM_External_ID__c` needs `externalId=true`) | Not built |
 | `Build-MeetingLoad.ps1` | Prep — Activity/Event, needs a default-duration convention for synthesized `StartDateTime`/`EndDateTime` | Not built |
 | `Invoke-SalesforceLoad.ps1` | Load — generic `sf data upsert bulk`/`sf data update bulk` wrapper, any object | Built |
@@ -200,6 +200,7 @@ scripts\data-migration\Build-OpportunityLoad.ps1
 scripts\data-migration\Build-ContactLoad.ps1
 scripts\data-migration\Build-ApplicationLoad.ps1
 scripts\data-migration\Build-ApplicationContactLoad.ps1
+scripts\data-migration\Build-OpportunityImpedimentLoad.ps1
 
 # Actually load a prepped CSV into gsa-peo (prompts "Type LOAD to continue"):
 scripts\data-migration\Invoke-SalesforceLoad.ps1 `

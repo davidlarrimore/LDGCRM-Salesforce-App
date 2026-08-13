@@ -554,6 +554,86 @@ Re-running `Build-ApplicationLoad.ps1` afterward dropped its blank-Opportunity-l
 
 ---
 
+## Opportunity Impediment (junction)
+
+**Source:** the Airtable `Impediments` table's two linked-record columns — **not** a table of its own.
+**Target:** `LDGCRM_Opportunity_Impediment__c`, a true junction with **two Master-Detail**
+relationships (Impediment and Opportunity), so **both parents are required**.
+**Script:** `Build-OpportunityImpedimentLoad.ps1`. **Mode: upsert on a COMPOSITE
+`LDGCRM_External_ID__c`** (`<impedimentExtId>|<opportunityExtId>`), same pattern and rationale as the
+Application Contact junction.
+**Loaded 2026-08-13: 267 of 267 succeeded, 0 failures.**
+
+### The severity lives in *which column* an Opportunity appears in
+
+There is no severity field in Airtable. The column is the value:
+
+| Airtable column | `LDGCRM_Severity__c` |
+| --- | --- |
+| `Opportunities blocked` | `Blocker` |
+| `Opportunities requested` | `Impediment` |
+
+`LDGCRM_Severity__c` is a **required** restricted picklist (`Impediment` / `Blocker`), so every row
+must resolve to exactly one — which is a problem, because **122 pairs appear in both columns**.
+User-confirmed rule (2026-08-13): **`Blocker` wins.** It's the more severe value and the one that
+drives the Blocked Revenue roll-up, so recording the pair as blocked is the safer, more visible
+choice. Every conflict is written to `OpportunityImpediment-severity-conflict-<ts>.csv` regardless.
+
+### The Impediment named "None" is deliberately excluded
+
+**This is the significant data decision on this object.** One Airtable Impediment is literally named
+`None`, with an **empty Description and Talking Point**, and it carries **263 blocked + 202 requested
+links — 465 in total, over 5× more than any real impediment** (the next highest is `Unresponsiveness`
+at 86). It reads unmistakably as a placeholder meaning *"no impediment"*.
+
+Loading it would have been actively wrong in two ways:
+1. It asserts those Opportunities **are** impeded, the opposite of what the data means.
+2. `LDGCRM_Blocked_Revenue__c` on the junction is set by an after-save Flow and **rolls up to the
+   Impediment**, so `None` would have surfaced at the top of any "most blocking impediment" report
+   with a meaningless multi-million-dollar figure.
+
+It accounted for **297 of the 564 otherwise-loadable pairs (53%)** and **115 of the 122 severity
+conflicts** — so excluding it also removed most of the ambiguity. User-confirmed: skip and flag for
+the data owners. The behaviour is parameterised (`-PlaceholderImpedimentName`) so reversing the
+decision needs no code edit.
+
+Verified post-load that the roll-up now shows genuine figures — `Feature - Solution to proof 16+
+users` at $20.5M, `Feature - Foreign Passport IDV` at $20.1M — which is exactly the reporting `None`
+would have swamped.
+
+### Field mapping
+
+| Airtable | Salesforce | Rule |
+| --- | --- | --- |
+| *(composite)* | `LDGCRM_External_ID__c` | `<impedimentExtId>\|<opportunityExtId>` — the upsert key, 35 chars against a 50 cap. |
+| Impediment `id` | `LDGCRM_Impediment__c` (CSV `LDGCRM_Impediment__r.LDGCRM_External_ID__c`) | **Master-Detail, required.** |
+| Opportunity `rec...` from either column | `LDGCRM_Opportunity__c` (CSV `LDGCRM_Opportunity__r.LDGCRM_External_ID__c`) | **Master-Detail, required.** |
+| *(which column)* | `LDGCRM_Severity__c` | Required; `Blocker` wins on conflict. |
+
+**Not written:** `Name` (AutoNumber, `OIID-{00000}`); **`LDGCRM_Blocked_Revenue__c`** — owned by the
+after-save Flow `LGDCRM_Opportunity_Impediment_Before_Save_Update_Blocked_Revenue` (note the
+misleading filename: its `triggerType` is actually `RecordAfterSave`), which sets it from the parent
+Opportunity's estimated revenue when severity is `Blocker` and the Opportunity isn't `Closed Won`,
+and 0 otherwise. Confirmed working on the test batch before the full load: a `Blocker` on an open
+Opportunity got $30,000, an `Impediment` got 0.
+
+### Load results
+
+| | Count |
+| --- | --- |
+| Raw (Impediment, Opportunity) links | 783 |
+| — dropped as the `None` placeholder | 465 |
+| Distinct pairs from real Impediments | 311 |
+| **Loaded (both Master-Detail parents present)** | **267 / 267** |
+| — severity `Blocker` / `Impediment` | 243 / 24 |
+| Skipped — Opportunity not loaded | 44 |
+| Severity conflicts resolved to `Blocker` | 7 |
+
+Also found: **`Feature - Citizenship verification` exists as two separate Airtable Impediment rows** —
+a duplicate worth flagging to the data owners.
+
+---
+
 ## Application Contact (junction)
 
 **Source:** the Airtable `Contacts` table's `Applications Record ID (from Applications)` column —

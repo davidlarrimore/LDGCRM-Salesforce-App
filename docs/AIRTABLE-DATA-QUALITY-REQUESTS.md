@@ -357,6 +357,43 @@ points at an Airtable Account that doesn't match a Salesforce one, so fixing tho
 these contacts automatically. The migration already recovers 145 more by tracing the contact's
 Applications back to an Account, so no separate action is needed for those.
 
+### Impediments: what does the impediment named "None" mean?
+
+**This is the biggest open question on the Impediments table.** One impediment is named `None`, has
+no Description and no Talking Point, and is linked to **465 opportunities** — more than five times
+any real impediment (the next highest, `Unresponsiveness`, has 86).
+
+It looks like a placeholder people select to mean *"this opportunity has no impediment"*. If that's
+right, migrating it would be actively misleading: it would record 297 opportunities as being
+impeded when the data means the opposite, and because Salesforce automatically totals up blocked
+revenue per impediment, `None` would appear at the top of any "biggest blockers" report with a
+meaningless multi-million-dollar figure.
+
+**We are currently not migrating it** — the 267 links from genuine impediments loaded fine. Reversing
+that takes a single setting, no code change.
+
+**What we need:** confirmation of what `None` means. If it means "no impediment", the cleanest fix is
+to remove those links in Airtable (an opportunity with no impediment simply shouldn't be linked to
+one) and delete the record.
+
+### Impediments: 122 opportunities are marked as both blocked and requested
+
+The same opportunity appears in **both** the "Opportunities blocked" and "Opportunities requested"
+lists for the same impediment. Salesforce stores a single severity per link, so it can't be both.
+We currently record these as **Blocker** (the more severe reading), and every case is listed in
+`logs/data-migration/OpportunityImpediment-severity-conflict-*.csv`.
+
+115 of the 122 involve the `None` impediment above, so resolving that question resolves most of
+these. That leaves **7 genuine cases** worth a human check.
+
+**What we need:** confirm whether "blocked" or "requested" is correct for those 7, and ideally avoid
+putting the same opportunity in both lists going forward.
+
+### Impediments: "Feature - Citizenship verification" exists twice
+
+Two separate impediment records share that exact name. Worth merging so the linked opportunities and
+blocked-revenue totals aren't split across two records.
+
 ## Recommended cleanup — not blocking, but worth doing
 
 - **Impediments: 2 completely empty rows** (`recA9LjxxE56gV73J`, `recXyF5tOHJh07laz`) — no Name,

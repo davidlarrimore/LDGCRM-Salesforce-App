@@ -221,6 +221,15 @@ picklist's restricted values or a TextArea's real length before trusting a field
 appearance — see `docs/TRANSFORMATION-RULES.md`'s General Principle #7 and the
 Application section's dedicated note for the full example.
 
+**The `LDGCRM_Opportunity_Impediment__c` junction is loaded as of 2026-08-13: 267 records** (267/267).
+Severity comes from *which* Airtable column an Opportunity appears in (`Opportunities blocked` →
+`Blocker`, `Opportunities requested` → `Impediment`); `Blocker` wins the 122 pairs listed in both.
+**The Airtable Impediment named `None` is deliberately excluded** — it has no Description/Talking
+Point and 465 links (5× any real impediment), reads as a placeholder for "no impediment", and would
+have swamped the `LDGCRM_Blocked_Revenue__c` roll-up with a meaningless figure. It accounted for 53%
+of otherwise-loadable pairs. Reversible via `-PlaceholderImpedimentName`. Uses the same composite
+external ID pattern as the Application-Contact junction.
+
 **The `LDGCRM_Application_Contact__c` junction is loaded as of 2026-08-13: 1,880 records** (1,880/1,880).
 Its `LDGCRM_External_ID__c` is a **composite key** `<contactExtId>|<applicationExtId>`, not a single
 Airtable `rec...` ID — the one object that departs from the external-ID convention, and deliberately:

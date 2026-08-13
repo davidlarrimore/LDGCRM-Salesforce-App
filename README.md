@@ -116,8 +116,9 @@ whoever maintains the Airtable base.
 
 **Loaded into `gsa-peo` so far:** Market Segment, Account (588 reconciled of 1,350), Partner Account
 (74), Impediment (39), Application (688), Opportunity (742), Contact (1,483), and the
-Application↔Contact junction (1,880). The Impediment↔Opportunity junction, OpportunityContactRole,
-Meetings, and the Notes chunk are not built yet — see `docs/README.md` for per-script build status.
+Application↔Contact junction (1,880), and the Impediment↔Opportunity junction (267).
+OpportunityContactRole, Meetings, and the Notes chunk are not built yet — see `docs/README.md` for
+per-script build status.
 
 ⚠️ **Loading Contact temporarily disables another app's Apex trigger** (`-DisableTriggerControl`) —
 read "Loading Contact" in [docs/README.md](docs/README.md) before running it.
