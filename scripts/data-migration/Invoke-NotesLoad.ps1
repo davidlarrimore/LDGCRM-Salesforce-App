@@ -141,7 +141,32 @@ function Invoke-SalesforceRestJson {
         throw "No JSON in the response from $Path. Raw output:`n$($Lines -join "`n")"
     }
 
-    return (($Lines[$Start..($Lines.Count - 1)]) -join "`n") | ConvertFrom-Json
+    # ASSIGN, THEN RETURN - do not `return ... | ConvertFrom-Json`.
+    #
+    # PowerShell 5.1's ConvertFrom-Json emits a deserialized JSON ARRAY as a
+    # SINGLE pipeline item rather than enumerating it. Piping it straight out of
+    # the function means the caller's @() wraps that one item, so a 100-record
+    # response measures as Count = 1:
+    #
+    #   @($json | ConvertFrom-Json)).Count   -> 1     (even outside a function)
+    #   $r = $json | ConvertFrom-Json; @($r) -> 100
+    #
+    # Assigning first makes $Parsed a real Object[]; `return` then enumerates it
+    # and the caller's @() sees all 100.
+    #
+    # This is NOT hypothetical: it broke the first real Notes load on
+    # 2026-08-13. The batch of 100 notes was created successfully in Salesforce,
+    # the response came back with 100 results, and this function reported one -
+    # so the count guard below tripped and the run aborted holding 100 notes it
+    # could no longer correlate to their parents. The guard did its job; this
+    # was the actual defect.
+    #
+    # The @() caller convention used everywhere else in this repo does NOT
+    # protect against this, because the collapse happens before @() ever sees
+    # the data.
+    $Parsed = (($Lines[$Start..($Lines.Count - 1)]) -join "`n") | ConvertFrom-Json
+
+    return $Parsed
 }
 
 function New-CompositeBody {

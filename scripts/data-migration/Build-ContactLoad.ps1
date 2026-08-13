@@ -224,12 +224,21 @@ Write-Host "Querying $OrgAlias for Accounts and Partner Accounts..." -Foreground
 # inactive user (INACTIVE_OWNER_OR_USER), even though existing records may
 # legitimately still be owned by one. These Accounts pre-date the migration, so
 # inactive owners are entirely plausible here.
+#
+# Owner.UserType is checked because ACTIVE IS NOT ENOUGH. A Chatter Free,
+# portal or community user is active and can own nothing; assigning one fails
+# the load with OP_WITH_INVALID_USER_TYPE_EXCEPTION, an error that names
+# neither the field nor the user. That cost 150 Application rows on
+# 2026-08-13. It has not yet bitten Contact - no Account here is currently
+# owned by such a user - but these Accounts pre-date the migration and this org
+# has ~2,637 Chatter-only users, so it is a matter of which Account, not
+# whether.
 $LoadedAccountIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $AccountOwnerByExternalId = @{}
-foreach ($Row in @(Invoke-SalesforceQuery -Soql "SELECT LDGCRM_External_ID__c, OwnerId, Owner.IsActive FROM Account WHERE LDGCRM_External_ID__c != null" -OrgAlias $OrgAlias -ApiVersion $ApiVersion)) {
+foreach ($Row in @(Invoke-SalesforceQuery -Soql "SELECT LDGCRM_External_ID__c, OwnerId, Owner.IsActive, Owner.UserType FROM Account WHERE LDGCRM_External_ID__c != null" -OrgAlias $OrgAlias -ApiVersion $ApiVersion)) {
     if ($Row.LDGCRM_External_ID__c) {
         $LoadedAccountIds.Add($Row.LDGCRM_External_ID__c) | Out-Null
-        if ($Row.OwnerId -and $Row.Owner.IsActive) {
+        if ($Row.OwnerId -and $Row.Owner.IsActive -and $Row.Owner.UserType -eq "Standard") {
             $AccountOwnerByExternalId[$Row.LDGCRM_External_ID__c] = $Row.OwnerId
         }
     }

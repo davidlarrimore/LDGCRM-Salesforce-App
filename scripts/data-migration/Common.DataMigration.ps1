@@ -371,6 +371,23 @@ function Resolve-SalesforceOwnerIds {
              Filtering to IsActive resolves that particular case outright;
              genuinely ambiguous ones (2+ ACTIVE users on one address) are
              reported to the caller instead of being picked silently.
+          3. NO UserType FILTER - found 2026-08-13, and the most expensive of
+             the set because IsActive does not imply "can own a record".
+             Shaunte Brown is an ACTIVE user on the "GSA Chatter Free User"
+             profile (UserType = CsnOnly). Chatter Free / portal / community
+             users cannot own standard or custom object records at all, so the
+             resolver handed back a perfectly valid-looking User Id and the
+             LOAD failed - 150 of 688 Applications rejected with:
+                 OP_WITH_INVALID_USER_TYPE_EXCEPTION: Operation not valid for
+                 this user type
+             The message names no field and no user, so it reads like a
+             permissions problem rather than an owner problem. This org has
+             ~2,637 Chatter-only users, so the exposure is not incidental.
+             Restricted to UserType = 'Standard': of the 14 distinct owners
+             this migration assigns, 13 are Standard and exactly 1 was CsnOnly,
+             so this costs nothing real and that one owner now falls back
+             correctly. Revisit only if a legitimate portal-user owner ever
+             appears.
 
         SANDBOX EMAIL SUFFIX: Salesforce appends ".invalid" to every user's
         Email when a sandbox is refreshed, so "jane.doe@gsa.gov" in Airtable is
@@ -431,7 +448,10 @@ function Resolve-SalesforceOwnerIds {
             $Literals.Add("'$Safe.invalid'")
         }
 
-        $Soql = "SELECT Id, Email FROM User WHERE IsActive = true AND Email IN (" +
+        # UserType = 'Standard' is NOT cosmetic - see trap 4 in the header.
+        # An active Chatter Free user matches on email and is rejected at LOAD
+        # time with OP_WITH_INVALID_USER_TYPE_EXCEPTION.
+        $Soql = "SELECT Id, Email FROM User WHERE IsActive = true AND UserType = 'Standard' AND Email IN (" +
             ($Literals -join ",") + ")"
 
         # @() per the Invoke-SalesforceQuery caller contract - a single match
@@ -563,7 +583,12 @@ function Resolve-SalesforceOwnerIdsByName {
             "'" + ($_ -replace '\\', '\\\\' -replace "'", "\'") + "'"
         })
 
-        $Soql = "SELECT Id, Name FROM User WHERE IsActive = true AND Name IN (" +
+        # UserType = 'Standard' for the same reason as the email resolver: an
+        # active Chatter Free / portal user cannot own a record, and the load
+        # fails with OP_WITH_INVALID_USER_TYPE_EXCEPTION rather than the
+        # resolver reporting anything. This path assigns Account.OwnerId during
+        # the bootstrap, where the same trap applies.
+        $Soql = "SELECT Id, Name FROM User WHERE IsActive = true AND UserType = 'Standard' AND Name IN (" +
             ($Literals -join ",") + ")"
 
         $Users = @(Invoke-SalesforceQuery -Soql $Soql -OrgAlias $OrgAlias -ApiVersion $ApiVersion)

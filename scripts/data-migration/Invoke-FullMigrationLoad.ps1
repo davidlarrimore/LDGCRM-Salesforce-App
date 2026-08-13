@@ -96,6 +96,10 @@ $OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Invoke-FullMigrationLoad"
 
+# When this run began. Used to tell a CSV this run produced from one left over
+# by an earlier run - see the staleness check in the step loop.
+$RunStart = Get-Date
+
 # =============================================================================
 # THE SEQUENCE
 # =============================================================================
@@ -302,21 +306,72 @@ function Save-RestorePoint {
         "OpportunityContactRole", "LDGCRM_Market_Segment__c"
     )
 
+    # WHICH external IDs were already here, not just how many.
+    #
+    # A count cannot answer the only question a rollback has to get right:
+    # did THIS run create this record, or was it already in the org? Deleting
+    # by external ID alone is safe in a sandbox, where the tagged set and the
+    # migration's own output are the same thing - and wrong in production,
+    # where a second run would delete the first run's records. The difference
+    # between "created by this run" and "already present" is exactly the set
+    # captured here, and it can only be captured BEFORE the load.
+    #
+    # This costs no extra queries: the tagged count below was already reading
+    # these rows and discarding everything but the row count.
+    $IdDirectory = Join-Path $Directory "external-ids"
+    New-Item -ItemType Directory -Path $IdDirectory -Force | Out-Null
+
     $Baseline = [System.Collections.Generic.List[object]]::new()
     foreach ($Object in $Objects) {
         $Total = @(Invoke-SalesforceQuery -Soql "SELECT Id FROM $Object" -OrgAlias $Org -ApiVersion $Version).Count
         $Tagged = 0
         try {
-            $Tagged = @(Invoke-SalesforceQuery -Soql "SELECT Id FROM $Object WHERE LDGCRM_External_ID__c != null" -OrgAlias $Org -ApiVersion $Version).Count
+            $Existing = @(Invoke-SalesforceQuery `
+                -Soql "SELECT Id, LDGCRM_External_ID__c FROM $Object WHERE LDGCRM_External_ID__c != null" `
+                -OrgAlias $Org -ApiVersion $Version)
+            $Tagged = $Existing.Count
+
+            # Written even when empty: an empty file is the positive statement
+            # "nothing was tagged here before the run", which is what lets a
+            # rollback delete the whole tagged set with confidence. A MISSING
+            # file has to be read as "unknown", and unknown must not authorise
+            # a delete.
+            $Existing | Select-Object Id, LDGCRM_External_ID__c |
+                Export-Csv -LiteralPath (Join-Path $IdDirectory "$Object.csv") -NoTypeInformation -Encoding UTF8
         }
         catch { $Tagged = -1 }   # object has no external ID field
 
         $Baseline.Add([PSCustomObject]@{ Object = $Object; Total = $Total; ExternalIdTagged = $Tagged })
     }
 
+    $Captured = @($Baseline | Where-Object { $_.ExternalIdTagged -ge 0 })
+    Write-Host ("  Pre-run external IDs   {0} object(s), {1:N0} tagged record(s) -> external-ids\" -f `
+        $Captured.Count, (($Captured | Measure-Object -Property ExternalIdTagged -Sum).Sum))
+
     $BaselineFile = Join-Path $Directory "baseline-counts.csv"
     $Baseline | Export-Csv -LiteralPath $BaselineFile -NoTypeInformation -Encoding UTF8
     Write-Host ("  Baseline counts        {0} object(s) -> {1}" -f $Baseline.Count, (Split-Path -Leaf $BaselineFile))
+
+    # HOW MANY FCIC JUNK ACCOUNTS ALREADY EXIST.
+    #
+    # The post-load check asks whether the Contact trigger bypass held, and it
+    # used to answer that by testing for ZERO FCIC_Individual Accounts. That is
+    # wrong in any org where the trigger has ever fired before: Dev carries 4
+    # from an 18-row Contact test batch on 2026-08-13, and they carry no
+    # external ID, so the factory reset deliberately leaves them alone. The
+    # check would therefore have reported a bypass failure on every single run,
+    # for ever - and a check that cries wolf every run is one nobody reads,
+    # which is worse than not having it.
+    #
+    # What actually indicates a bypass failure is the DELTA, so record the
+    # starting figure here. Kept as a file rather than added to $Baseline
+    # because the post-load loop treats every row there as a queryable object.
+    $JunkBefore = @(Invoke-SalesforceQuery `
+        -Soql "SELECT Id FROM Account WHERE RecordType.DeveloperName = 'FCIC_Individual'" `
+        -OrgAlias $Org -ApiVersion $Version).Count
+
+    Set-Content -LiteralPath (Join-Path $Directory "fcic-junk-baseline.txt") -Value $JunkBefore -Encoding ASCII
+    Write-Host ("  FCIC junk Accounts     {0} already present (pre-existing, not deleted by a reset)" -f $JunkBefore)
 
     return $Baseline
 }
@@ -353,12 +408,25 @@ function Invoke-PostLoadValidation {
     # 2. Junk FCIC Accounts. The Contact trigger creates one Account per Contact
     #    inserted with a blank AccountId; the bypass is supposed to stop that.
     #    An Account delta far above what the reconciliation explains is the tell.
+    #    Measured as a DELTA against the pre-run figure, not against zero - an
+    #    org where the trigger has fired before keeps those Accounts for ever
+    #    (they carry no external ID, so no reset removes them). See the note in
+    #    Save-RestorePoint.
     $Junk = @(Invoke-SalesforceQuery `
         -Soql "SELECT Id FROM Account WHERE RecordType.DeveloperName = 'FCIC_Individual'" `
         -OrgAlias $Org -ApiVersion $Version).Count
+
+    $JunkBaselineFile = Join-Path $Directory "fcic-junk-baseline.txt"
+    $JunkBefore = if (Test-Path -LiteralPath $JunkBaselineFile) {
+        [int](Get-Content -LiteralPath $JunkBaselineFile -Raw).Trim()
+    } else { 0 }
+
+    $JunkNew = $Junk - $JunkBefore
     Write-Host ""
-    Write-Host ("  FCIC_Individual Accounts (junk)        {0}" -f $Junk)
-    if ($Junk -gt 0) { $Problems.Add("$Junk FCIC_Individual Account(s) exist - the Contact trigger bypass may not have held.") }
+    Write-Host ("  FCIC_Individual Accounts (junk)        {0} now, {1} before, {2} new" -f $Junk, $JunkBefore, ("{0:+#;-#;0}" -f $JunkNew))
+    if ($JunkNew -gt 0) {
+        $Problems.Add("$JunkNew NEW FCIC_Individual Account(s) were created during this run - the Contact trigger bypass did not hold.")
+    }
 
     # 3. The trigger switch must be back ON. Leaving it off silently breaks
     #    another team's app in a shared org.
@@ -539,6 +607,10 @@ foreach ($Step in $Selected) {
     $BuildScript = Get-StepProperty -Step $Step -Key "Build"
     $TransformCode = 0
 
+    # Marks the boundary a freshly-written CSV must fall on the far side of.
+    # Taken BEFORE the transform runs - see the staleness check below.
+    $TransformStart = Get-Date
+
     # BrokerParent has no transform of its own - Build-ApplicationLoad.ps1
     # produces its file as a side effect, which is the whole point of
     # generating it automatically rather than as a separate script.
@@ -553,7 +625,47 @@ foreach ($Step in $Selected) {
 
     $CsvPath = Join-Path $LoadDir $Step.Csv
     $RowCount = 0
-    if (Test-Path -LiteralPath $CsvPath) { $RowCount = @(Import-Csv -LiteralPath $CsvPath).Count }
+    $Stale = $false
+
+    if (Test-Path -LiteralPath $CsvPath) {
+        # A TRANSFORM THAT WRITES NOTHING LEAVES THE LAST RUN'S FILE BEHIND.
+        #
+        # Every Build-*.ps1 skips writing its CSV when it has no rows to emit
+        # ("No Account records need updating - nothing written to ...") rather
+        # than truncating it. So the file at the expected path may belong to a
+        # previous run, and counting it reports rows this run did not produce -
+        # or, worse, LOADS them. Caught 2026-08-13 on a -PlanOnly run that
+        # reported 587 Account rows and 503 OpportunityContactRole rows from
+        # files dated the previous day, while both transforms had just printed
+        # a count of zero.
+        #
+        # Stale data in an Account update file is stale Salesforce Ids, which
+        # after a factory reset point at deleted records. That fails loudly.
+        # The quiet case is -StartAtStep / -OnlySteps, where an operator
+        # resuming a failed run re-loads an older file believing it is current
+        # - which is the resume path the Operations team will actually use.
+        #
+        # Only applies where the transform that OWNS the file ran in this
+        # invocation. BrokerParent's file is written by the Application step,
+        # so on a -StartAtStep BrokerParent resume it is legitimately older
+        # than this run; that case is reported, not suppressed.
+        $Written = (Get-Item -LiteralPath $CsvPath).LastWriteTime
+
+        if ($BuildScript -and $Written -lt $TransformStart) {
+            $Stale = $true
+            Write-Host ""
+            Write-Host ("  {0} was NOT written by this run (last written {1:yyyy-MM-dd HH:mm})." -f $Step.Csv, $Written) -ForegroundColor Yellow
+            Write-Host "  The transform produced no rows, so the file on disk belongs to an earlier" -ForegroundColor Yellow
+            Write-Host "  run. Treating this step as zero rows rather than loading it." -ForegroundColor Yellow
+        }
+        else {
+            $RowCount = @(Import-Csv -LiteralPath $CsvPath).Count
+            if (-not $BuildScript -and $Written -lt $RunStart) {
+                Write-Host ("  NOTE: {0} predates this run (last written {1:yyyy-MM-dd HH:mm}) - its" -f $Step.Csv, $Written) -ForegroundColor Yellow
+                Write-Host "  transform did not run in this invocation. Confirm it is the file you want." -ForegroundColor Yellow
+            }
+        }
+    }
 
     if ($TransformCode -ne 0) {
         $Results.Add([PSCustomObject]@{ Step = $Step.Name; Rows = $RowCount; Result = "TRANSFORM FAILED (exit $TransformCode)" })
@@ -563,13 +675,15 @@ foreach ($Step in $Selected) {
     }
 
     if ($PlanOnly) {
-        $Results.Add([PSCustomObject]@{ Step = $Step.Name; Rows = $RowCount; Result = "planned (not loaded)" })
+        $Outcome = if ($Stale) { "no rows (stale file ignored)" } else { "planned (not loaded)" }
+        $Results.Add([PSCustomObject]@{ Step = $Step.Name; Rows = $RowCount; Result = $Outcome })
         continue
     }
 
     if ($RowCount -eq 0) {
+        $Outcome = if ($Stale) { "skipped (no rows; stale file ignored)" } else { "skipped (no rows)" }
         Write-Host "  Nothing to load - transform produced no rows." -ForegroundColor Yellow
-        $Results.Add([PSCustomObject]@{ Step = $Step.Name; Rows = 0; Result = "skipped (no rows)" })
+        $Results.Add([PSCustomObject]@{ Step = $Step.Name; Rows = 0; Result = $Outcome })
         continue
     }
 

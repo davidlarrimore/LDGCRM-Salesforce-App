@@ -637,9 +637,22 @@ if ($NoteDocumentIds.Count -gt 0) {
     Write-Host "Processing migrated notes (ContentDocument)" -ForegroundColor Cyan
     Write-Host "============================================================"
 
+    # Export-DataLoaderCsv, NOT Export-Csv: this file is fed straight back to
+    # the Bulk API, and PowerShell 5.1's Export-Csv -Encoding UTF8 always writes
+    # a BOM. Bulk API reads the BOM bytes as the start of an unquoted first
+    # field, hits the opening quote of "Id" and fails the whole job with
+    #   InvalidBatch : Failed to parse CSV. Found unescaped quote.
+    # - an error that says nothing about encoding. Cost a failed reset run on
+    # 2026-08-13, the first time this path ever had a note to delete.
+    #
+    # Every OTHER object's delete file is written by `sf data export bulk`,
+    # which emits no BOM, so this is the one hand-built CSV in the script and
+    # the only place the trap could bite. The summary CSVs below are read by
+    # humans in Excel, where the BOM is harmless and actually helps.
     $NoteIdFile = Join-Path $OutputDirectory "ContentDocument-ids.csv"
-    $NoteDocumentIds | ForEach-Object { [PSCustomObject]@{ Id = $_ } } |
-        Export-Csv -LiteralPath $NoteIdFile -NoTypeInformation -Encoding UTF8
+    Export-DataLoaderCsv `
+        -InputObject @($NoteDocumentIds | ForEach-Object { [PSCustomObject]@{ Id = $_ } }) `
+        -Path $NoteIdFile
 
     Write-Host "Exported $($NoteDocumentIds.Count) note id(s) for the audit trail:"
     Write-Host "  $NoteIdFile"
