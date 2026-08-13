@@ -14,12 +14,12 @@ now means **production**, not the Dev sandbox it used to point at.
 
 ## Environments
 
-| `-Environment` | Alias | Sandbox | Used for |
-| --- | --- | --- | --- |
-| `Dev` *(default)* | `peodv8dvn` | PEOdV8DVn | Day-to-day development and pipeline testing |
-| `QA` | `peodv15dvn` | PEOdV15DVn | Full end-to-end migration rehearsal |
-| `Full` | *not yet provisioned* | TBD | Operations team integration testing: scripts + change sets, immediately before production |
-| `Prod` | `gsa-peo` | — | The live GSA PEO org. Real partner data. |
+| `-Environment` | Alias | Sandbox | Instance URL | Used for |
+| --- | --- | --- | --- | --- |
+| `Dev` *(default)* | `peodv8dvn` | PEOdV8DVn | `https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com` | Day-to-day development and pipeline testing |
+| `QA` | `peodv15dvn` | PEOdV15DVn | `https://gsa-peo--peodv15dvn.sandbox.my.salesforce.com` | Full end-to-end migration rehearsal |
+| `Full` | *not yet provisioned* | TBD | TBD | Operations team integration testing: scripts + change sets, immediately before production |
+| `Prod` | `gsa-peo` | — | *(not authorized on this machine)* | The live GSA PEO org. Real partner data. |
 
 **An alias is the org's own sandbox name**, so an alias cannot quietly drift from the org it names.
 The registry lives in [`scripts/common/Common.Orgs.ps1`](scripts/common/Common.Orgs.ps1); nothing
@@ -65,12 +65,14 @@ applicants via Airtable or the sandbox. Only `.gitkeep`/`README.md` placeholders
 ## Setup
 
 ```bash
-# Authenticate once per machine, per environment. Sandboxes log in through
-# test.salesforce.com; the alias is always the sandbox's own name.
-sf org login web --alias peodv8dvn  --instance-url https://test.salesforce.com   # Dev
-sf org login web --alias peodv15dvn --instance-url https://test.salesforce.com   # QA
+# Authenticate once per machine, per environment. The alias is always the
+# sandbox's own name; logging in at the sandbox's own My Domain URL (rather than
+# the generic test.salesforce.com) means the browser lands on exactly the org
+# the alias claims, so there's no way to attach the alias to the wrong sandbox.
+sf org login web --alias peodv8dvn  --instance-url https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com    # Dev
+sf org login web --alias peodv15dvn --instance-url https://gsa-peo--peodv15dvn.sandbox.my.salesforce.com   # QA
 
-# Verify the connection
+# Verify the connection: "Instance Url" in the output must match the table above
 sf org display --target-org peodv8dvn
 
 # Optional: make Dev the default for bare `sf` commands that omit --target-org

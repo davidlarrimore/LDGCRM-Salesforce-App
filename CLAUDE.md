@@ -18,12 +18,12 @@ correlate Salesforce records back to their Airtable source.
 (default `Dev`) and resolves the alias from the registry in `scripts/common/Common.Orgs.ps1`, which
 `Common.ps1` dot-sources so every script gets it. **Never hard-code an org alias in a script again.**
 
-| `-Environment` | Alias | Sandbox | Purpose |
-| --- | --- | --- | --- |
-| `Dev` (default) | `peodv8dvn` | PEOdV8DVn | Development and pipeline testing. Everything documented below was done here. |
-| `QA` | `peodv15dvn` | PEOdV15DVn | Full end-to-end migration rehearsal |
-| `Full` | *not provisioned yet* | TBD | Operations team integration testing: scripts + change sets, immediately before production |
-| `Prod` | `gsa-peo` | — | Live GSA PEO org |
+| `-Environment` | Alias | Sandbox | Instance URL | Purpose |
+| --- | --- | --- | --- | --- |
+| `Dev` (default) | `peodv8dvn` | PEOdV8DVn | `https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com` | Development and pipeline testing. Everything documented below was done here. |
+| `QA` | `peodv15dvn` | PEOdV15DVn | `https://gsa-peo--peodv15dvn.sandbox.my.salesforce.com` | Full end-to-end migration rehearsal |
+| `Full` | *not provisioned yet* | TBD | TBD | Operations team integration testing: scripts + change sets, immediately before production |
+| `Prod` | `gsa-peo` | — | *(not authorized here)* | Live GSA PEO org |
 
 **An alias is the org's own sandbox name**, so it can be checked against the instance URL and cannot
 silently drift. `Assert-LdgcrmOrgTarget` runs at the start of every script and refuses to continue

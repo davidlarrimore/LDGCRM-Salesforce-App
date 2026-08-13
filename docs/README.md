@@ -36,12 +36,12 @@ Every script takes `-Environment Dev|QA|Full|Prod` (default **Dev**) and resolve
 registry in [`scripts/common/Common.Orgs.ps1`](../scripts/common/Common.Orgs.ps1). No script
 hard-codes an alias any more.
 
-| `-Environment` | Alias | Sandbox name | Purpose |
-| --- | --- | --- | --- |
-| `Dev` *(default)* | `peodv8dvn` | PEOdV8DVn | Day-to-day development and pipeline testing |
-| `QA` | `peodv15dvn` | PEOdV15DVn | Full end-to-end migration rehearsal |
-| `Full` | *not yet provisioned* | TBD | Operations team integration testing — the scripts **and** the change sets, immediately before production |
-| `Prod` | `gsa-peo` | — | The live GSA PEO org |
+| `-Environment` | Alias | Sandbox name | Instance URL | Purpose |
+| --- | --- | --- | --- | --- |
+| `Dev` *(default)* | `peodv8dvn` | PEOdV8DVn | `https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com` | Day-to-day development and pipeline testing |
+| `QA` | `peodv15dvn` | PEOdV15DVn | `https://gsa-peo--peodv15dvn.sandbox.my.salesforce.com` | Full end-to-end migration rehearsal |
+| `Full` | *not yet provisioned* | TBD | TBD | Operations team integration testing — the scripts **and** the change sets, immediately before production |
+| `Prod` | `gsa-peo` | — | *(not authorized on this machine)* | The live GSA PEO org |
 
 **The convention: an alias is the org's own sandbox name.** Chosen 2026-08-13 precisely because an
 `sf` alias is a local, mutable pointer that can be repointed by a stray `sf org login web`, and a
@@ -62,14 +62,18 @@ Don't re-create a `gsa-peo` alias pointing anywhere but production.
 
 ### Authorizing a new environment
 
-Sandboxes authenticate through `test.salesforce.com`, production through `login.salesforce.com`.
-The alias is always the sandbox's own name.
+The alias is always the sandbox's own name. Pass the sandbox's **own My Domain URL** as
+`--instance-url` — `https://gsa-peo--<sandboxname>.sandbox.my.salesforce.com` — rather than the
+generic `test.salesforce.com`: the browser then lands on exactly the org the alias names, so the
+alias can't be attached to the wrong sandbox in the first place. (Production would be
+`login.salesforce.com`, and is deliberately not authorized here.) A new sandbox's URL follows the
+same pattern; confirm it in the Setup → Sandboxes list or the org's own address bar before using it.
 
 ```powershell
 # 1. Log in. A browser window opens; use your @gsa.gov.peo.<sandbox> credentials.
-sf org login web --alias peodv15dvn --instance-url https://test.salesforce.com
+sf org login web --alias peodv15dvn --instance-url https://gsa-peo--peodv15dvn.sandbox.my.salesforce.com
 
-# 2. Confirm you landed on the org you meant to.
+# 2. Confirm you landed on the org you meant to. "Instance Url" must match the table above.
 sf org display --target-org peodv15dvn
 sf data query --target-org peodv15dvn --query "SELECT Name, IsSandbox FROM Organization"
 
