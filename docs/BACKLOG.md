@@ -12,8 +12,9 @@ Ordered roughly by value, not by effort.
 
 ## 1. Assign record owners from Airtable, not the loading user
 
-**Status: BUILT 2026-08-13, not yet loaded.** All four decisions below were answered by the
-Partnerships lead on 2026-08-13 and are implemented in the existing `Build-*.ps1` transforms.
+**Status: BUILT and LOADED 2026-08-13.** All four decisions below were answered by the Partnerships
+lead on 2026-08-13, implemented in the existing `Build-*.ps1` transforms, and proven by a full
+wipe-and-reload the same day. Measured results replace the predicted ones below.
 **Raised:** 2026-08-13 by the Partnerships lead.
 
 ### Decisions taken (2026-08-13)
@@ -40,16 +41,30 @@ GSA IT Operations took over the production run. Cost of the reversal: a re-run n
 fallback owner, so a manual reassignment of a fallback-owned record gets reverted. Full rationale in
 [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)'s "Record ownership" section.
 
-Coverage produced by the rebuilt transforms:
+**Status update 2026-08-13: LOADED and verified.** The full reload ran and ownership is now real data
+in Dev, not a prediction. Measured coverage:
 
-| Object | Own owner | Fallback |
-| --- | --- | --- |
-| Opportunity | 471 | 271 |
-| `LDGCRM_application__c` | 511 | 177 |
-| Contact | 1,553 | 0 |
-| `LDGCRM_Impediment__c` | 0 | 39 |
-| `LDGCRM_Application_Contact__c` | 0 | 1,880 |
-| Meetings (when built) | 1,315 of 1,845 | 530 |
+| Object | Own owner | Fallback | Predicted before loading |
+| --- | --- | --- | --- |
+| Opportunity | 471 | 271 | 471 / 271 ✅ |
+| `LDGCRM_application__c` | **361** | **327** | 511 / 177 ❌ — see below |
+| Contact | 1,548 | 0 | 1,553 / 0 — but see the warning |
+| `LDGCRM_Impediment__c` | 0 | 39 | 0 / 39 ✅ |
+| `LDGCRM_Application_Contact__c` | 0 | 1,878 | 0 / 1,880 ✅ |
+| Meetings (when built) | 1,315 of 1,845 | 530 | *(not built — still a prediction)* |
+
+**Two things only a real load could establish:**
+
+1. **Application was 511/177 in prediction and is 361/327 in fact.** 150 Applications inherit an owner
+   who is *active* but cannot own records — a Chatter Free user. Salesforce rejected them with
+   `OP_WITH_INVALID_USER_TYPE_EXCEPTION`. Fixed by filtering owner resolution on
+   `UserType = 'Standard'` in all four places a User Id becomes an `OwnerId`. Full detail in
+   [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md).
+2. **Contact ownership is now demonstrable, and it confirms the D2 concern precisely.** Of 1,548
+   Contacts, **1,426 (92%) are owned by `SystemUser DataLoader`** and 122 by the loading user. The
+   analysis predicted ~92% under a service account or one person; the measurement is 92%. The rule
+   works as designed and produces ownership data that carries almost no information. That is now
+   evidence for revisiting D2, not an argument about it.
 
 **⚠️ Contact ownership can't be verified in the sandbox, and may not be worth having in production.**
 The Account bootstrap loads Name + hierarchy only, so nearly every sandbox Account is owned by the
@@ -271,7 +286,9 @@ for Event/Task triggers before the first load**, per the standing rule that burn
 
 ## 3. Broker application relationships (second pass)
 
-**Status: BUILT 2026-08-13, not yet loaded.**
+**Status: BUILT and LOADED 2026-08-13 — 63/63, 0 failures.** The ordering held: no
+`Foreign key external ID ... not found` errors, confirming the second pass resolves correctly once
+the main Application file is in the org.
 
 `LDGCRM_Broker_App_Parent__c` links an Application to its parent Application. It cannot go in the main
 upsert file: Bulk API does not resolve external-ID references between two rows of the same batch,
@@ -297,8 +314,23 @@ meet. No longer cycles exist, and the deepest chain is 1, so no multi-pass hiera
 
 ## 4. Notes (final chunk)
 
-**Status:** not started, and **must be built last** — a note has to attach to a record that already
-exists.
+**Status: BUILT and LOADED 2026-08-13 — 537 created, 537 attached, 0 failures, 537 verified in the
+org.** Sharing landed as `ShareType=I` / `Visibility=InternalUsers` as decided. 200 notes remain
+withheld pending the Airtable Account fixes, and 59 placeholder values (`None`/`N/A`) are skipped by
+design.
+
+**It failed on the first attempt in a way worth recording, because the failure mode is specific to
+this chunk.** `Invoke-SalesforceRestJson` piped `ConvertFrom-Json` straight out of the function, and
+PowerShell 5.1 emits a deserialized JSON array as a **single** pipeline item — so a 100-record
+response measured as `Count = 1`. The loader's own guard ("positional correlation is unsafe")
+correctly refused to match results to sources and aborted — but by then 100 notes existed in
+Salesforce, and the throw preceded the write of `created-note-ids.csv`, so the only handle on them
+was gone. They were identified by being the only `SNOTE` documents linked exclusively to a `User`,
+and hard-deleted before the retry.
+
+Two durable lessons: **assign `ConvertFrom-Json` output to a variable before returning it** (the
+`@()` caller convention cannot repair a collapse that happens upstream of it), and **write the
+created-id file before anything that can throw**, not after.
 
 Freeform Airtable columns with no dedicated Salesforce field become `ContentNote` records attached to
 their parent. Candidates identified so far: Partner Account `Account Description` and `Known Blockers`,
@@ -315,10 +347,21 @@ stops being a small final chunk. Settle item 2's spike before sizing this one.
 
 ---
 
-## 4a. Rollback — thought through 2026-08-13, not yet built
+## 4a. Rollback — BUILT 2026-08-13
 
-**Status:** designed, deliberately not built yet. The pre-work it depends on (a restore point) now
-exists; the script does not.
+**Status: built** — `scripts/data-migration/Invoke-MigrationRollback.ps1`. The design below is what
+it implements; read it before running the script, particularly "What it will never be able to do".
+
+**One gap had to close first, and it was invisible until someone tried to use the restore point.**
+`Save-RestorePoint` captured baseline *counts* but not the *set* of external IDs already present per
+object — and a count cannot answer the only question a rollback must get right: did this run create
+this record, or was it already here? It now writes `external-ids/<Object>.csv` per object. That cost
+no extra queries: the tagged-count query was already reading exactly those rows and discarding
+everything but the row count.
+
+**Any run directory written before 2026-08-13 lacks that folder, and the script refuses to run
+against one** rather than assuming nothing was tagged beforehand. Missing data reads as unknown, and
+unknown must not authorise a delete.
 
 ### The asymmetry that defines the whole problem
 
@@ -351,13 +394,33 @@ reset is deliberately blocked from production anyway.
 ### What a rollback script should do
 
 1. Take a **run directory** (`full-load-<ts>/`), not a set of objects — so it undoes exactly one run.
-2. **Delete only what that run created** — external IDs present in the run's load CSVs and *absent*
-   from the pre-run baseline. Records that already existed are updated back, never deleted.
+2. **Delete only what that run created** — external IDs tagged in the org *now* and *absent* from the
+   pre-run baseline. Records that already existed are updated back, never deleted.
+   **Built against the org rather than the load CSVs, which was a change from this design.** The load
+   CSVs say what was *planned*: they can be overwritten by any later transform run, and they cannot
+   distinguish a row that was inserted from one that already existed and was merely updated. The set
+   difference above is measured on both sides.
 3. **Restore the Account pre-image** for the fields the migration overwrote.
 4. Delete notes from the run's `created-note-ids.csv` — `ContentNote` has no external ID, so that
    file is the only handle on them.
 5. Reverse order: children and junctions before parents, same as the factory reset.
 6. Its own typed token (`-Confirmation "ROLLBACK"`), and the separate production token on top.
+
+**One safeguard added during the build that this design missed.** The rollback is scoped by a
+*baseline*, not by a run id — so if another load ran *after* the one being rolled back, that load's
+records are newer than this baseline too and would be deleted as though this run had created them.
+The script therefore compares the org's current totals against the run's own `post-load-counts.csv`
+and **stops if they disagree**, on the grounds that the operator is about to undo more than they
+think. `-IgnoreDrift` overrides it, deliberately awkwardly.
+
+```powershell
+# Always dry-run first - writes the full plan, changes nothing
+powershell scripts/data-migration/Invoke-MigrationRollback.ps1 `
+    -Environment Dev -RunDirectory logs/data-migration/full-load-<ts> -PlanOnly
+
+powershell scripts/data-migration/Invoke-MigrationRollback.ps1 `
+    -Environment Dev -RunDirectory logs/data-migration/full-load-<ts> -Confirmation "ROLLBACK"
+```
 
 ### What it will never be able to do — state this before anyone relies on it
 

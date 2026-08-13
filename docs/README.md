@@ -218,10 +218,19 @@ as `CLAUDE.md`'s "Not every Airtable column is a simple same-name mapping":
   1,365 of 1,369 rows, and the 4 exceptions are the interesting ones: 3 rows name themselves as
   their own parent, and 1 depth-4 row's real parent sits below the deepest ancestor column.
 
-Owner is **not** loaded: the export's `Account Owner` is a display name and
-`Resolve-SalesforceOwnerIds` matches on email. Consequence worth knowing before a rehearsal —
-Contact ownership inherits from Account, so it still can't be demonstrated outside production (see
-`TRANSFORMATION-RULES.md`'s "Record ownership").
+**Owner is loaded, on INSERT only** (added 2026-08-13). The export's `Account Owner` is a *display
+name*, not an email, so this uses `Resolve-SalesforceOwnerIdsByName` rather than the email resolver.
+A display name is a weaker join — not unique, not stable, not an identifier — so it carries the same
+active-only and refuse-to-guess-on-duplicates guards, and both fire on this data (`Matthew Taylor`
+matches two Users in Dev, `SNA JTScholz` two). An Account that already exists keeps whatever owner it
+has; the bootstrap never reassigns one.
+
+Expect a large share to fall back to the loading user anyway: only 5 of the export's 14 owner names
+match an *active* User in Dev, and `SNA MSadi` — who owns 607 production Accounts — is inactive
+there. That is expected, not a failure. It also means **Contact ownership still can't be meaningfully
+demonstrated outside production**, since Contacts inherit their Account's owner (see
+`TRANSFORMATION-RULES.md`'s "Record ownership", which also argues that production Account ownership
+may not be worth inheriting at all — 92% of it is one service account plus one person).
 
 ## Production Account seed (one-time bootstrap, not a pipeline stage)
 
@@ -300,8 +309,14 @@ script's skipped/unmapped review CSVs should feed into this list as they're foun
 `logs/data-migration/` unnoticed.
 
 **For the stakeholder-facing status report — written for the Login.gov Partnerships lead, not for
-engineers — see [`migration-load-report-2026-08-13.pdf`](migration-load-report-2026-08-13.pdf)**
-(the [HTML source](migration-load-report-2026-08-13.html) is kept alongside it). It reconciles every
+engineers — see
+[`migration-load-report-2026-08-13-post-reload.pdf`](migration-load-report-2026-08-13-post-reload.pdf)**
+(the [HTML source](migration-load-report-2026-08-13-post-reload.html) is kept alongside it). **This
+is the current report.** It supersedes `migration-load-report-2026-08-13.pdf`, which was written
+*before* the full wipe-and-reload the same day and is kept only as the record of what was true when
+it was sent — do not send it. The post-reload edition carries the measured ownership figures, the
+537 loaded Notes, the 63 broker links, and two findings the rebuild exposed (the 92% service-account
+Contact ownership, and the 62% of Contacts with no name in Airtable). It reconciles every
 Airtable table against the records now in gsa-peo with counts, differences and percentages, shows how
 much of the automated pipeline is built per data set, explains the transformations in plain language,
 and lists the decisions needed from the Partnerships team in order of how many records each one
@@ -345,19 +360,39 @@ Airtable pull of 2026-08-12.
 - **Windows PowerShell 5.1**, same as every other script in this repo — no `??`, `?.`, ternary
   `?:`, `ConvertFrom-Json -Depth` (that flag is PS6+ only; 5.1's default max depth of 100 is fine
   here), or `-AsHashtable`.
-- **Data Loader CSVs are UTF-8 without a BOM.** `Export-DataLoaderCsv` in
-  `Common.DataMigration.ps1` writes this way deliberately — PowerShell 5.1's
-  `Export-Csv -Encoding UTF8` always adds a BOM, which some Data Loader CLI versions misread as
-  part of the first column header. Files meant for human review (unmatched/ambiguous-row reports)
-  still use plain `Export-Csv -Encoding UTF8` — the BOM there is harmless and helps Excel detect
-  UTF-8 correctly.
+- **Every CSV handed to the Bulk API is UTF-8 without a BOM — including DELETE files.**
+  `Export-DataLoaderCsv` in `Common.DataMigration.ps1` writes this way deliberately: PowerShell
+  5.1's `Export-Csv -Encoding UTF8` always adds a BOM, and the Bulk API reads those three bytes as
+  the start of an unquoted first field, hits the opening quote of `"Id"`, and fails the **whole job**
+  with:
+
+  ```
+  InvalidBatch : Failed to parse CSV. Found unescaped quote. A value with quote should be within a quote
+  ```
+
+  **That message names neither the BOM nor the encoding**, which is what makes it expensive — it
+  cost a failed Sandbox Factory Reset on 2026-08-13, when the note-deletion step (the one hand-built
+  CSV in a script whose other delete files all come from `sf data export bulk`, which emits no BOM)
+  used plain `Export-Csv`. If a Bulk job dies on an unescaped quote, check the first three bytes for
+  `EF BB BF` before looking at the data.
+
+  Files meant for **human review** (unmatched/ambiguous-row reports, audit summaries) still use plain
+  `Export-Csv -Encoding UTF8` — the BOM there is harmless and helps Excel detect UTF-8 correctly.
 - **Record ownership is set by the transforms, not by a backfill script** (decided 2026-08-13). Each
   object takes its owner from its own Airtable source where that person has an **active** Salesforce
-  User, and otherwise falls back to the loading user. The fallback is written as a **blank
-  `OwnerId`**, never an explicit Id: Bulk API 2.0 reads empty as "not supplied", so an insert lands
-  on the loading user *and* a re-run leaves any manual reassignment alone. One shared resolver
-  (`Resolve-SalesforceOwnerIds`) handles email → User for every object. Per-object sources, coverage,
-  and the three silent resolution traps it fixes are in
+  User, and otherwise falls back to a **named** owner — `peter.marks@gsa.gov`, overridable per run
+  with `-FallbackOwnerEmail`. The fallback is resolved to a real User Id at run time and written
+  **explicitly**, never left blank. Two shared resolvers in `Common.DataMigration.ps1` do the work:
+  `Resolve-SalesforceOwnerIds` (email → active User) and `Resolve-FallbackOwnerId`, which **throws**
+  rather than degrading if the address doesn't match an active User.
+  **This reversed an earlier design, and the earlier rationale no longer applies.** The first version
+  left `OwnerId` blank so Bulk API 2.0 would read it as "not supplied" — which handed the record to
+  whoever ran the load, and left a manual reassignment alone on a re-run. That was correct only while
+  the loading user *was* the intended owner; it stopped being true once it was confirmed that GSA IT
+  Operations runs the production load. The cost of the reversal is real and worth knowing before
+  anyone reports it as a bug: **a re-run re-asserts the fallback owner**, so a fallback-owned record
+  that someone manually reassigns gets pushed back. Per-object sources, coverage, the three silent
+  resolution traps, and the full rationale are in
   [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)'s "Record ownership" section.
 - **Every write is gated by a typed token, which can also be passed as a flag.** Interactive by
   default; non-interactive by supplying the same token the prompt asks for — `-Confirmation "LOAD"`,
@@ -391,6 +426,7 @@ Airtable pull of 2026-08-12.
 | `Build-NotesLoad.ps1` | Notes — prep `ContentNote`/`ContentDocumentLink` for freeform columns, last chunk | Built 2026-08-13. ~537 notes ready; ~59 placeholder values (`None`/`N/A`) skipped, ~200 waiting on a parent the Account data-quality issue withheld. Diffs against what is already attached, which is what makes a re-run safe. |
 | `Invoke-NotesLoad.ps1` | Notes — load. **The one chunk with its own loader**, not `Invoke-SalesforceLoad.ps1` | Built 2026-08-13. Attaching a note is three steps against two objects (insert `ContentNote` → read back each `ContentDocumentId` → insert `ContentDocumentLink`), and `ContentNote` has no external ID, so created note Ids are written to disk before anything else is attempted. Has an access preflight for the org's unmanaged `ContentDocumentLinkTrigger`, whose kill switch is inert. |
 | `Build-ProdAccountSeed.ps1` | Bootstrap — production Account **name** seeding, not a regular pipeline chunk | **Superseded 2026-08-13** by `Invoke-AccountBootstrap.ps1`. Still runs (now via the shared parser). Its name-dedupe is what left 31 rows unmappable for the hierarchy pass — see "Rebuilding an org's Account tree". |
+| `Invoke-MigrationRollback.ps1` | Rollback — undo ONE `Invoke-FullMigrationLoad.ps1` run from its restore point | Built 2026-08-13. Takes a `full-load-<ts>/` run directory, not a list of objects. Deletes only what that run *created* — external IDs tagged in the org now minus those tagged before the run, measured on both sides rather than read from the load CSVs — and **restores** the Account pre-image rather than deleting, because the migration updates Accounts it does not own. Refuses to run against a run directory with no `external-ids/` folder, and stops if the org has drifted from that run's post-load counts (`-IgnoreDrift` overrides). Typed `ROLLBACK` gate. **A best-effort tidy-up, not a safety net** — see `BACKLOG.md` §4a for what it can never undo. |
 | `Invoke-AccountBootstrap.ps1` | Bootstrap — production Account **names + parent hierarchy**, multi-pass, any environment | Built 2026-08-13. Dry-run against Dev: 1,360 planned Accounts, 0 to insert (already seeded), 1,087 parent links to set, 31 unmappable + 1 unresolvable parent + 1 conflict reported. **Not yet applied** — awaiting a live run. |
 
 ## Load order

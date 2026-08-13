@@ -254,6 +254,28 @@ LDGCRM_Application_Contact__c -> LDGCRM_Opportunity_Impediment__c -> LDGCRM_Appl
       after the wipe.
 - [ ] Confirm Master-Detail cascades behaved — deleting Opportunity or Impediment also removes
       `LDGCRM_Opportunity_Impediment__c`; deleting Account also removes `LDGCRM_Partner_Account__c`.
+- [ ] ⚠️ **Expect the Account delete to fail on any Account that pre-existing test data hangs off.**
+      This is the platform protecting test data, not a bug — but the script treats a partial delete
+      as fatal, stops, and **withholds the Account bootstrap**, so the run has to be finished by hand.
+
+      It happened on 2026-08-13: 587 of 588 Accounts deleted, and
+      `U.S. Citizenship and Immigration Services` survived with
+      `DELETE_FAILED: ... associated with the following application contacts.: LDGAC-0002 ... LDGAC-0005`.
+      The chain was **not** the one you would guess from the error — it ran through **Contact**, not
+      Partner Account: two untagged test Contacts (`Terry L. Harrison`, `Test Contact`) were parented
+      onto that real migrated Account, the delete cascaded toward them, and the restricted lookup from
+      the four `LDGAC-000x` junction rows blocked it.
+
+      **Fixed at source rather than worked around** (2026-08-13): those Contacts were re-pointed at
+      `Test Account`, `HHS- Test1` was moved onto `Test Account` (so it inherits `Test Market Segment`
+      instead of the real `Benefits`), and the parentless `State Citizenship` Application was given
+      `Test Partner Account`. The pre-existing test island is now self-contained and references no
+      migrated record, so the next reset should delete all 588. **If this recurs, find what the
+      surviving Account is a parent of and re-point it — don't exclude the Account from the wipe.**
+- [ ] If the delete did stop early, run the bootstrap by hand before loading — it is skipped
+      deliberately, because bootstrapping on top of a half-deleted org corrupts the next run's
+      preflight counts:
+      `powershell scripts/data-migration/Invoke-AccountBootstrap.ps1 -Environment Dev -Confirmation "BOOTSTRAP"`
 - [ ] Confirm untagged/pre-existing records survived (compare against baseline).
 - [ ] Keep the exported ID CSVs in `logs/cleanup/` — the only record of what was deleted.
 
@@ -341,6 +363,29 @@ Market Segment (already loaded - do not touch)
 - [ ] Run `Build-PartnerAccountLoad.ps1`. Expect **94 ready, 5 skipped, 5 of 7 owner emails resolved**.
 - [ ] Load (upsert). Expect ~74 succeed, ~20 fail — all tracing to parent Accounts among the 169
       unmatched. Same failures as previous runs = correct, not a regression.
+- [ ] ⚠️ **THE ORCHESTRATOR WILL STOP HERE, EVERY TIME, AND THAT IS NOT A BUG TO FIX BY RETRYING.**
+      `Invoke-SalesforceLoad.ps1` exits non-zero on *any* Bulk failure, and this step's correct
+      outcome includes ~20 failures — so `Invoke-FullMigrationLoad.ps1` records
+      `PartnerAccount ... LOAD FAILED (exit 1)` and halts, even though the step did exactly what it
+      should. Confirmed on 2026-08-13.
+
+      **Verify it's the expected failure, then resume past it** — do not re-run PartnerAccount:
+      ```powershell
+      # 74 tagged + 2 pre-existing = 76 means the step succeeded as designed
+      sf data query -q "SELECT COUNT() FROM LDGCRM_Partner_Account__c WHERE LDGCRM_External_ID__c != null" --target-org <alias>
+
+      powershell scripts/data-migration/Invoke-FullMigrationLoad.ps1 -Environment Dev `
+          -StartAtStep Contact -Confirmation "LOAD"
+      ```
+      To prove the 20 failures are the known cause rather than something new, check that each
+      missing row's `LDGCRM_Account__r.LDGCRM_External_ID__c` is absent from the org's tagged
+      Accounts. On 2026-08-13 that accounted for **20 of 20**.
+
+      The same shape bites the factory reset (a partial Account delete is treated as fatal and
+      withholds the bootstrap). Both are "fail loudly on an expected partial", which is the right
+      default but makes the documented-correct path look broken to an operator following the runbook.
+      Worth teaching the loader to distinguish an expected partial from a real failure before the
+      Operations hand-off.
 - [ ] ⚠️ **Verify `LDGCRM_Partner_Account_Owner__c` holds ACTIVE users only** — it now feeds
       Application's `OwnerId`, so a stale inactive owner propagates downstream.
 - [ ] Spot-check the Market Segment before-save Flow fired (matches the parent Account's segment).
@@ -367,12 +412,19 @@ Market Segment (already loaded - do not touch)
           -CsvFile "data\salesforce-loads\Contact-upsert.csv" `
           -DisableTriggerControl "Contact"
       ```
-- [ ] ⚠️ **Verify zero junk FCIC Accounts.** `GSA_FCIC_ContactTrigger` creates an Account named after
-      the person for every Contact inserted with a blank `AccountId` — and ~827 Contacts have no
-      resolvable Account. Account total must be unchanged:
+- [ ] ⚠️ **Verify no NEW junk FCIC Accounts — measure a delta, not a total.**
+      `GSA_FCIC_ContactTrigger` creates an Account named after the person for every Contact inserted
+      with a blank `AccountId`. **Dev already carries 4 such Accounts** from an 18-row Contact test
+      batch on 2026-08-13; they hold no external ID, so no factory reset removes them and the count
+      never returns to zero. Testing for zero would report a bypass failure on every run for ever.
+      `Invoke-FullMigrationLoad.ps1` records the pre-run figure in
+      `full-load-<ts>/fcic-junk-baseline.txt` and compares against it. By hand:
       ```
       sf data query -q "SELECT COUNT() FROM Account WHERE RecordType.DeveloperName = 'FCIC_Individual'" --target-org <alias>
       ```
+      Expect it **unchanged from before the load** — 4 in Dev as of 2026-08-13, and a different
+      number in any other environment, so measure it before you start rather than carrying Dev's
+      figure forward.
 - [ ] ⚠️ **Verify `TriggerControls__c.Contact.On__c` is back to `true`.** Restored in a `finally` block
       with a verifying re-query, proven under real failure — check anyway. Leaving it off silently
       breaks another team's app.

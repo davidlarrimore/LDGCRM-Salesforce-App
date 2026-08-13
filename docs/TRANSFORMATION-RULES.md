@@ -125,11 +125,19 @@ adds a query and a failure mode for a case that hasn't arisen yet.
 
 ### Which object takes its owner from where
 
-| Object | Owner source | Own owner / fallback (2026-08-13) |
+Figures below are **measured from the completed reload of 2026-08-13**, not predicted.
+
+| Object | Owner source | Own owner / fallback (2026-08-13, loaded) |
 | --- | --- | --- |
 | Opportunity | `Pod Opportunity Lead` (collaborator, scalar — verified 0 of 826 rows are multi-valued) | **471 / 271** |
-| `LDGCRM_application__c` | its Partner Account's `LDGCRM_Partner_Account_Owner__c` | **511 / 177** |
-| Contact | its resolved Account's `OwnerId` | **1,553 / 0** — see the warning below |
+| `LDGCRM_application__c` | its Partner Account's `LDGCRM_Partner_Account_Owner__c` | **361 / 327** — *revised down from a predicted 511/177, see below* |
+| Contact | its resolved Account's `OwnerId` | **1,548 inherited / 0 fallback** — but 1,426 of those inherit `SystemUser DataLoader`; see the warning below |
+
+**⚠️ Application's split was predicted as 511/177 and is actually 361/327.** The difference is 150
+records whose Partner Account owner is an **active user who cannot own records** — see the UserType
+section immediately below. The predicted figure was computed by a transform that had never been
+loaded, so nothing had ever tested whether those owners were *assignable*. Treat any un-loaded
+ownership prediction the same way.
 | `LDGCRM_Impediment__c` | *none — the Airtable table has no owner column* | 0 / 39 |
 | `LDGCRM_Application_Contact__c` | *none — Airtable records the association, not an owner* | 0 / 1,880 |
 | Activity/Event (Meetings) | `Meeting Leader` (collaborator) — **not yet built** | 1,315 of 1,845 would resolve |
@@ -204,7 +212,30 @@ nearly everything recoverable. It is kept only because a recovered Account is a 
 instead of being skipped — and it is the first thing to switch off if an inferred link ever puts a
 contact on the wrong agency.
 
-### ⚠️ Contact ownership cannot be demonstrated in gsa-peo today
+### ⚠️ Contact ownership WAS demonstrated on 2026-08-13, and it confirms the concern exactly
+
+**This section previously said Contact ownership could not be demonstrated in the sandbox. That is
+no longer true, and the result matters for decision D2.** The Account bootstrap now seeds owners from
+the production export, so the full reload of 2026-08-13 produced the real distribution:
+
+| Contact owner after the reload | Contacts | Share |
+| --- | --- | --- |
+| `SystemUser DataLoader` | **1,426** | **92%** |
+| `Dave Larrimore` (the loading user) | 122 | 8% |
+
+**Predicted 92%, observed 92%.** The inheritance rule works exactly as designed and produces exactly
+the outcome the analysis warned about: nine in ten migrated Contacts owned by a data-loader service
+account. Ownership-based reporting, "my records" views and owner-based sharing rules on Contact are
+therefore near-meaningless as loaded — not because the rule misfires, but because the Account
+ownership it inherits from carries almost no information.
+
+This is now an evidenced decision rather than an argument, and it is the strongest available input to
+D2 in [`RELOAD-QA-CHECKLIST.md`](RELOAD-QA-CHECKLIST.md): keep the rule, drop the inheritance in
+favour of the named fallback, or inherit only from real people. **No code change is proposed here —
+the rule was confirmed as-is on 2026-08-13 and this is evidence for revisiting it, not a decision to
+change it.**
+
+### Historical note: why it could not be demonstrated before
 
 The Account bootstrap loads Accounts **Name and parent hierarchy only, no owner**, so nearly every
 Account in the Dev sandbox is owned by whoever ran it. Contacts faithfully inherit their Account's
@@ -245,6 +276,39 @@ Their production status is unverified — production isn't authorized on this ma
 `SystemUser DataLoader` is worth noting separately: an **active service account owning 651 production
 Accounts**. That is a working precedent for running production loads as a dedicated integration user
 rather than an individual's login — the recommendation recorded above.
+
+### ⚠️ `IsActive` does NOT mean "can own a record" — the trap that only a real load finds
+
+**Found 2026-08-13, on the first load that ever wrote `OwnerId`.** It is the single most transferable
+lesson from the ownership work, and no amount of reading metadata would have caught it.
+
+`Resolve-SalesforceOwnerIds` filtered owners to `IsActive = true`, which is necessary but **not
+sufficient**. `Shaunte Brown` is an *active* User on the **`GSA Chatter Free User`** profile —
+`UserType = CsnOnly`. Chatter Free, portal and community users **cannot own** standard or custom
+object records at all. The resolver returned a real, active, perfectly valid-looking User Id, the
+CSV looked correct, and Salesforce rejected **150 of 688 Applications** at load time:
+
+```
+OP_WITH_INVALID_USER_TYPE_EXCEPTION : Operation not valid for this user type
+```
+
+**That message names no field and no user.** It reads like a permissions or profile problem on the
+*running* user, not an owner problem on 150 specific rows — which is what makes it expensive to
+diagnose. The route to the answer is to group the failed rows by `OwnerId` and query
+`SELECT UserType, Profile.Name FROM User WHERE Id IN (...)`; 150 of 150 shared one owner.
+
+Both resolvers now require **`UserType = 'Standard'`**. Of the 14 distinct owners this migration
+assigns, 13 already qualified and exactly one did not, so the fix costs nothing real — that owner's
+records now take the fallback owner correctly. **This org has ~2,637 Chatter-only users**, so the
+exposure was never incidental, and a different environment will have a different set: re-check
+rather than assuming Dev's single case is the only one.
+
+The same gap existed in `Resolve-SalesforceOwnerIdsByName`, which assigns `Account.OwnerId` during
+the bootstrap, and was fixed alongside it.
+
+**The general principle, which is General Principle #2 again in a new costume:** a field that
+*accepts* a User Id does not accept *every* User Id. Ownership has eligibility rules that live on
+the User, not on the field being written, and `sf sobject describe` shows none of them.
 
 ### Resolving an email to a User: three traps, all silent
 
@@ -1695,6 +1759,41 @@ genuinely writable, but none are, so it never came up. **Lesson: check for a `<f
 mapping *any* field that looks like a plain calculated/aggregate value (Percent, Number, even Text)
 — "the type looks normal" isn't the same as "it's writable," the same way `<type>TextArea</type>`
 without a length doesn't mean "255 characters is enough" (see General Principle #4).**
+
+### Two fields were migrated until 2026-08-13, then dropped when the org removed them
+
+`# of Estimated Annual IdV Transactions` → `LDGCRM_num_est_annual_idv__c` and `# of Estimated
+Monthly Active Users` → `LDGCRM_Est_Monthly_Active_Users__c` loaded successfully on 2026-08-12
+(688/688). Both target fields were then **deleted from the Dev org as no longer wanted**, so the
+mappings were removed from `Build-ApplicationLoad.ps1` and both `field-meta.xml` files deleted from
+`sfdx/force-app`. This cost 519 and 612 populated values respectively — a deliberate scope
+reduction, not a data-quality problem, and **not** something to raise with the Airtable owners.
+
+**Two things worth carrying forward from how this surfaced.**
+
+First, **the error names only the first missing column.** Bulk API rejected the entire 688-row batch
+with:
+
+```
+InvalidBatch : Field name not found : LDGCRM_num_est_annual_idv__c
+```
+
+Fixing that one field alone would have produced the identical failure on the second. When a load
+dies this way, diff **every** CSV column against `sf sobject describe` in one pass rather than
+chasing the error field by field:
+
+```powershell
+$org = @{}; (sf sobject describe --sobject <Object> --target-org <alias> --json | ConvertFrom-Json).result.fields |
+    ForEach-Object { $org[$_.name.ToLower()] = $true }
+(Get-Content <csv> -TotalCount 1) -replace '"','' -split ',' |
+    Where-Object { -not $org.ContainsKey((($_ -split '\.')[0] -replace '__r$','__c').ToLower()) }
+```
+
+Second, **deleting a field leaves references behind in eight other metadata files.** The two fields
+appeared in the Application layout, all three PermissionSets, and four ReportTypes. Removing only
+the `field-meta.xml` would leave dangling `<field>` entries that break the next deploy of those
+components — so a field removal means sweeping `layouts/`, `permissionsets/` and `reportTypes/` too.
+`grep -rl <fieldName> sfdx/force-app` finds them all.
 
 ### Fields with no destination — the full inventory (as requested)
 
