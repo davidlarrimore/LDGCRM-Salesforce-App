@@ -66,6 +66,17 @@ param(
     # contacts off a single example; 3 is the agreed floor.
     [int]$DomainInferenceMinSupport = 3,
 
+    # How many known name/email pairs a domain needs before its "a.b@" order
+    # (first.last vs last.first) is trusted. Same reasoning as above: a domain
+    # should not be flipped on one or two examples. Domains below the floor
+    # default to first.last, which is right ~90% of the time overall.
+    [int]$NameOrderMinSupport = 3,
+
+    # Turns off deriving a name from the email local part entirely, reverting to
+    # the old behaviour of using the whole address as LastName. The switch to
+    # reach for if a derived name is ever seen on the wrong person.
+    [switch]$DisableEmailNameDerivation,
+
     # Owner for records whose own owner can't be determined. Resolved to a User
     # at run time (never a hard-coded Id - production's differs from every
     # sandbox's) and the run FAILS if it doesn't match an active User.
@@ -206,11 +217,64 @@ $ExistingContacts = @(Invoke-SalesforceQuery `
     -Soql "SELECT FirstName, LastName, Email FROM Contact WHERE Email != null" `
     -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
 $ExistingByEmail = @{}
+$PlaceholderNameCount = 0
 foreach ($Existing in $ExistingContacts) {
     $Key = "$($Existing.Email)".Trim().ToLower()
-    if ($Key -and -not $ExistingByEmail.ContainsKey($Key)) { $ExistingByEmail[$Key] = $Existing }
+    if (-not $Key -or $ExistingByEmail.ContainsKey($Key)) { continue }
+
+    # SKIP CONTACTS WHOSE NAME THIS PIPELINE ITSELF INVENTED.
+    #
+    # A LastName containing "@" is an email placeholder written by an earlier
+    # run of this very script. Reading it back and calling it a "recovered
+    # name" is the script testifying to its own output - it looks like a
+    # success and carries no information.
+    #
+    # This is not hypothetical: before this guard, 713 of 1,553 contacts took
+    # their name from the org, and those were overwhelmingly placeholders from
+    # the previous load - which also suppressed the email-derivation rules
+    # below, because step (b) matched first. Exactly the same trap as the
+    # "970 names recovered from Salesforce" figure that turned out to be the
+    # transform reading back its own placeholders (2026-08-13).
+    if ("$($Existing.LastName)" -match '@') { $PlaceholderNameCount++; continue }
+
+    $ExistingByEmail[$Key] = $Existing
 }
-Write-Host "$($ExistingByEmail.Count) existing Contacts with an email in $OrgAlias."
+Write-Host "$($ExistingContacts.Count) existing Contacts with an email in $OrgAlias; $($ExistingByEmail.Count) carry a real name."
+if ($PlaceholderNameCount -gt 0) {
+    Write-Host "  $PlaceholderNameCount ignored - their LastName is an email placeholder written by an earlier run." -ForegroundColor DarkGray
+}
+
+# --- Learn each domain's name order ----------------------------------------
+# "a.b@domain" means first.last at most agencies and last.first at some -
+# dol.gov is 16:1 last.first. Rather than assume, measure it.
+#
+# EVIDENCE COMES FROM AIRTABLE ONLY, DELIBERATELY. Salesforce Contacts are not
+# used, even the ones carrying a real-looking name, because after one load with
+# these rules the org contains names this script DERIVED - and a derived name
+# feeding back in would confirm whatever order was chosen first, no matter
+# whether it was right. The circle closes silently and the evidence looks
+# stronger every run.
+#
+# Airtable's Name column is authored by humans, so it is ground truth. 490 pairs
+# is ample: dol.gov alone testifies 16:1.
+Write-Host "Learning each domain's email name order from Airtable's authored names..." -ForegroundColor Cyan
+
+$KnownNamePairs = [System.Collections.Generic.List[object]]::new()
+foreach ($Row in $AirtableContacts) {
+    $KnownName = "$($Row.fields.Name)".Trim()
+    $KnownEmail = Get-CleanContactEmail -Value $Row.fields.Email
+    if ($KnownName -and $KnownEmail) {
+        $KnownNamePairs.Add([PSCustomObject]@{ Name = $KnownName; Email = $KnownEmail })
+    }
+}
+
+$NameOrderByDomain = Get-EmailNameOrderByDomain -KnownNamePairs @($KnownNamePairs) -MinSupport $NameOrderMinSupport
+$LastFirstDomains = @($NameOrderByDomain.GetEnumerator() | Where-Object { $_.Value -eq 'LastFirst' } | ForEach-Object { $_.Key } | Sort-Object)
+
+Write-Host "$($KnownNamePairs.Count) known name/email pairs; $($NameOrderByDomain.Count) domain(s) have enough evidence to fix an order."
+if ($LastFirstDomains.Count -gt 0) {
+    Write-Host "  last.first domains: $($LastFirstDomains -join ', ')" -ForegroundColor Yellow
+}
 
 # --- Resolvable lookups ----------------------------------------------------
 Write-Host "Querying $OrgAlias for Accounts and Partner Accounts..." -ForegroundColor Cyan
@@ -427,11 +491,14 @@ if (-not $DisableDomainInference) {
 
 $UpsertRows = [System.Collections.Generic.List[object]]::new()
 $NameReviewRows = [System.Collections.Generic.List[object]]::new()
+$RoleMailboxRows = [System.Collections.Generic.List[object]]::new()
 $ValueReviewRows = [System.Collections.Generic.List[object]]::new()
 $IdentityMapRows = [System.Collections.Generic.List[object]]::new()
 $NameFromAirtable = 0
 $NameFromExistingContact = 0
+$NameFromEmailDerived = 0
 $NameFromEmail = 0
+$NameRoleMailbox = 0
 $NoNameAtAll = 0
 $FederalRecordTypeCount = 0
 $GsaRecordTypeCount = 0
@@ -482,20 +549,55 @@ foreach ($Group in $Groups) {
         })
     }
     elseif ($Email) {
-        # Deliberately ugly, so it's obvious in the UI which records still need
-        # a real name. LastName is capped at 80; every address here is shorter,
-        # but truncate defensively rather than fail the row.
-        $LastName = $Email
+        # Derive a name FROM the address where it genuinely encodes one, rather
+        # than dropping the whole address into LastName. See
+        # Resolve-NameFromEmail for the rules and the measurements behind them.
+        $Derived = if ($DisableEmailNameDerivation) {
+            [PSCustomObject]@{ FirstName = ""; LastName = $Email; Rule = "derivation disabled"; IsPerson = $true; Confident = $false }
+        } else {
+            Resolve-NameFromEmail -Email $Email -NameOrderByDomain $NameOrderByDomain
+        }
+
+        $FirstName = $Derived.FirstName
+        $LastName = $Derived.LastName
+
+        # LastName is required. Nothing should reach here empty, but an address
+        # of pure punctuation could - fall back to the address rather than
+        # emitting a row Salesforce will reject.
+        if (-not $LastName) { $LastName = $Email }
         if ($LastName.Length -gt 80) { $LastName = $LastName.Substring(0, 80) }
-        $NameFromEmail++
-        $NameReviewRows.Add([PSCustomObject]@{
-            ContactExternalId = $Group.ExternalId
-            Email             = $Email
-            AppliedFirstName  = ""
-            AppliedLastName   = $LastName
-            Source            = "Email address (placeholder)"
-            Reason            = "No Name in Airtable and no existing Salesforce Contact with this email. LastName is required, so the address was used as a placeholder - needs a real name, or a decision on whether this is a service/shared mailbox that shouldn't be a Contact."
-        })
+
+        if (-not $Derived.IsPerson) {
+            $NameRoleMailbox++
+            $RoleMailboxRows.Add([PSCustomObject]@{
+                ContactExternalId = $Group.ExternalId
+                Email             = $Email
+                AppliedLastName   = $LastName
+                Reason            = "The address looks like a shared or role inbox, not a person. It was NOT split into a first/last name - doing so would invent someone. Decide whether this belongs in the CRM as a Contact at all."
+            })
+        }
+        elseif ($Derived.Confident) {
+            $NameFromEmailDerived++
+            $NameReviewRows.Add([PSCustomObject]@{
+                ContactExternalId = $Group.ExternalId
+                Email             = $Email
+                AppliedFirstName  = $FirstName
+                AppliedLastName   = $LastName
+                Source            = "Derived from email ($($Derived.Rule))"
+                Reason            = "Airtable has no Name. The address encodes one, so it was split into a first and last name. VERIFY: this is derived, not authored - a nickname, married name or unusual address would produce the wrong name."
+            })
+        }
+        else {
+            $NameFromEmail++
+            $NameReviewRows.Add([PSCustomObject]@{
+                ContactExternalId = $Group.ExternalId
+                Email             = $Email
+                AppliedFirstName  = ""
+                AppliedLastName   = $LastName
+                Source            = "Email local part ($($Derived.Rule))"
+                Reason            = "No Name in Airtable, and the address has no defensible split point (e.g. jwoolf, crdavis1 - an initial plus surname). The local part was used as LastName so the record is findable; it still needs a real name."
+            })
+        }
     }
     else {
         # No name and no email - nothing to key a person on at all.
@@ -638,12 +740,14 @@ $NameReviewFile = Join-Path $LogDir "Contact-name-review-$Timestamp.csv"
 $ValueReviewFile = Join-Path $LogDir "Contact-value-review-$Timestamp.csv"
 $AccountReviewFile = Join-Path $LogDir "Contact-no-account-$Timestamp.csv"
 $DomainInferenceFile = Join-Path $LogDir "Contact-domain-inferred-account-$Timestamp.csv"
+$RoleMailboxFile = Join-Path $LogDir "Contact-role-mailbox-$Timestamp.csv"
 
 if ($UpsertRows.Count -gt 0) { Export-DataLoaderCsv -InputObject $UpsertRows.ToArray() -Path $UpsertFile }
 # The identity map is an input to the Application-Contact junction chunk, not
 # a review artifact - it belongs alongside the load CSVs.
 if ($IdentityMapRows.Count -gt 0) { Export-DataLoaderCsv -InputObject $IdentityMapRows.ToArray() -Path $IdentityMapFile }
 if ($NameReviewRows.Count -gt 0) { $NameReviewRows | Export-Csv -LiteralPath $NameReviewFile -NoTypeInformation -Encoding UTF8 }
+if ($RoleMailboxRows.Count -gt 0) { $RoleMailboxRows | Export-Csv -LiteralPath $RoleMailboxFile -NoTypeInformation -Encoding UTF8 }
 if ($ValueReviewRows.Count -gt 0) { $ValueReviewRows | Export-Csv -LiteralPath $ValueReviewFile -NoTypeInformation -Encoding UTF8 }
 if ($AccountReviewRows.Count -gt 0) { $AccountReviewRows | Export-Csv -LiteralPath $AccountReviewFile -NoTypeInformation -Encoding UTF8 }
 if ($DomainInferenceRows.Count -gt 0) { $DomainInferenceRows | Export-Csv -LiteralPath $DomainInferenceFile -NoTypeInformation -Encoding UTF8 }
@@ -659,8 +763,10 @@ Write-Host ("{0,-52} {1,8:N0}" -f "Ready for upsert", $UpsertRows.Count)
 Write-Host ""
 Write-Host "  Name source:" -ForegroundColor Cyan
 Write-Host ("{0,-52} {1,8:N0}" -f "    real Name from Airtable", $NameFromAirtable)
-Write-Host ("{0,-52} {1,8:N0}" -f "    recovered from an existing Salesforce Contact", $NameFromExistingContact)
-Write-Host ("{0,-52} {1,8:N0}" -f "    email address used as placeholder", $NameFromEmail)
+Write-Host ("{0,-52} {1,8:N0}" -f "    read back from a Contact already in the org", $NameFromExistingContact)
+Write-Host ("{0,-52} {1,8:N0}" -f "    DERIVED from the email (first + last recovered)", $NameFromEmailDerived)
+Write-Host ("{0,-52} {1,8:N0}" -f "    email local part only (no split possible)", $NameFromEmail)
+Write-Host ("{0,-52} {1,8:N0}" -f "    role/shared mailbox (not a person)", $NameRoleMailbox)
 Write-Host ("{0,-52} {1,8:N0}" -f "    skipped - no name AND no email", $NoNameAtAll)
 Write-Host ""
 Write-Host "  Account link:" -ForegroundColor Cyan

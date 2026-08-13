@@ -79,6 +79,34 @@ wrong in this migration:
    restricted values or a TextArea's real length — the declared type is necessary but not sufficient
    information before deciding a field is a normal migration target.
 
+8. **⚠️ A transform that reads the target org can end up reading its OWN previous output — and it
+   will look like a success.** This pipeline is re-runnable and queries Salesforce to decide what to
+   do, which means anything it wrote last time is waiting to be read back as though it were source
+   data. The result is a metric that measures nothing and a rule that silently stops firing.
+
+   It has now cost two features:
+
+   - The Contact name waterfall reported **"970 names recovered from an existing Salesforce
+     Contact"** — a number that looked like the migration rescuing real names. It was reading back
+     email placeholders *it had written on the previous run*. The true figure was zero. Only wiping
+     the org revealed it.
+   - Building the email-name derivation, the same step matched first and reduced **597 derived names
+     to 172** before anyone noticed, because a placeholder from the last load counts as "already has
+     a name".
+   - The per-domain name-order learner would have done it a third way: after one load, names this
+     script *derived* would testify to the order that produced them, confirming whatever was chosen
+     first while the evidence appeared to strengthen every run.
+
+   **Two questions to ask of any org query in a transform:** could this row have been written by
+   this pipeline? And if it was, does using it make the output *look* better while making it no
+   truer? Where the answer is yes, either exclude the rows structurally (the Contact waterfall skips
+   any `LastName` containing `@`) or restrict the query to the authored source (the order-learner
+   uses Airtable names only, never Salesforce's).
+
+   The tell, when it does happen, is a **suspiciously helpful number** — a recovery or match rate
+   far better than the source data can justify. Treat that as a prompt to ask where the data came
+   from, not as good news.
+
 **When writing a lookup or Master-Detail field's value into a CSV, the column header is not the
 field's own API name.** Bulk API 2.0 resolves a parent by external ID only when the header uses the
 relationship name (replace the field's trailing `__c` with `__r`) followed by `.` and the external ID
@@ -1289,22 +1317,111 @@ surviving Contact) as a direct input to that chunk.
 
 ### `LastName` is required and mostly absent — a documented waterfall
 
-Only 491 of 1,599 rows have a `Name`. The waterfall (user-confirmed 2026-08-13):
+Only 491 of 1,599 rows have a `Name`. The waterfall (extended 2026-08-13 with email derivation):
 
 | Step | Result |
 | --- | --- |
-| 1. Airtable `Name` (including a merged sibling's) | 481 |
-| 2. `FirstName`/`LastName` from an existing Salesforce Contact matched on email | 8 |
-| 3. The email address itself as `LastName` | 998 |
-| 4. Neither name nor email → **skipped** | 45 |
+| 1. Airtable `Name` (including a merged sibling's) | 973 |
+| 2. `FirstName`/`LastName` from an existing Salesforce Contact matched on email | 0 — see the guard below |
+| 3. **Derived from the email address** — a real first *and* last name | **597** |
+| 4. Email local part as `LastName` where no split is defensible | 317 |
+| 5. Role/shared mailbox — local part kept, never split | 56 |
+| 6. Neither name nor email → **skipped** | 45 |
 
-Step 2 recovers almost nothing in gsa-peo (it had 3 Contacts) but is the behaviour **production**
-needs, where real Contacts already exist. Step 3 is deliberately ugly so it is obvious in the UI
-which records still need a real name; every step-2 and step-3 row goes to
-`Contact-name-review-<ts>.csv`.
+Step 2 is the behaviour **production** needs, where real Contacts already exist. Every row from
+steps 2–4 goes to `Contact-name-review-<ts>.csv`; step 5 gets its own
+`Contact-role-mailbox-<ts>.csv`.
 
-Names split on the **last** space, keeping multi-word forenames intact (`Krishna-Priya Mandala` →
-`Krishna-Priya` / `Mandala`); the 12 single-token names go entirely into `LastName`, the required side.
+Airtable names split on the **last** space, keeping multi-word forenames intact (`Krishna-Priya
+Mandala` → `Krishna-Priya` / `Mandala`); single-token names go entirely into `LastName`, the
+required side.
+
+### Deriving a name from the email address (built 2026-08-13)
+
+Before this, 970 contacts (62% of the load) went in with a raw address in `LastName` —
+`aaron.greenwell@tspi.net` as a surname. Most of those addresses encode a real name. **597 now get a
+genuine first and last name.**
+
+Every rule below was derived by measuring the actual 970-row population, not assumed.
+
+| Rule | Rows | Behaviour |
+| --- | --- | --- |
+| Role / shared mailbox | 56 | **Never split.** `LastName` = local part verbatim |
+| DoD affiliation suffix | 56 | Strip trailing `.civ` / `.mil` / `.ctr`, then re-apply |
+| `first.M.last` | 47 | Drop the single-letter middle token |
+| `first.last` | 440 | Split — **order decided by the domain**, see below |
+| `first_last` | 61 | Split on underscore |
+| No separator (`jwoolf`) | 242 | No defensible split; local part as `LastName` |
+| Other / ambiguous | 68 | Same |
+
+**Measured accuracy, as a holdout** against the 358 contacts whose real name is already known:
+**85.2% exact on both names**, 7.3% surname-right. Of the 27 non-matches, **none are ordering
+errors** — 10 are cases where *Airtable's* name is reversed, 8 are spelling differences, 6 are
+shared or reassigned mailboxes, 3 carry decoration. In several the derived name is **better than the
+authored one**: `jason.cortezzo@ssa.gov` is filed in Airtable as "Jason Cotezzo", and
+`robert.fink@spr.doe.gov` as "Robert Fink, CISSP (Contractor)".
+
+#### ⚠️ Name order is a per-agency convention, not a constant
+
+The obvious rule — `a.b@` means first.last — is wrong for real partners. Measured against the 490
+Airtable contacts carrying both a Name and an Email:
+
+| Domain | first.last | last.first |
+| --- | --- | --- |
+| `dol.gov` | 1 | **16** |
+| `pbgc.gov` | 5 | 7 |
+| `epa.gov` | 0 | 2 |
+| `octo.us` | 0 | 2 |
+| everywhere else | 235 | 27 overall |
+
+`batchelet.doug@dol.gov` is Doug Batchelet. A blanket first.last rule reverses **44** of the 970,
+concentrated in one major partner agency.
+
+`Get-EmailNameOrderByDomain` therefore learns the order per domain, requiring `-NameOrderMinSupport`
+(default 3) one-sided examples before trusting a domain and defaulting to first.last otherwise —
+the same reasoning as the `.gov` Account-domain inference. `epa.gov` and `octo.us` have only 2
+examples each and so stay on the default; they will flip themselves once a third real name appears.
+
+#### ⚠️ Hyphen is NOT a separator, and that was checked rather than assumed
+
+It looks like an obvious third separator alongside `.` and `_`. The data says the opposite: of 20
+hyphenated local parts, nearly all are **role inboxes** — `e-filing`, `tracs-helpdesk`,
+`benefits-notify`, `eere-exchangesupport`, `hsin-helpdesk`. Splitting on hyphen invents a person
+called "Tracs Helpdesk".
+
+Worse, a hyphen appears legitimately **inside** a surname: `smitha_singi-reddy` is Smitha
+Singi-Reddy. So hyphens are **preserved, never split on** — splitting would both fabricate people
+and break real names.
+
+#### ⚠️ Two circularity guards, because this rule can feed itself
+
+This is the same trap as the "970 names recovered from Salesforce" figure that turned out to be the
+transform reading back its own placeholders — and building this feature reintroduced it twice before
+the guards went in.
+
+1. **The waterfall ignores existing Contacts whose `LastName` contains `@`.** Those are placeholders
+   from an earlier run of this very script. Without the guard, 713 of 1,553 contacts took their name
+   from the org — and because step 2 matches before step 3, it *suppressed the derivation entirely*
+   (172 derived instead of 597).
+2. **The order-learner uses Airtable-authored names ONLY**, never Salesforce Contacts. After one
+   load with these rules the org contains names this script derived; feeding those back would
+   confirm whichever order was chosen first regardless of correctness, and the evidence would look
+   stronger every run while being entirely circular.
+
+Note the learner still inherits *Airtable's* own name-order errors — `puneet.garg@octo.us` is filed
+as "Garg Puneet", which registers as last.first evidence when the address is really first.last. That
+is another argument for the minimum-support floor rather than trusting one or two examples.
+
+`-DisableEmailNameDerivation` turns the whole thing off, reverting to the address-as-`LastName`
+behaviour. It is the first thing to reach for if a derived name is ever seen on the wrong person.
+
+#### Role and shared mailboxes are flagged, not named
+
+56 addresses are inboxes rather than people — `support@`, `tracs-helpdesk@`, `fmcsa_api@`,
+`waso_youth_partner_portal@`. They keep the local part as `LastName` with no invented forename, and
+land in `Contact-role-mailbox-<ts>.csv` so the data owners can decide whether they belong in the CRM
+as Contacts at all. That question is genuinely open — they are referenced by Opportunity Contact
+Roles and Application junctions, so skipping them outright would cost those links.
 
 ### Account linkage matters more here than usual — it suppresses junk Accounts
 

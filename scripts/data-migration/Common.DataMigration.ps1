@@ -690,6 +690,264 @@ function Get-EmailDomain {
     return ""
 }
 
+# =============================================================================
+# DERIVING A NAME FROM AN EMAIL ADDRESS
+# =============================================================================
+# Only 491 of 1,599 Airtable Contact rows carry a Name, and LastName is required
+# in Salesforce. Everything below exists to turn an address into a real
+# FirstName/LastName where the address genuinely encodes one, and to STOP where
+# it doesn't - an invented name is worse than an honest placeholder, because it
+# looks like data.
+#
+# Every rule here was derived by measuring the actual 970-row population on
+# 2026-08-13, not assumed. The measurements are recorded in
+# docs/engineering/TRANSFORMATION-RULES.md's Contact section.
+
+# Local parts that identify a ROLE or SHARED MAILBOX rather than a person:
+# support@, tracs-helpdesk@, fmcsa_api@, waso_youth_partner_portal@ and so on.
+# 56 of 970. These are deliberately NOT split into a first/last name - doing so
+# invents a person called "Tracs Helpdesk". They keep the local part verbatim as
+# LastName and are reported for a human decision on whether they belong in the
+# CRM at all.
+$Script:RoleMailboxPattern =
+    '(^|[._-])(' +
+    'info|support|helpdesk|help|desk|servicedesk|admin|contact|noreply|no-reply|' +
+    'donotreply|sales|team|group|service|services|office|hq|mail|inbox|general|' +
+    'inquiries|enquiries|webmaster|postmaster|security|privacy|legal|billing|' +
+    'accounts|payroll|itsupport|feedback|press|media|marketing|api|alerts|notify|' +
+    'notifications|monitoring|ops|portal|filing|exchange|analytics|officer' +
+    ')([._-]|$)'
+
+function Test-RoleMailbox {
+    <#
+        True when an address looks like a shared/role inbox rather than a person.
+    #>
+    param([string]$Email)
+
+    $Local = "$Email".Split('@')[0].ToLower()
+    if (-not $Local) { return $false }
+
+    return [bool]($Local -match $Script:RoleMailboxPattern)
+}
+
+function Get-EmailNameOrderByDomain {
+    <#
+        Works out, PER DOMAIN, whether "a.b@domain" means first.last or
+        last.first - by measuring it against the contacts whose real names are
+        already known.
+
+        WHY THIS ISN'T A CONSTANT: it is a per-agency convention, and assuming
+        first.last everywhere is wrong for real partners. Measured across the 490
+        Airtable contacts that carry BOTH a Name and an Email (2026-08-13):
+
+            dol.gov     16 last.first vs  1 first.last
+            pbgc.gov     7 last.first vs  5 first.last
+            epa.gov      2 last.first vs  0 first.last
+            octo.us      2 last.first vs  0 first.last
+            everywhere else strongly first.last (235 vs 27 overall)
+
+        batchelet.doug@dol.gov is Doug Batchelet. A blanket first.last rule
+        reverses 44 of the 970 unnamed contacts, concentrated in one major
+        partner agency.
+
+        Self-correcting: as real names are filled in upstream, the evidence for
+        each domain improves. -MinSupport guards against flipping a whole domain
+        on the strength of one or two rows, the same reasoning as the .gov
+        Account-domain inference.
+
+        Returns a hashtable: domain -> 'FirstLast' | 'LastFirst'. Domains with
+        insufficient evidence are ABSENT, and the caller defaults to first.last.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$KnownNamePairs,      # objects with .Name and .Email
+
+        [int]$MinSupport = 3
+    )
+
+    $Evidence = @{}
+
+    foreach ($Pair in $KnownNamePairs) {
+        $Name = "$($Pair.Name)".Trim()
+        $Email = "$($Pair.Email)".Trim().ToLower()
+        if (-not $Name -or -not $Email) { continue }
+
+        $Local = $Email.Split('@')[0]
+        $Domain = Get-EmailDomain -Email $Email
+        if (-not $Domain) { continue }
+
+        # Only two-token local parts can testify to an ORDER.
+        if ($Local -notmatch "^([a-z'\-]+)\.([a-z'\-]+)$") { continue }
+        $Left = $Matches[1]; $Right = $Matches[2]
+
+        $Tokens = @(($Name -replace "[^A-Za-z\s'\-]", '') -split '\s+' | Where-Object { $_ })
+        if ($Tokens.Count -lt 2) { continue }
+        $First = $Tokens[0].ToLower()
+        $Last = $Tokens[-1].ToLower()
+
+        if (-not $Evidence.ContainsKey($Domain)) {
+            $Evidence[$Domain] = @{ FirstLast = 0; LastFirst = 0 }
+        }
+
+        # A symmetric case (first and last identical) testifies to nothing.
+        if ($Left -eq $First -and $Right -eq $Last -and $First -ne $Last) { $Evidence[$Domain].FirstLast++ }
+        elseif ($Left -eq $Last -and $Right -eq $First -and $First -ne $Last) { $Evidence[$Domain].LastFirst++ }
+    }
+
+    $Order = @{}
+    foreach ($Domain in $Evidence.Keys) {
+        $Fl = $Evidence[$Domain].FirstLast
+        $Lf = $Evidence[$Domain].LastFirst
+
+        # Only record a domain when the evidence is both sufficient AND
+        # one-sided. A domain that genuinely uses both conventions is left out,
+        # so it falls back to first.last rather than being coin-flipped.
+        if (($Fl + $Lf) -lt $MinSupport) { continue }
+        if ($Lf -gt $Fl) { $Order[$Domain] = 'LastFirst' }
+        elseif ($Fl -gt $Lf) { $Order[$Domain] = 'FirstLast' }
+    }
+
+    return $Order
+}
+
+function Resolve-NameFromEmail {
+    <#
+        Derives FirstName/LastName from an email address, where the address
+        actually encodes one.
+
+        Returns a PSCustomObject:
+          FirstName / LastName - LastName is never empty for a usable address
+          Rule                 - which rule fired, for the review CSV and summary
+          IsPerson             - $false for role/shared mailboxes
+          Confident            - $true only when a genuine first AND last name
+                                 were recovered
+
+        THE RULES, in order, with the 2026-08-13 counts out of 970:
+
+          role mailbox      56   NOT split. LastName = local part verbatim.
+                                 Splitting invents "Tracs Helpdesk".
+          DoD suffix        56   christopher.m.tork.ctr -> strip .ctr/.civ/.mil,
+                                 then re-apply. Without this the surname is "ctr".
+          first.M.last      47   tara.r.wells -> Tara Wells. Drop the single
+                                 letter; a middle initial is not a surname.
+          first.last       440   Split. ORDER COMES FROM THE DOMAIN - see
+                                 Get-EmailNameOrderByDomain.
+          first_last        61   Same, on underscore.
+          no separator     242   jwoolf, crdavis1 - an initial+surname
+                                 compression with no defensible split point.
+                                 LastName = local part, no first name invented.
+          other             68   Anything left. Same treatment as above.
+
+        HYPHEN IS DELIBERATELY NOT A SEPARATOR, and this was checked rather than
+        assumed. Of 20 hyphenated local parts, nearly all are role inboxes
+        (e-filing, tracs-helpdesk, benefits-notify, eere-exchangesupport) - and
+        hyphens appear legitimately INSIDE surnames (singi-reddy). Splitting on
+        one both invents people and breaks real names, so hyphens are preserved.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Email,
+
+        # domain -> 'FirstLast' | 'LastFirst', from Get-EmailNameOrderByDomain.
+        [hashtable]$NameOrderByDomain = @{}
+    )
+
+    $Result = [PSCustomObject]@{
+        FirstName = ""
+        LastName  = ""
+        Rule      = "none"
+        IsPerson  = $true
+        Confident = $false
+    }
+
+    $Clean = "$Email".Trim().ToLower()
+    if (-not $Clean -or $Clean -notmatch '@') { return $Result }
+
+    $Local = $Clean.Split('@')[0]
+    $Domain = Get-EmailDomain -Email $Clean
+    if (-not $Local) { return $Result }
+
+    # --- role / shared mailbox: never split -------------------------------
+    if ($Local -match $Script:RoleMailboxPattern) {
+        $Result.LastName = $Local
+        $Result.Rule = "role mailbox (not split)"
+        $Result.IsPerson = $false
+        return $Result
+    }
+
+    # --- DoD affiliation suffix -------------------------------------------
+    # .civ / .mil / .ctr is an affiliation marker, not a name token.
+    $Rule = ""
+    $Core = $Local -replace '\.(civ|mil|ctr\d*)$', ''
+    if ($Core -ne $Local) { $Rule = "DoD suffix stripped + " }
+    if (-not $Core) { $Core = $Local }
+
+    # --- first.MIDDLEINITIAL.last -----------------------------------------
+    if ($Core -match "^([a-z'\-]+)\.[a-z]\.([a-z'\-]+)$") {
+        $Left = $Matches[1]; $Right = $Matches[2]
+        $Rule += "first.M.last"
+    }
+    # --- first.last / first_last ------------------------------------------
+    elseif ($Core -match "^([a-z'\-]+)[._]([a-z'\-]+)$") {
+        $Left = $Matches[1]; $Right = $Matches[2]
+        $Rule += if ($Core -match '_') { "first_last" } else { "first.last" }
+    }
+    else {
+        # No defensible split. jwoolf / crdavis1 / a1dta.a1.sd all land here.
+        # LastName carries the local part so the record is findable and it is
+        # obvious in the UI that a real name is still needed.
+        $Result.LastName = $Local
+        $Result.Rule = if ($Local -match '[._-]') { "unsplittable (local part)" } else { "no separator (local part)" }
+        return $Result
+    }
+
+    # --- decide the order from the domain ---------------------------------
+    $Order = "FirstLast"
+    if ($Domain -and $NameOrderByDomain.ContainsKey($Domain)) {
+        $Order = $NameOrderByDomain[$Domain]
+    }
+
+    if ($Order -eq 'LastFirst') {
+        $First = $Right; $Last = $Left
+        $Rule += " (domain uses last.first)"
+    }
+    else {
+        $First = $Left; $Last = $Right
+    }
+
+    $Result.FirstName = ConvertTo-NameCase -Token $First
+    $Result.LastName  = ConvertTo-NameCase -Token $Last
+    $Result.Rule      = $Rule
+    $Result.Confident = $true
+
+    return $Result
+}
+
+function ConvertTo-NameCase {
+    <#
+        "mcdonald" -> "Mcdonald", "singi-reddy" -> "Singi-Reddy",
+        "o'brien" -> "O'Brien".
+
+        Deliberately does NOT attempt McDonald / MacLeod / van der Berg. Those
+        need a dictionary and guessing wrong is worse than plain title case,
+        which reads as a machine-derived name - which is exactly what it is.
+    #>
+    param([string]$Token)
+
+    if (-not $Token) { return "" }
+
+    $Parts = [regex]::Split($Token.ToLower(), "([\-'])")
+    $Out = ""
+    foreach ($Part in $Parts) {
+        if ($Part -match "^[\-']$") { $Out += $Part; continue }
+        if (-not $Part) { continue }
+        $Out += $Part.Substring(0, 1).ToUpper() + $Part.Substring(1)
+    }
+
+    return $Out
+}
+
 function Get-AirtableContactGroups {
     <#
         Collapses Airtable Contact rows into one group per real person.

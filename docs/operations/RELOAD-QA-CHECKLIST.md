@@ -416,11 +416,73 @@ Market Segment (already loaded - do not touch)
       return automatically once that is fixed.
 - [ ] Spot-check `logs/data-migration/Contact-domain-inferred-account-*.csv` — the only inferred
       links in the pipeline. `-DisableDomainInference` turns them off; they are worth ~38 contacts.
-- [ ] **Expect the name-source counts to swing hard, and expect that.** Pre-wipe the transform reports
-      ~973 real names + ~970 "recovered from an existing Salesforce Contact". That second number is
-      largely the transform **reading back its own previously-loaded placeholders** — 978 existing
-      Contacts have an email address in `LastName`. Once Contact is wiped that source is gone, so
-      expect a large shift toward email placeholders. Correct behaviour, not a regression.
+- [ ] **Check the name-source split.** Expect roughly:
+
+      | Name source | Expect |
+      | --- | --- |
+      | real Name from Airtable | ~973 |
+      | read back from a Contact already in the org | **0 pre-wipe, 0 post-wipe** — see below |
+      | **DERIVED from the email** | **~597** |
+      | email local part only (no split possible) | ~317 |
+      | role/shared mailbox (not a person) | ~56 |
+      | skipped — no name AND no email | 45 |
+
+- [ ] ⚠️ **"read back from a Contact already in the org" must be 0, or near it — a large number here
+      is a REGRESSION, not a success.** It counts names taken from Contacts already in the target
+      org. Any Contact this pipeline loaded previously carries an email address in `LastName`, so a
+      high number means the transform is reading back **its own placeholders** and reporting them as
+      recovered names — and because that step matches *before* the email derivation, it silently
+      suppresses it.
+
+      This has now bitten twice. It is what made the old summary claim "970 names recovered from
+      Salesforce" when nothing had been recovered, and while building the derivation it reduced 597
+      derived names to 172. The guard skips existing Contacts whose `LastName` contains `@`; the
+      transform prints how many it ignored:
+
+      ```
+      1454 existing Contacts with an email in peodv8dvn; 729 carry a real name.
+        718 ignored - their LastName is an email placeholder written by an earlier run.
+      ```
+
+      A genuinely non-zero figure is legitimate **only** in an org holding real Contacts this
+      migration did not create — which is the production case, and the reason the step exists.
+
+- [ ] ⚠️ **Verify the per-domain name order was learned, and from Airtable only.** The transform
+      prints it:
+
+      ```
+      Learning each domain's email name order from Airtable's authored names...
+      483 known name/email pairs; 30 domain(s) have enough evidence to fix an order.
+        last.first domains: dol.gov, pbgc.gov
+      ```
+
+      **`dol.gov` and `pbgc.gov` must appear.** If they don't, `batchelet.doug@dol.gov` becomes
+      "Batchelet Doug" and ~44 contacts load with reversed names. If the pair count is far above
+      ~490, the learner is being fed Salesforce Contacts as well as Airtable ones — that is circular
+      (derived names confirming their own order) and must be fixed, not accepted.
+
+- [ ] Spot-check derived names in `logs/data-migration/Contact-name-review-*.csv` (rows whose
+      `Source` starts `Derived from email`). Verify at least one of each rule:
+
+      | Address | Should become |
+      | --- | --- |
+      | `batchelet.doug@dol.gov` | Doug Batchelet — *order reversed by domain* |
+      | `christopher.m.tork.ctr@army.mil` | Christopher Tork — *DoD suffix + middle initial* |
+      | `matt_hunnell@…` | Matt Hunnell — *underscore* |
+      | `smitha_singi-reddy@…` | Smitha **Singi-Reddy** — *hyphen preserved, not split* |
+      | `jwoolf@gsa.gov` | LastName `jwoolf`, **no forename invented** |
+
+- [ ] Review `logs/data-migration/Contact-role-mailbox-*.csv` (~56 rows). These are inboxes, not
+      people — `support@`, `tracs-helpdesk@`, `fmcsa_api@`. None should have a `FirstName`. Whether
+      they belong in the CRM at all is an open question for the data owners; they are referenced by
+      Opportunity Contact Roles and Application junctions, so skipping them would cost those links.
+- [ ] Confirm **no contact named after a role** reached the org — a "Tracs Helpdesk" or "Fmcsa Api"
+      means the role-mailbox pattern missed a case and the splitter fabricated a person:
+      ```
+      sf data query -q "SELECT Id, FirstName, LastName, Email FROM Contact WHERE LDGCRM_External_ID__c != null AND (LastName LIKE '%helpdesk%' OR LastName LIKE '%support%' OR LastName LIKE '%Api%' OR FirstName LIKE '%Help%')" --target-org <alias> --result-format csv
+      ```
+- [ ] If a derived name ever lands on the **wrong person**, `-DisableEmailNameDerivation` reverts to
+      the old address-as-`LastName` behaviour without a code change.
 - [ ] Load **with the trigger bypass** (needs explicit sign-off per load):
       ```powershell
       scripts\data-migration\Invoke-SalesforceLoad.ps1 -Environment Dev `
@@ -591,6 +653,10 @@ was found this way, never in a success count.
 | Account | per D1 | | |
 | `LDGCRM_Partner_Account__c` | ~76 | | |
 | Contact | ~1,553 (account-less now skipped) | | |
+| Contact names DERIVED from email | ~597 | | |
+| Contact names read back from the org | **0** (any number = the self-referential bug) | | |
+| `last.first` domains learned | `dol.gov`, `pbgc.gov` | | |
+| Contacts named after a role inbox | 0 | | |
 | Fallback owner resolved | `peter.marks@gsa.gov` | | |
 | Opportunity | 744 | | |
 | `LDGCRM_application__c` | 691 | | |
