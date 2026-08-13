@@ -2,7 +2,7 @@
 
 <#
     Chunk 2 of the Airtable -> Salesforce data-migration pipeline (see
-    scripts/data-migration/README.md for the full pipeline). LDGCRM_Impediment__c
+    docs/README.md for the full pipeline). LDGCRM_Impediment__c
     is an independent parent - no lookups to other objects - so unlike Account
     this is a straight upsert-on-external-ID transform with no Salesforce query
     needed first.

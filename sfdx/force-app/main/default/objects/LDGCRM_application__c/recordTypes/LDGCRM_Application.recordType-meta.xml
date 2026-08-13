@@ -30,6 +30,82 @@
             <fullName>Veterans</fullName>
             <default>false</default>
         </values>
+        <values>
+            <fullName>Agency Staff</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>State %26 Local Employees</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Grantees</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Banking Organization</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Employers</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Educators</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Agency Customers</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Students</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Grantors</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Authorized Personnel</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Tribal Nations</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Retirees - Former Government Employees</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Other Organizations</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Law Enforcement</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Annuitants</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Young Adults</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Former Federal Employees</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Minors 13-18</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Credit Unions</fullName>
+            <default>false</default>
+        </values>
     </picklistValues>
     <picklistValues>
         <picklist>LDGCRM_Launch_Level__c</picklist>

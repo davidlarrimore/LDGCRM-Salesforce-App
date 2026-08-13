@@ -30,6 +30,101 @@
         <default>false</default>
         <label>Gov&apos;t Employees (Contractors)</label>
     </customValue>
+    <customValue>
+        <fullName>Agency Staff</fullName>
+        <default>false</default>
+        <label>Agency Staff</label>
+    </customValue>
+    <customValue>
+        <fullName>State &amp; Local Employees</fullName>
+        <default>false</default>
+        <label>State &amp; Local Employees</label>
+    </customValue>
+    <customValue>
+        <fullName>Grantees</fullName>
+        <default>false</default>
+        <label>Grantees</label>
+    </customValue>
+    <customValue>
+        <fullName>Banking Organization</fullName>
+        <default>false</default>
+        <label>Banking Organization</label>
+    </customValue>
+    <customValue>
+        <fullName>Employers</fullName>
+        <default>false</default>
+        <label>Employers</label>
+    </customValue>
+    <customValue>
+        <fullName>Educators</fullName>
+        <default>false</default>
+        <label>Educators</label>
+    </customValue>
+    <customValue>
+        <fullName>Agency Customers</fullName>
+        <default>false</default>
+        <label>Agency Customers</label>
+    </customValue>
+    <customValue>
+        <fullName>Students</fullName>
+        <default>false</default>
+        <label>Students</label>
+    </customValue>
+    <customValue>
+        <fullName>Grantors</fullName>
+        <default>false</default>
+        <label>Grantors</label>
+    </customValue>
+    <customValue>
+        <fullName>Authorized Personnel</fullName>
+        <default>false</default>
+        <label>Authorized Personnel</label>
+    </customValue>
+    <customValue>
+        <fullName>Tribal Nations</fullName>
+        <default>false</default>
+        <label>Tribal Nations</label>
+    </customValue>
+    <customValue>
+        <fullName>Retirees - Former Government Employees</fullName>
+        <default>false</default>
+        <label>Retirees - Former Government Employees</label>
+    </customValue>
+    <customValue>
+        <fullName>Other Organizations</fullName>
+        <default>false</default>
+        <label>Other Organizations</label>
+    </customValue>
+    <customValue>
+        <fullName>Law Enforcement</fullName>
+        <default>false</default>
+        <label>Law Enforcement</label>
+    </customValue>
+    <customValue>
+        <fullName>Annuitants</fullName>
+        <default>false</default>
+        <label>Annuitants</label>
+    </customValue>
+    <customValue>
+        <fullName>Young Adults</fullName>
+        <default>false</default>
+        <label>Young Adults</label>
+    </customValue>
+    <customValue>
+        <fullName>Former Federal Employees</fullName>
+        <default>false</default>
+        <label>Former Federal Employees</label>
+    </customValue>
+    <customValue>
+        <fullName>Minors 13-18</fullName>
+        <default>false</default>
+        <label>Minors 13-18</label>
+    </customValue>
+    <customValue>
+        <fullName>Credit Unions</fullName>
+        <default>false</default>
+        <label>Credit Unions</label>
+    </customValue>
     <masterLabel>Demographic Served</masterLabel>
     <sorted>false</sorted>
 </GlobalValueSet>

@@ -29,6 +29,49 @@ in order:
    `TRANSFORMATION-RULES.md`'s "Notes" section for the mechanism, candidate fields found so far, and
    the proposed (not yet implemented) Title/Body heuristic.
 
+## Production Account seed (one-time bootstrap, not a pipeline stage)
+
+`gsa-peo`'s Account data has been a moving target (531 → 588 → growing) and doesn't reliably match
+the real universe of production Accounts, which makes testing `Build-AccountReconciliation.ps1`
+against it a weak proxy for how the actual production migration will behave. `Build-ProdAccountSeed.ps1`
+closes that gap: it parses a real production Account export (`data/PEO PROD Accounts <date>.xls` —
+despite the extension, actually an HTML table from a Salesforce report export, not a binary Excel
+file) and produces an insert-ready CSV of every production Account name gsa-peo doesn't already have,
+Name only (no Owner/Parent Account hierarchy — user-confirmed 2026-08-13, since nothing in this
+migration's scripts reads either field). Read-only against Salesforce (two queries: existing Account
+names, the Federal RecordTypeId) — writes nothing itself.
+
+This is the first half of a two-phase test the user asked for, to prove out the real production
+process end to end:
+
+1. **`Build-ProdAccountSeed.ps1`** → `Invoke-SalesforceLoad.ps1 -Operation Insert` — seed gsa-peo
+   with the real production Account names first.
+2. **Re-run the existing, unmodified `Build-AccountReconciliation.ps1` → load →
+   `Build-PartnerAccountLoad.ps1` → load chain** against that now-realistic baseline. This is exactly
+   what the real production reconciliation pass will look like, not a sandbox-only approximation.
+
+**Full rebuild completed 2026-08-13**, after the user asked to first hard-delete gsa-peo's existing
+test-created Account/Partner Account data (via `scripts/cleanup/cleanup-gsa-peo.ps1`, scoped to just
+those two objects with its new `-ObjectsCsv` override — see that script's own docs) rather than layer
+the seed on top of it, for a genuinely clean test:
+- Cleanup: 584 of 585 external-ID-tagged Accounts deleted, all 74 external-ID-tagged Partner Accounts
+  deleted. One Account (blocked by a pre-existing test `LDGCRM_Application_Contact__c` junction
+  record) and all other pre-existing non-external-ID test data were deliberately left alone —
+  user-confirmed not to touch pre-existing test data at all, migrate or delete.
+- Seed: 1,342 of 1,369 production Account names were missing from the cleaned baseline (up from 786
+  before the cleanup, since the earlier run had partial overlap with already-loaded data) — inserted,
+  Name only.
+- Reconciliation: re-run against the refreshed 1,346-Account baseline matched **587 Accounts** (up
+  from 7 before the cleanup+reseed) — a far more realistic number for what the real production
+  migration will actually do. 169 still unmatched (see `AIRTABLE-DATA-QUALITY-REQUESTS.md`).
+- Partner Account: 74 of 94 loaded successfully (same 20 failures as before the rebuild — all trace
+  to Partner Accounts whose parent Account is still among the 169 unmatched, a data-quality gap this
+  rebuild couldn't fix on its own).
+
+`Invoke-SalesforceLoad.ps1` gained a third operation for this: `-Operation Insert` (wraps
+`sf data import bulk`, a pure insert with no key column — different from `Upsert`/`Update`, which
+both need a key column since they're matching against existing records).
+
 ## ⚠️ Coordination: two people can load into gsa-peo
 
 Rahul is separately using the **Data Loader GUI** against the same `gsa-peo` sandbox. This
@@ -43,6 +86,12 @@ should not happen without that coordination.
 **For the full field-by-field mapping rules and every gotcha discovered per object, see
 [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)** — that's the authoritative detail; this file
 covers pipeline architecture, build status, and how to run things.
+
+**For a running list of Airtable data-quality issues that block or would improve the migration —
+written for the data owner, not developers — see
+[`AIRTABLE-DATA-QUALITY-REQUESTS.md`](AIRTABLE-DATA-QUALITY-REQUESTS.md).** Every `Build-*.ps1`
+script's skipped/unmapped review CSVs should feed into this list as they're found, not just sit in
+`logs/data-migration/` unnoticed.
 
 ## Conventions
 
@@ -90,11 +139,13 @@ covers pipeline architecture, build status, and how to run things.
 | `Build-ImpedimentLoad.ps1` | Prep — Impediment (independent parent, straight upsert) | Built |
 | `Build-PartnerAccountLoad.ps1` | Prep — Partner Account (Master-Detail to Account, requires Account loaded first) | Built |
 | `Build-ContactLoad.ps1`, `Build-OpportunityLoad.ps1` | Prep — independent parents | Not built |
-| `Build-ApplicationLoad.ps1`, `Build-OpportunityImpedimentLoad.ps1`, `Build-ApplicationContactLoad.ps1` | Prep — dependent/junction objects | Not built |
+| `Build-ApplicationLoad.ps1` | Prep — Application, needs Partner Account **and Opportunity** loaded first (see "Load order") | Built and **loaded 2026-08-13: 688/688 succeeded, 0 failures**. Took three attempts — the first failed 1,045 of 1,047 rows — which drove six fixes (Service Level array unwrap, Broker App Parent moved to a second pass, Name/URL platform-limit handling across *all* Url fields, out-of-range date check, live Partner Account/Opportunity preflight, plus an `Invoke-SalesforceQuery` array bug). 359 rows remain skipped pending Airtable Account fixes; 92 Opportunity links pending the Opportunity load. See `TRANSFORMATION-RULES.md`'s Application section for the full 55-field mapping and the failure post-mortem. |
+| `Build-OpportunityImpedimentLoad.ps1`, `Build-ApplicationContactLoad.ps1` | Prep — dependent/junction objects | Not built |
 | `Build-OpportunityContactRoleLoad.ps1` | Prep — blocked on an `sfdx-metadata-sync` fix (`OpportunityContactRole.LDGCRM_External_ID__c` needs `externalId=true`) | Not built |
 | `Build-MeetingLoad.ps1` | Prep — Activity/Event, needs a default-duration convention for synthesized `StartDateTime`/`EndDateTime` | Not built |
 | `Invoke-SalesforceLoad.ps1` | Load — generic `sf data upsert bulk`/`sf data update bulk` wrapper, any object | Built |
 | `Build-NotesLoad.ps1` (name TBD) | Notes — `ContentNote`/`ContentDocumentLink` for freeform columns, last chunk | Not started |
+| `Build-ProdAccountSeed.ps1` | Bootstrap — production Account name seeding, not a regular pipeline chunk | Built. Tested: 786 of 1,369 production Account names missing from gsa-peo, ready to insert. |
 
 ## Load order
 
@@ -108,11 +159,32 @@ Market Segment (already migrated)
   -> Contact
   -> Opportunity
   -> LDGCRM_application__c
+  -> LDGCRM_application__c SECOND PASS (Broker App Parent self-lookup only - see below)
   -> LDGCRM_Opportunity_Impediment__c (needs LDGCRM_Impediment__c + Opportunity first)
   -> LDGCRM_Application_Contact__c
   -> OpportunityContactRole (blocked, see above)
   -> Activity / Meetings (needs Account + Opportunity first)
 ```
+
+**Opportunity must be loaded before Application** — this is a real ordering dependency, not just a
+nice-to-have, even though `LDGCRM_Opportunity__c` is an *optional* lookup on Application. Confirmed
+empirically by the first real Application load (2026-08-13): 99 Application rows failed outright with
+`INVALID_FIELD: Foreign key external ID ... not found ... in entity Opportunity` because they carry an
+`Opportunity Record ID` pointing at an Opportunity that doesn't exist in gsa-peo yet. Bulk API rejects
+the **whole row**, not just the unresolvable lookup — "optional field" means "may be blank," not "may
+reference something nonexistent." Loading Application before Opportunity therefore silently costs you
+every row that has an Opportunity link.
+
+**`LDGCRM_Broker_App_Parent__c` needs a second pass over Application, after the main load.** This is a
+self-referential lookup (Application → Application) resolved by external ID. `TRANSFORMATION-RULES.md`
+originally guessed Bulk API might resolve these within a single upsert batch since the parent row is
+in the same file — **it does not**: the same 2026-08-13 load failed 68 rows with `Foreign key external
+ID ... not found ... in entity LDGCRM_application__c`, referencing parent Applications that were
+present in the very same CSV. `Build-ApplicationLoad.ps1` therefore no longer writes this column at
+all; a follow-up pass (not yet built) has to re-upsert just `LDGCRM_External_ID__c` +
+`LDGCRM_Broker_App_Parent__r.LDGCRM_External_ID__c` once every Application row already exists in the
+org. General rule for any future self-referential lookup in this pipeline: it always needs its own
+second pass.
 
 ## Running what's built so far
 
@@ -122,6 +194,7 @@ scripts\data-migration\Get-AirtableExport.ps1
 scripts\data-migration\Build-AccountReconciliation.ps1
 scripts\data-migration\Build-ImpedimentLoad.ps1
 scripts\data-migration\Build-PartnerAccountLoad.ps1
+scripts\data-migration\Build-ApplicationLoad.ps1
 
 # Actually load a prepped CSV into gsa-peo (prompts "Type LOAD to continue"):
 scripts\data-migration\Invoke-SalesforceLoad.ps1 `
@@ -139,6 +212,15 @@ scripts\data-migration\Invoke-SalesforceLoad.ps1 `
 scripts\data-migration\Invoke-SalesforceLoad.ps1 `
     -ObjectApiName "LDGCRM_Partner_Account__c" `
     -CsvFile "data\salesforce-loads\LDGCRM_Partner_Account__c-upsert.csv"
+
+# Application needs Partner Account loaded (required lookup) and ideally
+# Opportunity too - see "Load order". Build-ApplicationLoad.ps1 queries the org
+# first and skips rows whose parent doesn't exist yet, so it's safe to run at
+# any point; re-run it after fixing Airtable data or loading Opportunity to
+# pick up whatever newly resolves:
+scripts\data-migration\Invoke-SalesforceLoad.ps1 `
+    -ObjectApiName "LDGCRM_application__c" `
+    -CsvFile "data\salesforce-loads\LDGCRM_application__c-upsert.csv"
 ```
 
 `Build-AccountReconciliation.ps1` is read-only against Salesforce (a single SOQL query) and only
@@ -178,6 +260,27 @@ passthrough) and writes:
   more than one (Master-Detail only supports one parent).
 - `logs/data-migration/PartnerAccount-unmapped-owner-<timestamp>.csv` — rows whose owner email
   matches no Salesforce User; loaded anyway with Owner left blank.
+
+`Build-ApplicationLoad.ps1` queries Salesforce twice — for the Partner Accounts and Opportunities
+that actually exist — so it can skip rows that would be guaranteed load failures instead of
+submitting them (the first load attempt submitted 442 such rows and got 442 errors back). It writes:
+
+- `data/salesforce-loads/LDGCRM_application__c-upsert.csv` — external-ID-keyed rows whose parent
+  Partner Account is confirmed present in the org. Deliberately does **not** include
+  `LDGCRM_Broker_App_Parent__c` (needs a second pass, see "Load order").
+- `logs/data-migration/Application-skipped-<timestamp>.csv` — rows skipped for a missing required
+  Partner Account, split by reason: no Partner Account linked in Airtable at all, vs. linked but not
+  loaded in the org (the latter almost always traces to an unresolved Account — see
+  `AIRTABLE-DATA-QUALITY-REQUESTS.md`).
+- `logs/data-migration/Application-overlength-<timestamp>.csv` — values Salesforce can't store as-is:
+  Names over 80 chars (truncated), URLs over 255 chars (blanked), and implausible dates (blanked).
+  All three are platform limits, not fixable field metadata.
+- `logs/data-migration/Application-unmapped-rampup-<timestamp>.csv` — rows whose Ramp Up Approach
+  value doesn't map; loaded anyway with the field blank.
+
+Re-running it is the intended way to pick up newly-fixed data: rows skipped for an unresolved parent,
+and Opportunity links blanked because Opportunity wasn't loaded yet, both resolve on a later run with
+no code change.
 
 See the full mapping table and current sandbox-state notes in the root `CLAUDE.md` under
 "Airtable → Salesforce mapping".

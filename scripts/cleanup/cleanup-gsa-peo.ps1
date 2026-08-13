@@ -1,5 +1,43 @@
 #Requires -Version 5.1
 
+<#
+    Interactive, destructive sandbox record cleanup. See sfdx-sandbox-ops for
+    the safety checklist this follows (preflight counts, export-before-write,
+    typed HARD DELETE confirmation).
+
+    -ObjectsCsv overrides the default full object list, for scoped cleanup
+    runs that don't need to touch every migrated object (e.g. re-testing just
+    the Account/Partner Account chain without disturbing already-loaded/
+    verified Impediment records). Comma-separated (not a real PowerShell
+    array parameter) specifically so it survives being passed through a
+    nested `powershell -File` invocation intact - that's the only way to get
+    a working Read-Host confirmation prompt out of this tool's non-interactive
+    host, and array literals/space-separated values don't reliably cross that
+    process boundary the way a single comma-joined string does. Order
+    matters - list children/junctions before their parents, same as the
+    default list, or deletes will fail against Restrict-type
+    deleteConstraints (e.g. LDGCRM_application__c.LDGCRM_Partner_Account__c
+    blocks deleting a Partner Account any Application still references).
+#>
+
+param(
+    [string]$ObjectsCsv = ""
+)
+
+$DefaultObjects = @(
+    "LDGCRM_Application_Contact__c",
+    "LDGCRM_Opportunity_Impediment__c",
+    "LDGCRM_Application__c",
+    "Opportunity",
+    "Contact",
+    "LDGCRM_Impediment__c",
+    "LDGCRM_Partner_account__c",
+    "Account"
+    #"LDGCRM_Market_Segment__c"
+)
+
+$Objects = if ($ObjectsCsv) { $ObjectsCsv -split "," | ForEach-Object { $_.Trim() } } else { $DefaultObjects }
+
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\common\Common.ps1")
@@ -12,19 +50,6 @@ $OrgAlias = "gsa-peo"
 $ApiVersion = "67.0"
 $ExternalIdField = "LDGCRM_External_ID__c"
 $WaitMinutes = 30
-
-# Child and junction objects must be deleted before parent objects.
-$Objects = @(
-    "LDGCRM_Application_Contact__c",
-    "LDGCRM_Opportunity_Impediment__c",
-    "LDGCRM_Application__c",
-    "Opportunity",
-    "Contact",
-    "LDGCRM_Impediment__c",
-    "LDGCRM_Partner_account__c",
-    "Account"
-    #"LDGCRM_Market_Segment__c"
-)
 
 $Timestamp = Start-ScriptLog -Category "cleanup" -ScriptName "cleanup-gsa-peo"
 $OutputDirectory = Join-Path (Get-LogDirectory -Category "cleanup") "sandbox-cleanup-$Timestamp"

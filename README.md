@@ -19,6 +19,7 @@ scripts/
   metadata/              Pull metadata + export the data dictionary from the sandbox
   cleanup/               Interactive, destructive sandbox record cleanup
   data-migration/        Pull Airtable data, transform to load-ready CSVs, load into gsa-peo
+docs/                    Data-migration pipeline docs (architecture, field mappings, data-quality asks)
 logs/                    Gitignored run output (transcripts, CSV exports)
 data/                    Gitignored Airtable exports, prepped load CSVs, and mapping files
 ```
@@ -105,10 +106,17 @@ The Husky `pre-commit` hook runs `lint-staged` (Prettier + ESLint + related Jest
 ## Data migration
 
 Moves data from Airtable into `gsa-peo`, in three stages — pull, prep/transform, load. See
-[scripts/data-migration/README.md](scripts/data-migration/README.md) for the full pipeline and
+[docs/README.md](docs/README.md) for the full pipeline and
 build status, and
-[scripts/data-migration/TRANSFORMATION-RULES.md](scripts/data-migration/TRANSFORMATION-RULES.md)
+[docs/TRANSFORMATION-RULES.md](docs/TRANSFORMATION-RULES.md)
 for the field-by-field mapping rules and every data-quality gotcha found per object.
+[docs/AIRTABLE-DATA-QUALITY-REQUESTS.md](docs/AIRTABLE-DATA-QUALITY-REQUESTS.md) is the
+non-developer-facing list of Airtable data issues blocking the migration — that's the file to hand to
+whoever maintains the Airtable base.
+
+**Loaded into `gsa-peo` so far:** Market Segment, Account (588 reconciled of 1,346), Partner Account
+(74), Impediment (39), Application (688). Contact, Opportunity, the junction objects, Meetings, and
+the Notes chunk are not built yet — see `docs/README.md` for per-script build status.
 
 ```powershell
 # Pull every table straight from the Airtable REST API into data/airtable-exports/<Table>.json
@@ -129,4 +137,4 @@ Data Loader CLI originally planned — that tool isn't installed in this environ
 11+, while `sf` is already installed and used everywhere else in this repo. See the pipeline
 README's Stage 3 section for the full reasoning. Every load is keyed on `LDGCRM_External_ID__c` for
 idempotent upserts, except Account, which is a Salesforce-`Id`-keyed update (Accounts already exist
-independently of this migration — see `TRANSFORMATION-RULES.md`).
+independently of this migration — see `docs/TRANSFORMATION-RULES.md`).

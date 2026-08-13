@@ -6,7 +6,7 @@ every gotcha discovered while building the `Build-*.ps1` transform scripts in th
 in doubt about why a script does something a particular way, this is where the reasoning lives.
 
 `CLAUDE.md`'s "Airtable → Salesforce mapping" section has the short cross-object summary (which
-table maps to which object, load order); `scripts/data-migration/README.md` has the pipeline
+table maps to which object, load order); `docs/README.md` has the pipeline
 architecture and build status. This document is the detail underneath both — add a new `##` section
 here every time a `Build-*.ps1` script is built, before considering that chunk done.
 
@@ -51,6 +51,13 @@ wrong in this migration:
    after `Build-AccountReconciliation.ps1` was already built and "working" against a small sample —
    it hadn't actually been loaded yet, so no bad data resulted, but it's a reminder to check a
    transform's *values*, not just that it runs without error, before considering it done.)
+6. **A field's declared type doesn't mean it's writable.** `<type>Percent</type>` (or `Number`,
+   `Text`, etc.) looks like a plain writable field, but check for a `<formula>` tag before mapping
+   anything to it — Application's `LDGCRM_Level_1_Complete_Pct__c`/`Level_3`/`Level_4`/
+   `Launch_Checklist_Completion__c` are all formula fields computed from other fields already being
+   migrated; writing to them directly fails outright. Same instinct as checking a picklist's
+   restricted values or a TextArea's real length — the declared type is necessary but not sufficient
+   information before deciding a field is a normal migration target.
 
 **When writing a lookup or Master-Detail field's value into a CSV, the column header is not the
 field's own API name.** Bulk API 2.0 resolves a parent by external ID only when the header uses the
@@ -384,3 +391,384 @@ Category values matched this table (0 unmapped).
   runs tests) currently fails across the *entire* gsa-peo org due to a pre-existing Apex compile
   error in an unrelated FCIC-app class, unrelated to this migration. See `CLAUDE.md`'s "Operational
   gotchas" section — this will block any future metadata deploy that runs tests, not just this one.
+
+---
+
+## Application
+
+**Source:** Airtable `Applications` table (1,064 rows as of 2026-08-13; 78 columns).
+**Target:** `LDGCRM_application__c`, `LDGCRM_Application` record type (the object's only active
+record type — "Master Login.gov Record Type" per its own description, so every migrated row uses
+it; no record-type decision logic needed here, unlike Account's Federal-vs-State split).
+**Script:** `Build-ApplicationLoad.ps1`. 55 Salesforce custom fields on this object; this is the
+largest/most complex table mapped so far, investigated carefully before writing any code per the
+user's explicit request. Built 2026-08-13; its **first real load attempt failed 1,045 of 1,047 rows**
+— see the post-mortem section below for all four causes and what changed as a result. The script now
+also queries Salesforce for the set of Partner Accounts that actually exist before writing its CSV
+(it is no longer a purely offline transform), so rows whose parent Partner Account is missing are
+skipped up front rather than submitted as guaranteed Bulk API failures.
+
+### Demographic Served — picklist expansion (heavily documented per explicit request)
+
+**The problem:** Airtable's `Demographic Served` (multi-value) uses 32 distinct categories across
+913 of 1,064 records (85.8% of all Applications; 1.39 categories per tagged record on average, up to
+7 on one record). `LDGCRM_Demographic_Served__c` is a `MultiselectPicklist` backed by the
+**`Demographic_Served` Global Value Set**, which originally had only 6 values: `Federal Employees`,
+`General Population`, `Gov't Employees (Contractors)`, `Government Employees (Military)`, `Non-USC`,
+`Veterans`. Only 4 of Airtable's 32 categories matched a picklist value exactly; loading as-is would
+have silently dropped tagging on 400 of the 913 tagged records (43.8%).
+
+**Step 1 — ruled out "these are just old/unused categories."** Cross-referenced every category
+against its Active-status rate and median Application go-live year, looking for a pattern where a
+category skews toward old/decommissioned applications (which would suggest it was abandoned):
+
+| Category (top 10 by volume) | Records | % of all Applications | % Active | Median go-live year |
+| --- | --- | --- | --- | --- |
+| General Population | 428 | 40.2% | 82.0% | 2023 |
+| Federal Employees | 338 | 31.8% | 78.1% | 2023 |
+| Contractors | 156 | 14.7% | 67.9% | 2022 |
+| Agency Staff | 119 | 11.2% | 92.4% | 2022 |
+| State & Local Employees | 31 | 2.9% | 93.5% | 2024 |
+| Grantees | 28 | 2.6% | 67.9% | 2023 |
+| Banking Organization | 18 | 1.7% | 50.0% | 2023 |
+| Employers | 16 | 1.5% | 93.8% | 2023 |
+| Educators | 15 | 1.4% | 86.7% | 2023 |
+| Agency Customers | 12 | 1.1% | 100% | 2023 |
+
+The remaining 22 categories (1–10 records each) spanned go-live years 2019–2026 with no consistent
+skew toward old/inactive records — low volume alone didn't correlate with obsolescence, so a
+volume-based cutoff (e.g. "only categories over 1% usage") would have been arbitrary, not justified.
+
+**Step 2 — the actual signal was recency of last use, not volume or median year.** For each
+category, found the most recent Application go-live date (falling back to Estimated Go-Live Date for
+applications not yet launched) it appears on, checked as of 2026-08-12:
+
+| Category | Records | Most recent go-live | Months since last use |
+| --- | --- | --- | --- |
+| Brokers | 1 | 2019-07-18 | 84.8 |
+| Health Care Workers | 4 | 2021-03-11 | 65.0 |
+| First Responders | 2 | 2022-08-22 | 47.7 |
+| Veterans* | 7 | 2023-04-13 | 40.0 |
+| Retirees - General Population | 3 | 2023-11-01 | 33.3 |
+| Travelers | 3 | 2024-05-21 | 26.7 |
+| Small Business Owners | 3 | 2024-07-18 | 24.8 |
+| International Users | 5 | 2024-07-18 | 24.8 |
+| Active Duty Military | 7 | 2024-08-01 | 24.3 |
+| *(everything else — 23 categories)* | | | ≤ 17.2 |
+
+\* `Veterans` is one of the 6 original picklist values, so it required no schema action regardless
+of this finding — noted for completeness, not acted on.
+
+These 8 categories (excluding `Veterans`) hadn't been used in 18+ months (several not in 2+ years),
+a real recency cutoff distinct from volume — e.g. `Students` (10 records) and `Minors 13-18` (2
+records) are both low-volume *and* recently used (within 3.6 months), while `Active Duty Military`
+(7 records, comparable volume) hasn't been used in over 2 years. This is the basis actually acted on.
+
+**Decision (user-confirmed 2026-08-12): expand the Global Value Set to the 24 categories used within
+the last 18 months; leave the 8 stale ones out.** Estimated data-loss impact: ~28 records (2.6% of
+all Applications) whose only Demographic Served tag falls in the 8 excluded categories — a
+substantially smaller and better-justified gap than the original ~400-record estimate.
+
+**Implementation:**
+- `sfdx/force-app/main/default/globalValueSets/Demographic_Served.globalValueSet-meta.xml` — added
+  19 new `customValue` entries (the 24 recent categories minus the 4 that already existed as exact
+  matches: `Federal Employees`, `General Population`, `Government Employees (Military)`, `Veterans`).
+- `Airtable's "Contractors" (156 records) maps to the existing "Gov't Employees (Contractors)"
+  value, not a new value.` Chosen over creating a separate `Contractors` value because no Salesforce
+  data exists yet under either label (Application hasn't been loaded), and having two
+  near-identical values (`Contractors` and `Gov't Employees (Contractors)`) side by side in a
+  picklist a user has to choose from would be confusing. This is the one part of the mapping that's
+  a judgment call rather than a direct string match — documented here in case it turns out
+  `Gov't Employees (Contractors)` was intended to mean something narrower than Airtable's
+  `Contractors`.
+- `LDGCRM_application__c/recordTypes/LDGCRM_Application.recordType-meta.xml` — the record type
+  restricts which Global Value Set members are actually selectable (a separate `picklistValues`
+  block listing only 6 `fullName`s originally); added the same 19 values here too, or they'd exist
+  in the value set but not be assignable on this record type. Salesforce's RecordType metadata
+  encodes special characters in `fullName` (`&` → `%26`, as seen on the pre-existing `Gov%27t
+  Employees %28Contractors%29` entry) — used `State %26 Local Employees` accordingly.
+- Deployed via `sf project deploy start --metadata "GlobalValueSet:Demographic_Served"
+  --metadata "RecordType:LDGCRM_application__c.LDGCRM_Application" --test-level NoTestRun`
+  (NoTestRun for the same pre-existing FCIC-blocker reason as every other deploy this session).
+  Verified live via `sf sobject describe` afterward — 25 total values present in gsa-peo, not just
+  assumed from a successful deploy.
+
+**The 8 excluded categories are not gone forever** — if a later reporting need requires them, add
+them to the Global Value Set (and this record type's picklist) the same way. Airtable rows tagged
+only with an excluded category should have that tag dropped, not the whole row skipped — this is a
+per-value filter, not a row-level skip like a missing required lookup.
+
+### Opportunity has a *different* Demographic Served field — separate analysis needed later
+
+Flagged mid-investigation (user prompt) and checked before finalizing the above, specifically so this
+decision wouldn't need redoing: Opportunity has **two** demographic fields, and neither is this
+migration's concern today:
+- `Opportunity.Demographic_Served__c` — explicitly labeled **"Demographic Served (Deprecated)"**,
+  `"Originally created for TTS OTCRM - Login.gov Opportunities"`, its own independent 5-value
+  picklist (`Foreign Nationals`, `General Population`, `Gov't Employees`, `Non-USC`, `Veterans`).
+  Not touched by this migration under any circumstance.
+- `Opportunity.LDGCRM_Demographic_Served__c` — the current one, but it does **not** reference the
+  shared `Demographic_Served` Global Value Set edited above. It has its own independent inline
+  6-value list (same 6 as Application originally had, except its "contractors" value is spelled
+  `Gov't Employees`, not `Gov't Employees (Contractors)`). **Editing the Global Value Set above did
+  not affect this field.**
+
+A quick check of Airtable's `Opportunities` table's own `Demographic Served` column (928 rows) shows
+a much smaller, largely-matching set already (`General Population`, `Federal Employees`,
+`Government Employees (Military)`, `Non-USC`, plus semicolon-joined combinations like `General
+Population; Gov't Employees`) — encouraging, but this needs its own full recency/volume analysis the
+same way Application's did, not an assumption that it's fine, when the Opportunity chunk is built.
+
+### Field mapping
+
+Grouped by shape rather than listed as one flat table, given the size (55 fields).
+
+**Identifiers / lookups:**
+
+| Airtable field | Salesforce field | Transformation rule |
+| --- | --- | --- |
+| `id` (= `Applications Record ID`) | `LDGCRM_External_ID__c` | Direct passthrough — the upsert key. |
+| `Name` | `Name` | Direct passthrough — unlike Partner Account, Applications has a real, complete (`0` missing) `Name` column. 9 duplicate-name groups exist but aren't a problem (this is upsert-on-external-ID, not name-matching). |
+| `Partner Account Record ID (from Partner Agreement)` | `LDGCRM_Partner_Account__c` (**required** Lookup, CSV column `LDGCRM_Partner_Account__r.LDGCRM_External_ID__c`) | Direct passthrough. Required — rows with no linked Partner Account can't load. 17 of 1,064 rows have none, written to `Application-skipped-<ts>.csv`. Investigated individually (not assumed) rather than batch-excluded — see the dedicated subsection right after this table. |
+| `Opportunity Record ID` | `LDGCRM_Opportunity__c` (optional Lookup, filtered to Opportunity's `Login_gov` record type, CSV column `LDGCRM_Opportunity__r.LDGCRM_External_ID__c`) | Direct passthrough when present. Optional — blank is fine. Needs Opportunity loaded first to resolve (not built yet), same dependency shape as Partner Account needing Account. |
+| `Broker App Parent` | `LDGCRM_Broker_App_Parent__c` (self-Lookup to `LDGCRM_application__c`) | **Not written by this script — deferred to a second pass.** Holds a single `rec...` ID pointing at another Application (confirmed by sampling). Same-batch external-ID resolution was assumed workable when this table was first written; the 2026-08-13 load **disproved that** — all 68 rows carrying this field failed even though the parent Application was in the same CSV. Needs its own follow-up upsert after every Application row exists in the org. See the post-mortem section above. |
+| `Parent Application` | *(not written)* | Redundant display-text rollup of `Broker App Parent`'s Name (e.g. `"Microsoft Azure Platform (MS AAD)"`) — not a separate relationship, excluded. |
+| `Broker App Children` | *(not written)* | Reverse rollup of `Broker App Parent` (which Applications point at this one) — computed from the other side, excluded. |
+| `Market Segment (from Agreement)` | *(not written)* | `LDGCRM_Application_Before_Save_Assign_Market_Segment` (before-save Flow) already derives `LDGCRM_Market_Segment__c` from `LDGCRM_Partner_Account__r.LDGCRM_Account__r.LDGCRM_Market_Segment__r` — see `CLAUDE.md`. Same rule as Partner Account. |
+
+#### The 17 rows with no Partner Account are two different populations, not one
+
+Investigated individually (user's request, after noticing Airtable's own UI didn't obviously show
+rows missing a Partner Account — a reminder that Airtable's UI can show rollup/lookup views that
+don't match what the raw API export actually contains) rather than assumed to all be the same kind
+of "bad data":
+
+- **6 are genuinely decommissioned**: `CBP I'm Ready`, `SAMS (CBP)`, `GSA Federal Advisory Committee
+  Act Training`, `CCP Truck Staging`, `SPEARS Opportunity Portal | HUD Section 3 Opportunity Portal`,
+  `Army Contract Writing System's (ACWS) Vendor Self Service (VSS)` — all `Status = "Decomissioned"`
+  (the same misspelling mapped elsewhere), several with `Actual Go-Live Date` back to 2018–2022.
+  **User-confirmed (2026-08-13): reasonable to exclude these permanently** — retired applications
+  whose Partner Account link was apparently dropped as part of decommissioning, not worth chasing
+  down a historical link for.
+- **11 are the opposite of stale — active drafts**: `DOL - ICAM`, `HHS OIG` (×3 separate records),
+  `HHS`, `SSA Secure Online Services`, `Test Application`, `MyTravelGov`, `DOL EBSA` (×2). All have
+  **blank `Status`, no dates, and were created within the last ~7 weeks** as of 2026-08-12 (several
+  within the last 8 days) — these read as records someone is actively typing into Airtable right
+  now, not old/abandoned data. `Test Application` fits the same "in-progress, not yet real" pattern.
+  **Not excluded permanently** — re-run `Build-ApplicationLoad.ps1` closer to the actual production
+  load date to pick up whichever of these get a real Partner Account link (and Status) by then,
+  rather than assuming today's snapshot is final. This is why the script re-reads the current
+  Airtable export every run instead of caching a decision per record.
+
+**Booleans derived from presence, not a literal value** (Airtable omits the field entirely when
+unchecked — these are true Airtable checkboxes and map straightforwardly, present→`true`):
+`Account Manager Approved`, `Agreement Finalization Email Sent`, `Customer Support Meeting Deemed
+Unnecessary`, `Finalized Application Details`, `Fraud Meeting Deemed Unnecessary`, `IdV Upgrade?`,
+`Confirmed pre-launch or launch day activities`, `Launch Day Activities Completed`, `Launch
+Coordinators Kick-off Call`, `Launch Kick-off Meeting Unnecessary`, `Launch Tested`, `Launch to
+Production Completed by OE`, `Marketing/Comms Strategy`, `Requested Contact Center Reporting`,
+`Security Meeting Deemed Unnecessary`, `Coordinated Optional Follow-up Tech Sync`, `UX Meeting
+Deemed Unnecessary` → their correspondingly-named `LDGCRM_*__c` Checkbox fields.
+
+**Booleans derived from presence of a *linked-record* column, not a literal checkbox** (confirmed by
+sampling — values are `rec...` IDs pointing at the not-yet-migrated Meetings table, or in Security
+Meeting's case, freeform meeting-name text): `Customer Support Meeting`, `Fraud Meeting`, `Launch
+Kick-off Meeting`, `UX Meeting`, `Security Meeting` → `LDGCRM_Customer_Support_Meeting__c`,
+`LDGCRM_Fraud_Meeting_Held__c`, `LDGCRM_Launch_Kickoff_Meeting_Held__c`, `LDGCRM_UX_Meeting_Held__c`,
+`LDGCRM_Security_Meeting__c`. **Deliberately not resolving which specific meeting** (user-confirmed)
+— true if the Airtable column has any value, blank otherwise. No attempt to link the actual Meeting
+record; there's no field on Application for that relationship anyway.
+
+**Booleans derived from an explicit two-valued text field** (not presence-based — the column is
+always populated with one of two strings): `Broker Application` (`"Yes"`/`"No"`, 936 No / 50 Yes) →
+`LDGCRM_Broker_Application__c`; `Launch Risk` (only ever blank or the single value `"At Risk"`, 622
+records) → `LDGCRM_Launch_Risk__c` (true when the value is present/equals `"At Risk"`).
+
+**Picklists needing an explicit value map** (checked every distinct value against the target's
+actual allowed set before assuming passthrough — see General Principle):
+
+| Airtable field | Salesforce field | Transformation rule |
+| --- | --- | --- |
+| `Status` | `LDGCRM_Status__c` (restricted picklist) | 7 of 8 distinct values match exactly. `"Decomissioned"` (89 records, one *m*) → `"Decommissioned"` (correct spelling, matches the record type's actual value) — a spelling-drift gotcha, same category as Impediment's Category fix. |
+| `Ramp Up Approach` | `LDGCRM_Ramp_Up_Approach__c` (restricted picklist: `Gradual`/`Immediate`/`Spikes`) | Airtable's values are verbose labels with the real value as a leading word, e.g. `"Gradual Level 2: Low Impact < 350K users"` → map by taking the leading `Gradual`/`Immediate`/`Spikes` token, not the whole string. 2 records (`"Q1 - FY'23"`, `"146"`) have no extractable value — left blank on load. **User-confirmed (2026-08-13): acceptable as-is** — this looks like old data on an otherwise solid picklist field, and the Salesforce field is optional, so nulling these 2 rows rather than guessing is fine; no further review needed. |
+| `Launch Level` | `LDGCRM_Launch_Level__c` (restricted picklist, 5 values) | Airtable stores bare numbers (`"1"`–`"5"`); map to the full label (`"1"` → `"1 - Very Low Impact"`, … `"5"` → `"5 - Very High Impact"`). |
+| `Demographic Served` | `LDGCRM_Demographic_Served__c` (multiselect) | See dedicated section above — this is the big one. |
+| `Service Level` | `LDGCRM_Service_Level__c` (restricted picklist) | Already an exact match on all 3 distinct values (`Authentication Only`, `Basic IdV`, `Enhanced IdV (IAL2)`) — direct passthrough, no map needed. |
+
+**Direct passthrough (Text/URL/Date/Number, values already compatible):**
+`Actual Go-Live Date`, `Current Go Live Date` → their `Date` fields (Airtable `YYYY-MM-DD` matches
+Bulk API's expected format); `# of Estimated Annual IdV Transactions`, `# of
+Estimated Monthly Active Users` → their `Number` fields; `Completed Customer Support Survey`,
+`Completed Fraud Survey`, `Completed Security Survey`, `Launch Checklist URL`, `Launch Deck URL` →
+their `Url` fields (checked all 5 for the same `"TBD"`-placeholder issue found on `URL`/
+`Description` — 0 occurrences across all of them, so no filter needed here).
+
+**Not mapped — also formula fields, same lesson as the Percent fields above:**
+`LDGCRM_Opportunity_Lead__c` (`HYPERLINK` formula pulling `LDGCRM_Opportunity__r.Owner`'s name) and
+`LDGCRM_Opportunity_Stage__c` (`TEXT(LDGCRM_Opportunity__r.StageName)`) both looked like plain `Text`
+fields — a type that's normally always safe to write to — but are entirely computed from the linked
+Opportunity once `LDGCRM_Opportunity__c` is set. Airtable's `Opportunity Lead` and `Opportunity
+Status` columns are excluded from the transform entirely, not mapped. (These two stay blank until
+Opportunity is loaded and the Application's `LDGCRM_Opportunity__c` lookup actually resolves — same
+dependency as the lookup itself, not a new one.)
+
+**Passthrough with a placeholder filter** (checked real values before assuming clean data — see
+General Principle): `URL` and `Description` both use the literal placeholder `"TBD"` (with a
+trailing newline) on a meaningful minority of rows (32 of 944 non-blank `URL` values; 30 of 1,026
+non-blank `Description` values) — treat `"TBD"`-prefixed values as blank rather than loading the
+literal placeholder text, same pattern as Partner Account's non-URL `Agency Summary` filter.
+
+### Load history (2026-08-13): three attempts, 1,045 failures → 688/688 clean — full post-mortem
+
+**Final state: 688 of 688 submitted rows loaded successfully, 0 failures.** Verified post-load that
+all 688 resolved their Partner Account lookup and all 688 had `LDGCRM_Market_Segment__c` populated by
+the before-save Flow (confirming the "never set Market Segment directly" rule). Of the 1,064 Airtable
+rows, 359 were deliberately withheld pending Airtable Account fixes and 17 have no Partner Account at
+all — those load on a re-run once the data is corrected, no code change needed.
+
+Getting there took three attempts. Every failure is catalogued below, because most of these causes
+generalize to the objects still to be built.
+
+**Attempt 1 — 1,045 of 1,047 rows failed:**
+
+| Error | Rows | Cause |
+| --- | --- | --- |
+| `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` on Service Level | 521 | **A real bug in this script.** See below. |
+| `INVALID_FIELD` — Partner Account FK not found | 343 | Expected: parent Partner Account never loaded (its own parent Account is unresolved). Data-quality gap, not a code bug. |
+| `INVALID_FIELD` — Opportunity FK not found | 99 | Expected: Opportunity isn't built/loaded yet. |
+| `INVALID_FIELD` — Broker App Parent FK not found | 68 | **Disproved an assumption this document previously recorded as "likely fine."** See below. |
+| `STRING_TOO_LONG` on Name / URL | 14 | Salesforce platform hard limits. See below. |
+
+**Attempt 2 — 686 of 688 succeeded.** Two rows exposed gaps in the attempt-1 fixes, both worth noting
+because each was a *narrow* fix where a general one was needed:
+
+| Error | Rows | Cause |
+| --- | --- | --- |
+| `STRING_TOO_LONG` on Launch Deck URL | 1 | The attempt-1 fix length-checked only `LDGCRM_URL__c` — the field that happened to have obviously long values — leaving the object's five *other* `Url` fields unguarded. Now every Url field runs through one shared `Resolve-UrlValue` helper driven by a field table. **Lesson: when a platform limit bites one field, fix it for every field of that type on the object, not just the one that failed.** |
+| `FIELD_INTEGRITY_EXCEPTION` on Actual Go-Live Date | 1 | One row carries `0202-02-18` — a mistyped `2022`. Every date value in the export is validly *formatted* `YYYY-MM-DD`, so a format check passes it; the year is simply not a real date Salesforce accepts. Now range-checked (1900–2100) via `Resolve-DateValue`. **Lesson: correct format ≠ sane value — the same instinct as checking a picklist's actual values rather than trusting its type.** |
+
+**Attempt 3 — 688 of 688 succeeded, 0 failures.**
+
+**1. `Service Level` was a 1-element array, not a scalar — the `System.Object[]` trap.** Airtable
+returns `Service Level` as a linked-record-style array (`["Authentication Only"]`) even though it
+reads as a plain single-select in the Airtable UI and its *values* all matched the target picklist
+exactly. The transform passed `$Row.fields.'Service Level'` straight through, and PowerShell's CSV
+export stringified the array as the literal text `System.Object[]`, which the restricted picklist
+rejected on every row that had a value. **The pre-build investigation checked the field's distinct
+values but not its JSON shape** — which is exactly why it slipped through: `Group-Object` over an
+array-valued field still reports the inner strings, so the values "looked" clean. Fixed with the same
+`@(...)[0]` unwrap used for every genuine linked-record field. **Every other direct-passthrough field
+on this object was then re-checked for the same shape (`-is [array]`); Service Level was the only
+one.** Lesson, and it's a new one for this migration: checking a field's *values* isn't enough —
+check its *shape* (`$value -is [array]`) before treating any Airtable field as a scalar passthrough,
+even one that looks like a simple single-select. A stringified `System.Object[]` in a load CSV is the
+tell.
+
+**2. Self-referential lookups do NOT resolve within a single upsert batch.** This document previously
+recorded, on the `Broker App Parent` row of the field-mapping table, that same-batch external-ID
+resolution was "likely fine since Bulk API resolves external-ID references after all rows in a batch
+are inserted, but worth verifying when the script is built rather than assumed." **Verified: it's
+false.** All 68 rows carrying a `Broker App Parent` failed with `Foreign key external ID ... not found
+... in entity LDGCRM_application__c`, even though the referenced parent Application was in the same
+CSV. `LDGCRM_Broker_App_Parent__c` is therefore no longer written by this script at all — it needs a
+**second pass** re-upserting only `LDGCRM_External_ID__c` + the parent reference, after every
+Application row exists in the org (see `docs/README.md`'s Load order). Applies to any future
+self-referential lookup in this pipeline, not just this one.
+
+**3. `Name` (80) and `Url` (255) are Salesforce platform hard limits, not fixable field metadata.**
+Unlike Impediment's `TextArea`→`LongTextArea` fix and Partner Account's `Text(10)`→`Text(50)`
+extension — both genuine metadata shortcomings this migration corrected — these two can't be raised:
+a custom object's `nameField` is capped at 80 characters by the platform (no `<length>` override
+exists for it) and `Url`-type fields are fixed at 255. 5 rows exceeded the Name cap (truncated to 80
+and flagged) and 9 exceeded the URL cap (left blank rather than truncated — a cut-off URL is a broken
+URL, whereas a cut-off name is still recognizable). Both go to
+`Application-overlength-<ts>.csv` for human review, and both are written up in
+`AIRTABLE-DATA-QUALITY-REQUESTS.md` asking for shorter canonical values at the source. **Lesson: when
+a length limit bites, check whether it's a field setting we control or a platform limit before
+reaching for a metadata fix** — the earlier TextArea/Text cases in this migration made "just extend
+the field" feel like the default answer, and it isn't always available.
+
+**4. An "optional" lookup still fails the whole row if it points at something nonexistent.** The 99
+Opportunity-FK failures are worth stating explicitly because the field-mapping table below describes
+`LDGCRM_Opportunity__c` as optional and says "blank is fine" — true, but blank is not the same as
+*populated with an unresolvable reference*. Bulk API rejects the entire record, not just the
+offending field. This is why Opportunity is now documented as a hard prerequisite for Application in
+the load order, despite the lookup being nominally optional.
+
+### Six fields are actually formula fields — don't write to them
+
+`LDGCRM_Launch_Checklist_Completion__c`, `LDGCRM_Level_1_Complete_Pct__c`,
+`LDGCRM_Level_3_Complete_Pct__c`, and `LDGCRM_Level_4_Complete_Pct__c` all declare
+`<type>Percent</type>` in metadata, indistinguishable at a glance from a normal writable Percent
+field — but each also has a `<formula>` tag: they're computed automatically from the very
+Checkbox/URL fields already being migrated (e.g. `LDGCRM_Level_1_Complete_Pct__c` = count of 9
+specific checkboxes/fields being true or non-blank, divided by 9). `LDGCRM_Opportunity_Lead__c` and
+`LDGCRM_Opportunity_Stage__c` are the same trap wearing a `Text` type instead of `Percent` —
+computed from the linked Opportunity's Owner/StageName once `LDGCRM_Opportunity__c` is set.
+Salesforce rejects direct writes to formula fields outright, regardless of declared type. Airtable's
+matching columns (`Checklist Completion %`, `Level 1+ Complete %`, `Level 3+ Complete %`, `Level 4+
+Complete %`, `Opportunity Lead`, `Opportunity Status`) are **excluded entirely** — not mapped, not
+filtered, just not referenced in the transform at all. Once the underlying checkboxes/URLs/
+Opportunity lookup load correctly, these compute themselves; loading them independently would have
+failed the batch outright (a much louder failure than the TextArea-length issue, which at least
+loaded the *other* columns on the same row). This also made a percent-unit question moot for the
+Percent fields: Airtable stores these as 0–1 fractions (e.g. `0.111` for what Airtable displays as
+`11.11%`) while Salesforce Percent fields expect the raw
+0–100 number via the API — would have needed a ×100 conversion if any Percent field here had been
+genuinely writable, but none are, so it never came up. **Lesson: check for a `<formula>` tag before
+mapping *any* field that looks like a plain calculated/aggregate value (Percent, Number, even Text)
+— "the type looks normal" isn't the same as "it's writable," the same way `<type>TextArea</type>`
+without a length doesn't mean "255 characters is enough" (see General Principle #4).**
+
+### Fields with no destination — the full inventory (as requested)
+
+Every Airtable column not covered above, and why:
+
+**Feed a different chunk, not this object:** `Agreement Contacts`, `Contacts Record ID`, `Email
+(from Agreement Contacts)` (all drive `LDGCRM_Application_Contact__c`); `Partner Portal Admin`
+(drives a checkbox on `LDGCRM_Application_Contact__c` specifically — **not** a field on Application
+itself; user-confirmed this is where it now lives, contacts junction chunk, not here).
+
+**Rollups/lookups from a parent record, redundant with data already on that parent:** `Account`,
+`Account Owner`, `Department` (from Account/Partner Account); `Est. Go Live (Opportunity)`, `Initial
+Agreement Size (from Opportunity)` (from Opportunity); `Most Recent PoP End Date`, `Most Recent PoP
+Start Date` (from Partner Account, same fields already excluded there for the same reason).
+
+**Airtable system/computed metadata, not real data:** `Created By`, `Last Modified`, `Updated?`,
+`Count (Issuer Strings)`.
+
+**Freeform/journal-style — deferred `ContentNote` candidates** (per the Notes chunk, see above in
+this document): `Notes` (a literal Notes column — the strongest possible candidate), `Launch Notes`,
+`IdV Upgrade Notes`.
+
+**No Salesforce field found at all — genuinely unmapped, not just deferred:**
+- `Issuer Strings` — **confirmed not migrated** (user-explicit decision). Links to a table this
+  migration doesn't pull, and the Salesforce target (`LDGCRM_PP_Issuer_Strings__c`) is a plain
+  `Text(40)`, not a Lookup, so a raw linked-record ID wouldn't be meaningful there anyway.
+- `Pilots` — short categorical values (`No Pilots` 754, `IPP` 23, `Unemployment Insurance Pilot` 8,
+  `FCC Pilot` 3, `Biometric` 3, `Disaster Pilot` 1). No dedicated field exists. **User-confirmed
+  (2026-08-13): not migrating this field** — closed, not just deferred.
+- `Migrated to the partner portal` (boolean, 296 `True`) — no matching field found; likely
+  owned/set by the Partner Portal system directly rather than sourced from this migration.
+  **User-confirmed (2026-08-13): fine not to have this for now** — not a permanent "never," just not
+  a current priority, so don't read this as fully closed the way Usage Tracker/Vital Update % are.
+- `Usage Tracker Application Name` — a different external system's app name (Login.gov's usage
+  analytics tool), not a Salesforce concept. **User-confirmed (2026-08-13): does not need to
+  transfer** — closed, not just deferred.
+- `Vital Update %` — no matching field found despite the Percent shape; not the same thing as
+  `Checklist Completion %` or the `Level N+ Complete %` fields (those all have their own distinctly-
+  named Airtable source columns already mapped above). **User-confirmed (2026-08-13): does not need
+  to transfer** — closed, not just deferred.
+
+**Salesforce fields on this object with no Airtable source at all — not yet confirmed either way:**
+`LDGCRM_Annual_Revenue_Amount__c`, `LDGCRM_P3_Partner_Portal_Team_Name__c`,
+`LDGCRM_P3_Team_UUID__c`. Presumed populated by the Partner Portal application directly rather than
+this migration (no Airtable column resembling `revenue`/`uuid`/`team name` exists), but that's an
+assumption, not a confirmed fact the way the four items above are — worth a explicit check with
+whoever owns the Partner Portal integration before treating it as settled.
+
+**Salesforce fields with no Airtable source at all** (confirmed by searching every Airtable column
+name for `revenue`/`uuid`/`team`/`portal` — only `Partner Portal Admin` and `Migrated to the partner
+portal` matched, neither of which populates these): `LDGCRM_Annual_Revenue_Amount__c`,
+`LDGCRM_P3_Partner_Portal_Team_Name__c`, `LDGCRM_P3_Team_UUID__c`. Left unset by this migration —
+likely populated by a different system (the Partner Portal application itself) rather than Airtable.

@@ -129,5 +129,21 @@ function Invoke-SalesforceQuery {
         return @()
     }
 
-    return @($JsonResult.result.records)
+    # CALLER CONTRACT: always wrap the call site in @(), e.g.
+    #     $Rows = @(Invoke-SalesforceQuery -Soql ... -OrgAlias ...)
+    # PowerShell unwraps a single-element array back to a bare scalar when a
+    # function returns it through the output stream, so an unwrapped caller
+    # doing $Rows.Count on a genuinely single-row result silently gets $null
+    # (hit 2026-08-13 on a RecordType lookup that legitimately matched one row).
+    #
+    # This was first "fixed" with Write-Output -NoEnumerate, which traded one
+    # failure mode for a worse one: -NoEnumerate emits the array as a SINGLE
+    # object, so any caller following the idiomatic @() convention got a
+    # nested 1-element array wrapping the real results - .Count == 1 no matter
+    # how many rows came back, with no error. That silently reported "1 Partner
+    # Account exists" against 74 real rows (caught 2026-08-13 only because the
+    # number was obviously wrong). Returning normally + @() at every call site
+    # is correct in all three cases (0 rows, 1 row, many) and is idempotent, so
+    # it can't be double-applied by mistake.
+    return $JsonResult.result.records
 }

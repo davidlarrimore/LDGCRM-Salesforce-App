@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -145,7 +145,7 @@ onto:
   or edits the field by hand, can silently create duplicates. Consider flipping `unique` to `true` on the
   objects driven entirely by this migration (not on Account, see below) as a guardrail.
 
-See `scripts/data-migration/TRANSFORMATION-RULES.md` for the full field-by-field mapping rules and
+See `docs/TRANSFORMATION-RULES.md` for the full field-by-field mapping rules and
 every gotcha discovered per object (Account's Type/Market Segment logic, Impediment's Category
 value map, etc.) — this section is the short cross-object summary.
 
@@ -155,7 +155,7 @@ value map, etc.) — this section is the short cross-object summary.
 | --- | --- | --- |
 | Accounts | Account (`Federal` record type) | *(already migrated — see below)*; also `States + DC/PR` (checkbox) → `Type` (`"State"` if checked, else `"Federal"` — confirmed against gsa-peo's existing data, not just Airtable's field name; see below) |
 | Partner Accounts | `LDGCRM_Partner_Account__c` | `Account Record ID` → `LDGCRM_Account__c` (Master-Detail, requires Account loaded first); `Name`/`LDGCRM_Agreement_Short_Name__c` ← `Agreement Short Name` (no dedicated Name column exists) |
-| Applications | `LDGCRM_application__c` (`LDGCRM_Application` record type) | `Partner Account Record ID (from Partner Agreement)` → `LDGCRM_Partner_Account__c`; `Opportunity Record ID` → `LDGCRM_Opportunity__c` |
+| Applications | `LDGCRM_application__c` (`LDGCRM_Application` record type — its only active record type) | `Partner Account Record ID (from Partner Agreement)` → `LDGCRM_Partner_Account__c` (required); `Opportunity Record ID` → `LDGCRM_Opportunity__c`; `Demographic Served` needed a Global Value Set expansion (6 → 25 values) — see `docs/TRANSFORMATION-RULES.md` for the full analysis and justification |
 | Contacts | Contact (`Federal` record type) | no direct Account/Application lookup on Contact itself — relationships go through the junctions below |
 | Applications × Contacts (embedded in Contacts/Applications exports) | `LDGCRM_Application_Contact__c` | needs both the Application's and the Contact's `rec...` IDs; splits Airtable's comma-joined multi-value cells into one junction row per pair |
 | Opportunities | Opportunity (`Login_gov` record type) | `Account Record ID` → `AccountId` |
@@ -197,31 +197,52 @@ legacy `Note` object) attached to their parent record, in a dedicated **Notes ch
 built last**, after every other object's records exist. This is forward-only — it does not apply to
 columns already migrated as dedicated fields (Partner Account's `Current Status Summary`,
 Impediment's `Description`/`Talking Point` stay exactly as built). See
-`scripts/data-migration/TRANSFORMATION-RULES.md`'s "Notes" section for the full mechanism, current
+`docs/TRANSFORMATION-RULES.md`'s "Notes" section for the full mechanism, current
 candidate-field list, and open questions (e.g. Partner Accounts' `Escalated User Support Cases`
 appears to reference an Airtable table this migration doesn't currently pull at all).
 
-**Current sandbox state (checked 2026-08-12, re-verified same day via
-`Build-AccountReconciliation.ps1`):** Account and Market Segment are effectively **pre-migrated** —
-588 Accounts now exist (all `Federal` record type; this count moved from an earlier same-day
-reading of 531, so treat it as a moving target, not a fixed baseline), 585 now carry a `rec...`
-`LDGCRM_External_ID__c` after the Account reconciliation backfill load, and all 6 Market Segments
-exist. **Impediment (40 records) and Partner Account (76 records) are now loaded** via
-`Build-ImpedimentLoad.ps1`/`Build-PartnerAccountLoad.ps1` + `Invoke-SalesforceLoad.ps1` — see
-`scripts/data-migration/TRANSFORMATION-RULES.md` for what each load surfaced. Every other object is
-still essentially empty (2 Opportunities, 3 Contacts, 4 Applications, 0 Tasks/Events/
-OpportunityContactRoles) — a handful of obvious test/sample rows (`Test Account`, `HHS - Test`,
-`Test Partner Account`, `Test Market Segment`, …). Airtable has 757 Account rows against those 588
-Salesforce Accounts, so **don't assume 1:1** — reconcile by external ID first, then by name, and treat
-any Airtable Account row that doesn't match an existing Salesforce Account as an exception for human
-review rather than auto-creating a new Account (this is also why Account's `LDGCRM_External_ID__c`
-should stay `unique=false`/non-enforced for now, rather than being tightened like the other objects —
-a premature uniqueness constraint would block the reconciliation pass on the currently-172 untagged
-rows, one of which, `Depart of Homeland Security`, looks like a typo'd duplicate of an existing tagged
-Account and needs a human decision, not a script, to resolve). `Build-AccountReconciliation.ps1`
+**Before mapping any field that looks like a plain calculated/aggregate value — Percent, Number,
+even Text — check its metadata for a `<formula>` tag before writing a transform against it.** The
+declared `<type>` alone doesn't mean it's writable: Application's `LDGCRM_Level_1_Complete_Pct__c`/
+`Level_3`/`Level_4`/`Launch_Checklist_Completion__c` all declare `<type>Percent</type>`, identical to
+a normal writable field, but each is actually a formula computed from other fields already being
+migrated (mostly checkboxes) — Salesforce rejects direct writes to a formula field outright. Caught
+before `Build-ApplicationLoad.ps1` was written, not after a failed load. Same instinct as checking a
+picklist's restricted values or a TextArea's real length before trusting a field's surface
+appearance — see `docs/TRANSFORMATION-RULES.md`'s General Principle #6 and the
+Application section's dedicated note for the full example.
+
+**Application is loaded as of 2026-08-13: 688 records** (688/688 succeeded, 0 failures; 691 total on
+the object including 3 pre-existing test records). 359 more Airtable rows are deliberately withheld
+until the duplicate/unmatched Account data is fixed in Airtable, and 92 loaded rows have a blank
+Opportunity lookup pending the Opportunity load — both resolve on a plain re-run of
+`Build-ApplicationLoad.ps1`, no code change needed. That script now queries gsa-peo (it is no longer a
+purely offline transform) to skip rows whose parent Partner Account doesn't exist rather than
+submitting guaranteed failures. **`LDGCRM_Broker_App_Parent__c` is deliberately not loaded** — a
+self-referential lookup can't resolve within its own upsert batch and needs a second pass (not built).
+
+**Current sandbox state (rebuilt 2026-08-13 — see `docs/README.md`'s "Production Account seed"
+section for the full rebuild):** the Account/Partner Account chain was deliberately hard-deleted
+(scoped, via `scripts/cleanup/cleanup-gsa-peo.ps1`) and rebuilt from a real production Account
+export to make reconciliation testing meaningful, rather than testing against arbitrary sandbox seed
+data. **Treat every count below as a moving target, not a fixed baseline** — it's shifted several
+times in a single day already. Current: 1,346 Accounts (1,342 inserted from the production export +
+4 untouched pre-existing test records), 588 carry `LDGCRM_External_ID__c` after the reconciliation
+backfill, all 6 Market Segments exist (unaffected by the rebuild — Market Segment was never in
+scope), **Partner Account has 76 records** (74 loaded + 2 pre-existing test records) and
+**Impediment has 40** (untouched by the rebuild — deliberately preserved, not part of the Account
+chain). Airtable has 757 Account rows against 588 tagged Salesforce Accounts — **don't assume 1:1**
+— reconcile by external ID first, then by name, and treat any Airtable Account row that doesn't
+match an existing Salesforce Account as an exception for human review rather than auto-creating a
+new Account (this is also why Account's `LDGCRM_External_ID__c` should stay `unique=false`/
+non-enforced for now). 169 rows remain unmatched as of the rebuild — confirmed 2026-08-13 that most
+checked so far are duplicate rows *within Airtable itself* (e.g. `Army`/`Navy`/`Air Force` alongside
+already-linked `Department of the Army`/`Department of the Navy`/`Department of the Air Force`
+entries), not genuinely missing Accounts — see `docs/AIRTABLE-DATA-QUALITY-REQUESTS.md` for the
+full list and a human decision needed for each. `Build-AccountReconciliation.ps1`
 (`scripts/data-migration/`) automates this reconciliation — external ID, Market Segment, and Type
 backfill — read-only against Salesforce, writing an update CSV plus human-review CSVs for anything
-it can't confidently match; see `scripts/data-migration/README.md` for the full pipeline.
+it can't confidently match; see `docs/README.md` for the full pipeline.
 
 **Load order** (parents before children/junctions — the reverse of the delete order in
 `scripts/cleanup/cleanup-gsa-peo.ps1`): Market Segment → Account → `LDGCRM_Partner_Account__c` →
@@ -294,7 +315,7 @@ Run from inside `sfdx/`:
   *all* Apex in the org as a prerequisite for running any tests, so this one broken class cascades
   into "Dependent class is invalid and needs recompilation" errors and test failures across the
   entire org, regardless of what you're actually deploying — discovered 2026-08-12 while deploying
-  an unrelated two-field metadata change (see `scripts/data-migration/TRANSFORMATION-RULES.md`'s
+  an unrelated two-field metadata change (see `docs/TRANSFORMATION-RULES.md`'s
   Impediment section). **Workaround for metadata-only changes with no Apex/trigger component**, on
   this sandbox (not production): `sf project deploy start --test-level NoTestRun --target-org
   gsa-peo` skips test execution entirely, sidestepping the recompilation cascade. This does *not*

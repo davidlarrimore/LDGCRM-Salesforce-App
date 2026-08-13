@@ -2,7 +2,7 @@
 
 <#
     Chunk 1 of the Airtable -> Salesforce data-migration pipeline (see
-    scripts/data-migration/README.md for the full pipeline).
+    docs/README.md for the full pipeline).
 
     Account is a special case: unlike every other object in this migration,
     Salesforce Account records already exist independently of Airtable (they
@@ -87,7 +87,7 @@ Write-Host "$($AirtableAccounts.Count) Airtable Account rows loaded."
 Write-Host ""
 Write-Host "Querying existing Salesforce Accounts..." -ForegroundColor Cyan
 $Soql = "SELECT Id, Name, Type, LDGCRM_External_ID__c, LDGCRM_Market_Segment__r.LDGCRM_External_ID__c FROM Account"
-$SalesforceAccounts = Invoke-SalesforceQuery -Soql $Soql -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+$SalesforceAccounts = @(Invoke-SalesforceQuery -Soql $Soql -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
 Write-Host "$($SalesforceAccounts.Count) Salesforce Account records found."
 
 # ============================================================

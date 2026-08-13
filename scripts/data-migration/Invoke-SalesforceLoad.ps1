@@ -2,7 +2,7 @@
 
 <#
     Chunk 5 of the Airtable -> Salesforce data-migration pipeline (see
-    scripts/data-migration/README.md) - the actual load step. Wraps `sf data
+    docs/README.md) - the actual load step. Wraps `sf data
     upsert bulk` / `sf data update bulk` (Bulk API 2.0) around a CSV produced
     by one of this directory's Build-*.ps1 transform scripts.
 
@@ -19,6 +19,9 @@
     key column is the external ID field (LDGCRM_External_ID__c by default).
     -Operation Update is for Account specifically (see
     Build-AccountReconciliation.ps1): the CSV's key column must be named "Id".
+    -Operation Insert is a pure Bulk API 2.0 insert (`sf data import bulk`) -
+    no key column at all, used for seeding brand-new records that don't have
+    an external ID yet (see Build-ProdAccountSeed.ps1).
 
     This writes to gsa-peo. Per sfdx-sandbox-ops: preflight counts are shown,
     and nothing is sent to Salesforce until you type LOAD to confirm.
@@ -31,7 +34,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$CsvFile,
 
-    [ValidateSet("Upsert", "Update")]
+    [ValidateSet("Upsert", "Update", "Insert")]
     [string]$Operation = "Upsert",
 
     [string]$ExternalIdField = "LDGCRM_External_ID__c",
@@ -89,10 +92,12 @@ if ($Rows.Count -eq 0) {
     exit 0
 }
 
-$KeyColumn = if ($Operation -eq "Update") { "Id" } else { $ExternalIdField }
+if ($Operation -ne "Insert") {
+    $KeyColumn = if ($Operation -eq "Update") { "Id" } else { $ExternalIdField }
 
-if (-not ($Rows[0].PSObject.Properties.Name -contains $KeyColumn)) {
-    throw "CSV is missing the expected key column '$KeyColumn' for a $Operation operation."
+    if (-not ($Rows[0].PSObject.Properties.Name -contains $KeyColumn)) {
+        throw "CSV is missing the expected key column '$KeyColumn' for a $Operation operation."
+    }
 }
 
 # ============================================================
@@ -135,8 +140,13 @@ if ($Confirmation -cne "LOAD") {
 $LogDir = Get-LogDirectory -Category "data-migration"
 $ResultFile = Join-Path $LogDir "Load-$ObjectApiName-$Timestamp.json"
 
+# "Insert" maps to the `data import bulk` command (not `data insert bulk` -
+# the CLI names pure-insert bulk loads "import"); Upsert/Update map directly
+# to their own same-named subcommands.
+$SfSubcommand = if ($Operation -eq "Insert") { "import" } else { $Operation.ToLower() }
+
 $LoadArguments = @(
-    "data", ($Operation.ToLower()),
+    "data", $SfSubcommand,
     "bulk",
     "--sobject", $ObjectApiName,
     "--file", $CsvFile,
