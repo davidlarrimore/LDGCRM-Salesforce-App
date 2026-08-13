@@ -1,0 +1,647 @@
+<title>Airtable Migration Load Report</title>
+<style>
+  :root {
+    --ink:        #17293D;
+    --ink-soft:   #40566E;
+    --ink-faint:  #6B7F94;
+    --paper:      #F8F9FB;
+    --surface:    #FFFFFF;
+    --rule:       #DDE3EA;
+    --rule-soft:  #E9EDF2;
+    --accent:     #2E6E68;
+    --accent-bg:  #E4EFEE;
+    --positive:   #2C7A57;
+    --positive-bg:#E3F0E9;
+    --caution:    #9A6B12;
+    --caution-bg: #F6EDDC;
+    --critical:   #9E3B33;
+    --critical-bg:#F7E5E3;
+
+    --serif: Georgia, "Iowan Old Style", "Times New Roman", Times, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink:        #E4EBF2;
+      --ink-soft:   #A9BACB;
+      --ink-faint:  #7B8EA1;
+      --paper:      #0F1720;
+      --surface:    #16202B;
+      --rule:       #2A3947;
+      --rule-soft:  #22303C;
+      --accent:     #6FBDB4;
+      --accent-bg:  #1B302F;
+      --positive:   #6DBF95;
+      --positive-bg:#17281F;
+      --caution:    #D6A64F;
+      --caution-bg: #2A2418;
+      --critical:   #E08B82;
+      --critical-bg:#2C1D1B;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ink:        #E4EBF2;
+    --ink-soft:   #A9BACB;
+    --ink-faint:  #7B8EA1;
+    --paper:      #0F1720;
+    --surface:    #16202B;
+    --rule:       #2A3947;
+    --rule-soft:  #22303C;
+    --accent:     #6FBDB4;
+    --accent-bg:  #1B302F;
+    --positive:   #6DBF95;
+    --positive-bg:#17281F;
+    --caution:    #D6A64F;
+    --caution-bg: #2A2418;
+    --critical:   #E08B82;
+    --critical-bg:#2C1D1B;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 6rem;
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 1.25rem;
+    margin-bottom: 2.5rem;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.75rem;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(1.9rem, 4.5vw, 2.7rem);
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0 0 0.6rem;
+  }
+  .standfirst {
+    font-size: 1.05rem;
+    color: var(--ink-soft);
+    max-width: 40rem;
+    margin: 0;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.75rem;
+    margin-top: 1.25rem;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--ink-faint);
+  }
+  .meta b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 3.25rem; }
+  h2 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 1.5rem;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 0.4rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  h3 {
+    font-family: var(--sans);
+    font-weight: 650;
+    font-size: 1.02rem;
+    margin: 2rem 0 0.5rem;
+    text-wrap: balance;
+  }
+  p { margin: 0 0 1rem; max-width: 42rem; }
+  .lede { color: var(--ink-soft); margin-top: 0.9rem; }
+  strong { font-weight: 650; }
+
+  /* ---------- at a glance ---------- */
+  .glance {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin-top: 1.5rem;
+  }
+  .stat { background: var(--surface); padding: 1.1rem 1rem; }
+  .stat .n {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 1.6rem;
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--ink);
+    display: block;
+  }
+  .stat .k {
+    font-size: 0.76rem;
+    color: var(--ink-faint);
+    margin-top: 0.35rem;
+    display: block;
+    line-height: 1.35;
+  }
+
+  /* ---------- tables ---------- */
+  .scroll { overflow-x: auto; margin-top: 1.5rem; border: 1px solid var(--rule); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
+  thead th {
+    background: var(--surface);
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    padding: 0.7rem 0.85rem;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 0.7rem 0.85rem;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+    background: var(--surface);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .num {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .obj { font-weight: 600; white-space: nowrap; }
+  .why { color: var(--ink-soft); font-size: 0.83rem; min-width: 18rem; }
+  .delta-neg { color: var(--critical); }
+  .delta-zero { color: var(--positive); }
+
+  /* ---------- chips ---------- */
+  .chip {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.45rem;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .chip-ok   { background: var(--positive-bg); color: var(--positive); }
+  .chip-warn { background: var(--caution-bg);  color: var(--caution); }
+  .chip-stop { background: var(--critical-bg); color: var(--critical); }
+  .chip-none { background: var(--rule-soft);   color: var(--ink-faint); }
+
+  /* ---------- callout ---------- */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-bg);
+    padding: 1.1rem 1.25rem;
+    margin: 1.5rem 0;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  /* ---------- decision blocks ---------- */
+  .decision {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 1.15rem 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .decision h4 {
+    font-family: var(--sans);
+    font-size: 0.97rem;
+    font-weight: 650;
+    margin: 0 0 0.5rem;
+  }
+  .decision p { margin-bottom: 0.6rem; font-size: 0.92rem; }
+  .decision p:last-child { margin-bottom: 0; }
+  .verdict {
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--rule-soft);
+    padding-top: 0.6rem;
+    margin-top: 0.8rem;
+  }
+  .verdict b { color: var(--ink); }
+
+  ul { margin: 0 0 1rem; padding-left: 1.15rem; max-width: 42rem; }
+  li { margin-bottom: 0.45rem; }
+
+  .askbox { border-top: 2px solid var(--ink); padding-top: 1.25rem; margin-top: 1.5rem; }
+  .ask {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.6rem 1rem;
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+    align-items: start;
+  }
+  .ask:last-child { border-bottom: none; }
+  .ask .who { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); padding-top: 0.2rem; white-space: nowrap; }
+  .ask .what { font-size: 0.92rem; }
+  .ask .what b { display: block; margin-bottom: 0.15rem; }
+
+  footer {
+    margin-top: 4rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.8rem;
+    color: var(--ink-faint);
+    max-width: 42rem;
+  }
+
+  @media (max-width: 560px) {
+    .wrap { padding: 2rem 1.1rem 4rem; }
+    .why { min-width: 14rem; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Migration Status Report</p>
+    <h1>Airtable to Salesforce: what loaded, what didn't, and why</h1>
+    <p class="standfirst">A reconciliation of every Airtable table against the records now in the
+      Salesforce sandbox, the transformations applied along the way, and the decisions still needed
+      from the Partnerships team.</p>
+    <div class="meta">
+      <span><b>Environment</b> gsa-peo sandbox</span>
+      <span><b>Report date</b> 13 August 2026</span>
+      <span><b>Source</b> Airtable, pulled 12 August 2026</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Where things stand</h2>
+    <p class="lede">Ten of the eleven data sets now hold records in Salesforce; Meetings has not been
+      started. Every record that could be loaded without guessing at ambiguous data has been. The gaps
+      below are almost entirely traceable to a handful of source-data issues, most of which release a
+      large number of records at once.</p>
+
+    <div class="glance">
+      <div class="stat"><span class="n">6,735</span><span class="k">Records created or updated in Salesforce</span></div>
+      <div class="stat"><span class="n">10 / 11</span><span class="k">Data sets loaded, in whole or in part</span></div>
+      <div class="stat"><span class="n">169</span><span class="k">Unmatched accounts — the largest single blocker</span></div>
+      <div class="stat"><span class="n">1,845</span><span class="k">Meetings not yet started</span></div>
+    </div>
+
+    <div class="callout">
+      <span class="label">The one number to watch</span>
+      <p>A single issue — <strong>169 Airtable account rows that don't match an account already in
+        Salesforce</strong> — is responsible for the majority of every other gap on this page. It
+        blocks partner accounts, which blocks applications, which blocks the application–contact
+        links. Resolving those 169 rows would pull several hundred additional records into
+        Salesforce with no further engineering work.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Record reconciliation</h2>
+    <p>Airtable row counts against what is now in Salesforce. A negative difference is not
+      necessarily data loss — in several cases it is intentional consolidation, explained in the
+      final column.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Data set</th>
+            <th class="num">Airtable</th>
+            <th class="num">Salesforce</th>
+            <th class="num">Diff</th>
+            <th class="num">%</th>
+            <th>Status</th>
+            <th class="why">Explanation</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="obj">Market Segments</td>
+            <td class="num">6</td><td class="num">6</td>
+            <td class="num delta-zero">0</td><td class="num">100%</td>
+            <td><span class="chip chip-ok">Complete</span></td>
+            <td class="why">Loaded previously; untouched by this migration.</td>
+          </tr>
+          <tr>
+            <td class="obj">Accounts</td>
+            <td class="num">757</td><td class="num">588</td>
+            <td class="num delta-neg">−169</td><td class="num">77.7%</td>
+            <td><span class="chip chip-warn">Needs decisions</span></td>
+            <td class="why">Accounts already existed in Salesforce, so these were matched rather than
+              created. 169 Airtable rows matched nothing. Spot-checking found most are duplicate rows
+              <em>within Airtable</em> — e.g. “Army” alongside “Department of the Army”.</td>
+          </tr>
+          <tr>
+            <td class="obj">Partner Accounts</td>
+            <td class="num">99</td><td class="num">74</td>
+            <td class="num delta-neg">−25</td><td class="num">74.7%</td>
+            <td><span class="chip chip-warn">Needs decisions</span></td>
+            <td class="why">20 are blocked by the unmatched accounts above. 5 have no usable account
+              link at all (4 marked inactive, 1 linked to two accounts).</td>
+          </tr>
+          <tr>
+            <td class="obj">Contacts</td>
+            <td class="num">2,119</td><td class="num">1,936</td>
+            <td class="num delta-neg">−183</td><td class="num">91.4%</td>
+            <td><span class="chip chip-ok">Loaded</span></td>
+            <td class="why">Source is two tables: 1,599 Contacts + 520 Opportunity Contacts. The
+              difference is mostly <em>intentional</em> — the same person appearing on several rows was
+              consolidated into one contact. 45 rows had neither a name nor an email and could not be
+              loaded; 8 were rejected as duplicates of existing Salesforce contacts.</td>
+          </tr>
+          <tr>
+            <td class="obj">Opportunities</td>
+            <td class="num">928</td><td class="num">742</td>
+            <td class="num delta-neg">−186</td><td class="num">80.0%</td>
+            <td><span class="chip chip-warn">Needs decisions</span></td>
+            <td class="why">142 blocked by unmatched accounts, 28 have no status recorded, 16 have no
+              account link.</td>
+          </tr>
+          <tr>
+            <td class="obj">Applications</td>
+            <td class="num">1,064</td><td class="num">688</td>
+            <td class="num delta-neg">−376</td><td class="num">64.7%</td>
+            <td><span class="chip chip-warn">Needs decisions</span></td>
+            <td class="why">359 are blocked because their partner account hasn't loaded — again
+              tracing back to the unmatched accounts. 17 have no partner account link (6 retired
+              applications, 11 in-progress drafts).</td>
+          </tr>
+          <tr>
+            <td class="obj">Impediments</td>
+            <td class="num">41</td><td class="num">39</td>
+            <td class="num delta-neg">−2</td><td class="num">95.1%</td>
+            <td><span class="chip chip-ok">Loaded</span></td>
+            <td class="why">2 rows are entirely blank and look like accidental empty records.</td>
+          </tr>
+          <tr>
+            <td class="obj">Application ↔ Contact links</td>
+            <td class="num">2,797</td><td class="num">1,880</td>
+            <td class="num delta-neg">−917</td><td class="num">67.2%</td>
+            <td><span class="chip chip-warn">Partial</span></td>
+            <td class="why">A link can only exist once both sides do; 849 are waiting on an
+              application that hasn't loaded. 33 were duplicates created by consolidating contacts and
+              were merged.</td>
+          </tr>
+          <tr>
+            <td class="obj">Impediment ↔ Opportunity links</td>
+            <td class="num">783</td><td class="num">267</td>
+            <td class="num delta-neg">−516</td><td class="num">34.1%</td>
+            <td><span class="chip chip-warn">Needs decisions</span></td>
+            <td class="why">465 of these point at a single impediment named “None”, which we believe is
+              a placeholder meaning <em>no impediment</em> — see below. 44 more await an opportunity
+              that hasn't loaded.</td>
+          </tr>
+          <tr>
+            <td class="obj">Opportunity contact roles</td>
+            <td class="num">520</td><td class="num">515</td>
+            <td class="num delta-neg">−5</td><td class="num">99.0%</td>
+            <td><span class="chip chip-ok">Loaded</span></td>
+            <td class="why">437 of 520 source rows loaded, producing 515 role records because some
+              people hold more than one role. 83 rows await an opportunity or contact.</td>
+          </tr>
+          <tr>
+            <td class="obj">Meetings</td>
+            <td class="num">1,845</td><td class="num">0</td>
+            <td class="num delta-neg">−1,845</td><td class="num">0%</td>
+            <td><span class="chip chip-none">Not started</span></td>
+            <td class="why">Not yet built. Needs one decision first — see “Still to come”.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>The contacts finding</h2>
+    <p class="lede">This is the most consequential thing we learned about the source data, and it
+      changes how contacts should be maintained in Airtable going forward.</p>
+
+    <h3>The contacts attached to opportunities are a separate population</h3>
+    <p>Airtable has a <strong>Contacts</strong> table (1,599 rows) and, separately, an
+      <strong>Opportunity Contacts</strong> table (520 rows). We expected the second to reference the
+      first. It does not — it has no link to the Contacts table at all, only a typed name and an
+      email address.</p>
+    <p>When we checked those 520 people against the Contacts table:</p>
+    <ul>
+      <li><strong>65</strong> existed in the Contacts table.</li>
+      <li><strong>348</strong> did not appear there at all.</li>
+      <li><strong>107</strong> had no email address recorded, only a name.</li>
+    </ul>
+    <p>In other words, roughly two-thirds of the people attached to opportunities existed nowhere else
+      in the base. They had to be created as contacts in their own right before their roles on
+      opportunities could be recorded — a separate load, not a lookup.</p>
+
+    <div class="callout">
+      <span class="label">Why this matters beyond the migration</span>
+      <p>Salesforce treats a person as one record who can be attached to many opportunities and
+        applications. Airtable currently has no equivalent link, so the same person gets typed in
+        again for each thing they're involved with. That's why the Contacts table also contains
+        duplicates: <strong>61 email addresses appear on two or more rows</strong>, one of them four
+        times. We consolidated those into single contacts on load, but the underlying pattern will
+        keep producing duplicates until Airtable has a proper way to link one person to several
+        applications.</p>
+    </div>
+
+    <h3>A related case: the same person, several roles</h3>
+    <p>62 of the opportunity contact rows list more than one role for the same person on the same
+      opportunity — for example <em>Senior POC + Decision Maker + Day-to-Day POC</em>. Salesforce
+      stores one role per record, so this needed an explicit decision rather than a default.</p>
+    <div class="decision">
+      <h4>Decision: create one record per role</h4>
+      <p>The alternative was to pick a single “most senior” role and discard the others, which would
+        have silently lost information the team had deliberately recorded.</p>
+      <p>Salesforce permits the same contact to hold several roles on one opportunity, so all of them
+        are preserved. Where someone is also marked as the primary contact, that flag is applied once
+        per opportunity, as Salesforce requires.</p>
+      <p class="verdict"><b>Effect:</b> 437 source rows produced 515 role records. Nothing was
+        discarded.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Transformations applied</h2>
+    <p class="lede">Data rarely moves across unchanged. These are the substantive conversions — the
+      cases where a value in Salesforce deliberately differs from what's in Airtable.</p>
+
+    <h3>Corrections made automatically</h3>
+    <ul>
+      <li><strong>“Decomissioned” → “Decommissioned”</strong> — a misspelling on 89 application
+        records, corrected on load. Worth fixing at source so it isn't retyped.</li>
+      <li><strong>“Gov?t Employees” → “Gov't Employees”</strong> — 25 opportunity records have a
+        question mark where an apostrophe should be. We confirmed this is genuinely stored that way in
+        Airtable, not a glitch in our export.</li>
+      <li><strong>Impediment categories</strong> — “Issue on their end” and “Relationship Issue” were
+        mapped to the equivalent Salesforce values.</li>
+      <li><strong>Placeholder text removed</strong> — “TBD” entries in web address fields were left
+        blank rather than stored as if they were real links.</li>
+    </ul>
+
+    <h3>Values added to Salesforce so nothing was lost</h3>
+    <ul>
+      <li><strong>Demographic Served</strong> — Airtable uses 32 categories where Salesforce offered
+        6. We analysed each category by how recently it was used and added the 24 in active use within
+        the last 18 months. Only 8 genuinely dormant categories were left out, affecting about 28
+        records rather than the ~400 a simple match would have dropped.</li>
+      <li><strong>Contact roles</strong> — “Day-to-Day POC” and “Senior POC” did not exist in
+        Salesforce. Rather than forcing them into an approximate existing role, both were added.</li>
+      <li><strong>Opportunity type and service level</strong> — several values used throughout
+        Airtable were not selectable on Login.gov opportunities. They were enabled, which also fixed
+        revenue calculations that depend on them.</li>
+    </ul>
+
+    <h3>Fields deliberately not migrated</h3>
+    <ul>
+      <li><strong>Calculated fields</strong> — revenue totals, completion percentages and similar are
+        recalculated by Salesforce from the underlying data, so writing them across would be
+        overwritten anyway.</li>
+      <li><strong>Market Segment</strong> — set automatically from the related account.</li>
+      <li><strong>Confirmed not needed</strong> — Pilots, Usage Tracker Application Name, Vital Update
+        %, and Issuer Strings, per earlier decisions.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Decisions taken during the load</h2>
+    <p class="lede">Where the source data was ambiguous, we stopped rather than guessed. These are the
+      calls that were made, and what each one cost or preserved.</p>
+
+    <div class="decision">
+      <h4>The impediment named “None” was not migrated</h4>
+      <p>One impediment record is named “None”, has no description, and is linked to 465
+        opportunities — more than five times any real impediment.</p>
+      <p>Loading it would have asserted that 297 opportunities <em>are</em> impeded, and because
+        Salesforce totals blocked revenue per impediment, “None” would have appeared at the top of any
+        “biggest blockers” report with a meaningless multi-million-dollar figure.</p>
+      <p class="verdict"><b>Effect:</b> the 267 links from genuine impediments loaded and now show real
+        figures. Reversing this decision takes one setting, not a rebuild.</p>
+    </div>
+
+    <div class="decision">
+      <h4>Contacts without a name were loaded using their email address</h4>
+      <p>Only 491 of 1,599 contacts have a name recorded. Salesforce requires a last name on every
+        contact.</p>
+      <p>Rather than drop them or invent names, the email address is used as a visible placeholder, so
+        the affected records are easy to find and correct later.</p>
+      <p class="verdict"><b>Effect:</b> no contacts lost. About 971 look like real individuals whose
+        name simply wasn't recorded; roughly 116 look like shared mailboxes.</p>
+    </div>
+
+    <div class="decision">
+      <h4>Unmatched accounts were left for human review, not auto-created</h4>
+      <p>169 Airtable account rows match no existing Salesforce account. Creating them automatically
+        would have produced duplicate agency records, since spot-checking showed most are duplicate
+        rows within Airtable rather than genuinely new organisations.</p>
+      <p class="verdict"><b>Effect:</b> the largest remaining gap, but a reversible one — each resolved
+        account releases its partner accounts, applications and links automatically.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What we need from you</h2>
+    <p class="lede">In rough order of how many records each one unblocks.</p>
+
+    <div class="askbox">
+      <div class="ask">
+        <span class="who">Highest impact</span>
+        <span class="what"><b>Resolve the 169 unmatched accounts</b>
+          For each, tell us whether it duplicates an existing account (and which one is correct),
+          is genuinely new, or is stale. This alone unblocks partner accounts, applications and
+          several hundred links.</span>
+      </div>
+      <div class="ask">
+        <span class="who">Decision</span>
+        <span class="what"><b>Confirm what the “None” impediment means</b>
+          If it means “no impediment”, the cleanest fix is to remove those links in Airtable and
+          delete the record.</span>
+      </div>
+      <div class="ask">
+        <span class="who">Decision</span>
+        <span class="what"><b>Service accounts and shared mailboxes</b>
+          Roughly 116 contacts are addresses like a help desk rather than people. Should they be
+          contacts at all, or handled another way?</span>
+      </div>
+      <div class="ask">
+        <span class="who">Data entry</span>
+        <span class="what"><b>Names for approximately 971 contacts</b>
+          The single highest-value cleanup available — ideally captured as first and last name rather
+          than one free-text field.</span>
+      </div>
+      <div class="ask">
+        <span class="who">Data entry</span>
+        <span class="what"><b>28 opportunities have no status</b> and 16 have no account link, so they
+          cannot be created in Salesforce.</span>
+      </div>
+      <div class="ask">
+        <span class="who">Clarify</span>
+        <span class="what"><b>Does “Technical Emails” mean “Technical POC”?</b>
+          716 contacts carry this subscription value, which has no Salesforce equivalent. We did not
+          assume the two are the same.</span>
+      </div>
+      <div class="ask">
+        <span class="who">Clarify</span>
+        <span class="what"><b>Seven opportunities are marked as both blocked by and requesting the
+          same impediment.</b> We recorded these as blocked, being the more severe reading.</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Still to come</h2>
+    <ul>
+      <li><strong>Meetings (1,845 records)</strong> — Airtable records only a date, with no start or
+        end time. Salesforce calendar events need both, so we need an agreed default duration before
+        loading.</li>
+      <li><strong>Notes</strong> — freeform Airtable columns with no dedicated Salesforce field
+        (for example partner account descriptions and known blockers) become attached notes. This runs
+        last, once every record it attaches to exists.</li>
+      <li><strong>Broker application relationships</strong> — a small follow-up pass linking
+        applications to their parent application.</li>
+      <li><strong>A re-run after cleanup</strong> — every load re-reads Airtable, so fixing the items
+        above and re-running picks up the newly valid records with no additional engineering.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <p>Counts were taken directly from the gsa-peo sandbox on 13 August 2026 and from the Airtable
+      export pulled 12 August 2026. Because both systems remain in active use, figures will drift;
+      this report is a snapshot, not a live view. Full field-by-field mapping detail and the complete
+      list of data-quality items are maintained alongside the migration scripts.</p>
+  </footer>
+
+</div>

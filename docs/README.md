@@ -93,6 +93,19 @@ written for the data owner, not developers — see
 script's skipped/unmapped review CSVs should feed into this list as they're found, not just sit in
 `logs/data-migration/` unnoticed.
 
+**For the stakeholder-facing status report — written for the Login.gov Partnerships lead, not for
+engineers — see [`migration-load-report-2026-08-13.html`](migration-load-report-2026-08-13.html)**
+(open it in a browser; GitHub won't render it). It reconciles every Airtable table against the
+records now in gsa-peo with counts, differences and percentages, explains the transformations in
+plain language, and lists the decisions needed from the Partnerships team in order of how many
+records each one unblocks.
+
+**It is a point-in-time snapshot, deliberately dated in the filename.** Both Airtable and gsa-peo stay
+in active use and these counts have already moved several times within a single day, so don't edit
+this file to "refresh" it — generate a new dated report and leave the old one as the record of what
+was true when it was sent. The figures in it were taken from the sandbox on 2026-08-13 against the
+Airtable pull of 2026-08-12.
+
 ## Conventions
 
 - **Upsert on `LDGCRM_External_ID__c`**, not insert, for every object *except* Account (see
