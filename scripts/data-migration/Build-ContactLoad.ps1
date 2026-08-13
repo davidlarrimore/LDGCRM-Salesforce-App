@@ -130,7 +130,24 @@ Write-Host ""
 $AirtableContacts = Import-AirtableTable -Label "Contacts"
 Write-Host "$($AirtableContacts.Count) Airtable Contact rows loaded."
 
-$Groups = @(Get-AirtableContactGroups -Records $AirtableContacts)
+# --- Second source: the Opportunity Contacts table -------------------------
+# That table has NO link to the Contacts table - no rec... id, just a name
+# string and an email - and 348 of its 520 rows name people who appear nowhere
+# in the Contacts table. Those people must exist as Contacts or their
+# OpportunityContactRole rows can never be created (user-confirmed 2026-08-13).
+# They merge by email like any other duplicate, so anyone in BOTH tables stays
+# a single Contact.
+$AirtableOpportunityContacts = Import-AirtableTable -Label "Opportunity Contacts"
+$ProjectedOpportunityContacts = @($AirtableOpportunityContacts | ForEach-Object { ConvertTo-ContactShapedRecord -Record $_ })
+Write-Host "$($ProjectedOpportunityContacts.Count) Airtable Opportunity Contact rows folded in as a second source."
+
+# ORDER MATTERS: Contacts-table rows first. Get-AirtableContactGroups picks the
+# surviving record - whose Airtable id becomes the Salesforce external ID - and
+# primary-source rows always win, so folding in this second source cannot
+# re-key a Contact that has already been loaded.
+$CombinedContactRecords = @($AirtableContacts) + $ProjectedOpportunityContacts
+
+$Groups = @(Get-AirtableContactGroups -Records $CombinedContactRecords)
 $MergedGroupCount = @($Groups | Where-Object { $_.MemberRecordIds.Count -gt 1 }).Count
 $ConflictGroupCount = @($Groups | Where-Object { $_.NameConflict }).Count
 Write-Host "$($Groups.Count) Contacts after merging rows that share an email."

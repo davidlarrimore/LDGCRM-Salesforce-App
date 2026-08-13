@@ -241,7 +241,22 @@ function Get-AirtableContactGroups {
     foreach ($Email in $ByEmail.Keys) {
         $Rows = $ByEmail[$Email]
 
-        $DistinctNames = @($Rows | ForEach-Object { $_.fields.Name } |
+        # Only PRIMARY-source names can create a name conflict. The Contacts
+        # table is authoritative for identity; a differing spelling in a
+        # secondary source (Opportunity Contacts) must not fracture a group that
+        # the primary source already established as one person.
+        #
+        # This is the same idempotency concern as survivor selection below, and
+        # it bit for real: an Opportunity Contacts row for
+        # Stephen.Wilford@opm.gov carried a different name, tripped the conflict
+        # branch, split an already-merged group, and re-keyed a Contact that had
+        # already been loaded. Scoping conflict detection to the primary source
+        # keeps Contacts-only behaviour byte-identical to before this second
+        # source existed.
+        $NameRows = @($Rows | Where-Object { -not $_.__IsSecondarySource })
+        if ($NameRows.Count -eq 0) { $NameRows = @($Rows) }
+
+        $DistinctNames = @($NameRows | ForEach-Object { $_.fields.Name } |
             Where-Object { $_ } | ForEach-Object { "$_".Trim() } | Sort-Object -Unique)
 
         if ($DistinctNames.Count -gt 1) {
@@ -257,9 +272,26 @@ function Get-AirtableContactGroups {
             continue
         }
 
-        # Prefer the row that actually carries a Name as the survivor.
-        $Primary = $Rows | Where-Object { $_.fields.Name } | Select-Object -First 1
-        if (-not $Primary) { $Primary = $Rows | Sort-Object id | Select-Object -First 1 }
+        # Choosing the survivor: PRIMARY-SOURCE ROWS ALWAYS WIN.
+        #
+        # This ordering is load-bearing for idempotency, not a style choice.
+        # The survivor's Airtable id becomes the Salesforce Contact's
+        # LDGCRM_External_ID__c. Once a Contact is loaded, anything that changes
+        # which row survives changes that external ID and the next upsert creates
+        # a DUPLICATE Contact instead of matching the existing one.
+        #
+        # A second source (Opportunity Contacts) was added after Contact had
+        # already been loaded from the Contacts table alone. Preferring a
+        # named row outright would hand primacy to an Opportunity Contacts row
+        # whenever the Contacts-table row had a blank Name - silently
+        # re-keying an already-migrated Contact. So: any primary-source row
+        # beats every secondary-source row, and Name only breaks ties WITHIN a
+        # source.
+        $PrimaryCandidates = @($Rows | Where-Object { -not $_.__IsSecondarySource })
+        if ($PrimaryCandidates.Count -eq 0) { $PrimaryCandidates = @($Rows) }
+
+        $Primary = $PrimaryCandidates | Where-Object { $_.fields.Name } | Select-Object -First 1
+        if (-not $Primary) { $Primary = $PrimaryCandidates | Sort-Object id | Select-Object -First 1 }
 
         $Groups.Add([PSCustomObject]@{
             ExternalId      = $Primary.id
@@ -284,4 +316,42 @@ function Get-AirtableContactGroups {
     # nested 1-element array. That exact bug was written here first and caught
     # only because the group count came back as 1 against 1,599 input rows.
     return $Groups.ToArray()
+}
+
+function ConvertTo-ContactShapedRecord {
+    <#
+        Projects an Airtable "Opportunity Contacts" row into the same shape
+        Get-AirtableContactGroups expects from a Contacts-table row, so both
+        sources can be merged into one identity per person.
+
+        WHY THIS EXISTS: the Opportunity Contacts table names its columns
+        differently ("Contact" holds the person's name, where the Contacts table
+        uses "Name") and, critically, has NO link to the Contacts table at all -
+        no rec... id, just a name string and an email. 348 of its 520 rows
+        reference people who appear nowhere in the Contacts table, so they have
+        to become Contacts in their own right or their OpportunityContactRole
+        rows can never be created.
+
+        Every projected record is stamped __IsSecondarySource = $true. That flag
+        is what stops a row from this table ever becoming the surviving record
+        of a merge group that also contains a real Contacts-table row - which
+        would re-key an already-loaded Contact and duplicate it on the next
+        upsert. See the survivor-selection block in Get-AirtableContactGroups.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        $Record
+    )
+
+    return [PSCustomObject]@{
+        id                    = $Record.id
+        createdTime           = $Record.createdTime
+        __IsSecondarySource   = $true
+        fields                = [PSCustomObject]@{
+            Name  = $Record.fields.'Contact'
+            Email = $Record.fields.Email
+            Phone = $Record.fields.Phone
+            Title = $Record.fields.'Role'   # free-text job title here, NOT the OpportunityContactRole.Role picklist
+        }
+    }
 }

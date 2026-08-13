@@ -4,7 +4,7 @@
     <deleteConstraint>SetNull</deleteConstraint>
     <description>The Account Manager or Partner Success Manager responsible for the partner agreement and the first point of contact internal stakeholders to Login.gov should contact with inquiries about the partner agency.</description>
     <inlineHelpText>The Account Manager or Partner Success Manager responsible for the partner agreement and the first point of contact internal stakeholders to Login.gov should contact with inquiries about the partner agency.</inlineHelpText>
-    <label>Partner Account Owner</label>
+    <label>Owner</label>
     <referenceTo>User</referenceTo>
     <relationshipName>Partner_Accounts</relationshipName>
     <required>false</required>

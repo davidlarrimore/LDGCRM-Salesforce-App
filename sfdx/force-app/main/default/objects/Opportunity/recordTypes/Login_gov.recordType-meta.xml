@@ -687,10 +687,6 @@
     <picklistValues>
         <picklist>LDGCRM_Likely_Service_Level_Needed__c</picklist>
         <values>
-            <fullName>IdV%2C Auth-only</fullName>
-            <default>false</default>
-        </values>
-        <values>
             <fullName>Authentication Only</fullName>
             <default>false</default>
         </values>
@@ -702,13 +698,13 @@
             <fullName>Enhanced IdV %28IAL2%29</fullName>
             <default>false</default>
         </values>
+        <values>
+            <fullName>IdV%2C Auth-only</fullName>
+            <default>false</default>
+        </values>
     </picklistValues>
     <picklistValues>
         <picklist>LDGCRM_Opportunity_Type__c</picklist>
-        <values>
-            <fullName>OM - New Agreement</fullName>
-            <default>false</default>
-        </values>
         <values>
             <fullName>AM - Account Growth</fullName>
             <default>false</default>
@@ -727,6 +723,10 @@
         </values>
         <values>
             <fullName>New Business</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>OM - New Agreement</fullName>
             <default>false</default>
         </values>
         <values>

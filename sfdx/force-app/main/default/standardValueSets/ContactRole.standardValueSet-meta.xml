@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StandardValueSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <sorted>false</sorted>
+    <standardValue>
+        <fullName>Agreement/Billing Contact</fullName>
+        <default>false</default>
+        <label>Agreement/Billing Contact</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Business User</fullName>
+        <default>false</default>
+        <label>Business User</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Communications Contact</fullName>
+        <default>false</default>
+        <label>Communications Contact</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Decision Maker</fullName>
+        <default>false</default>
+        <label>Decision Maker</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Executive Champion</fullName>
+        <default>false</default>
+        <label>Executive Champion</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Primary Contact</fullName>
+        <default>false</default>
+        <label>Primary Contact</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Program Office</fullName>
+        <default>false</default>
+        <label>Program Office</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Technical Buyer</fullName>
+        <default>false</default>
+        <label>Technical Buyer</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Other</fullName>
+        <default>false</default>
+        <label>Other</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Program Lead</fullName>
+        <default>false</default>
+        <label>Program Lead</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Program Team Member</fullName>
+        <default>false</default>
+        <label>Program Team Member</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Executive Leadership</fullName>
+        <default>false</default>
+        <label>Executive Leadership</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Oversight</fullName>
+        <default>false</default>
+        <label>Oversight</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Day-to-Day POC</fullName>
+        <default>false</default>
+        <label>Day-to-Day POC</label>
+    </standardValue>
+    <standardValue>
+        <fullName>Senior POC</fullName>
+        <default>false</default>
+        <label>Senior POC</label>
+    </standardValue>
+</StandardValueSet>

@@ -126,6 +126,13 @@
         <members>Demographic_Served</members>
         <name>GlobalValueSet</name>
     </types>
+    <!-- Backs OpportunityContactRole.Role. NOT named "OpportunityContactRole" -
+         that entity does not exist and the retrieve fails. Carries the
+         Day-to-Day POC / Senior POC values added for the Airtable migration. -->
+    <types>
+        <members>ContactRole</members>
+        <name>StandardValueSet</name>
+    </types>
     <types>
         <members>LDGCRM_Team_Members</members>
         <members>LDGCRM_Viewers</members>
