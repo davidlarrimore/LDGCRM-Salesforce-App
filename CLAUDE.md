@@ -221,6 +221,15 @@ picklist's restricted values or a TextArea's real length before trusting a field
 appearance — see `docs/TRANSFORMATION-RULES.md`'s General Principle #7 and the
 Application section's dedicated note for the full example.
 
+**The `LDGCRM_Application_Contact__c` junction is loaded as of 2026-08-13: 1,880 records** (1,880/1,880).
+Its `LDGCRM_External_ID__c` is a **composite key** `<contactExtId>|<applicationExtId>`, not a single
+Airtable `rec...` ID — the one object that departs from the external-ID convention, and deliberately:
+the object's duplicate-check Flow throws on duplicates, only fires on Create, and **misses
+intra-batch duplicates entirely** (its Get Records reads committed state), so it cannot be relied on
+as a safety net. The composite key makes one-row-per-pair structural instead. Two API-name typos to
+respect: **`LDGCRM_contact__c`** (lower-case `c`) and **`LGDCRM_P3_Partner_Portal_Admin__c`**
+(transposed `LGDCRM_` prefix). `Name` is an AutoNumber — never supply it.
+
 **Contact is loaded as of 2026-08-13: 1,483 records** (1,483 of 1,487 submitted; 4 rejected by an
 org-level duplicate rule). 1,115 carry an Account and 933 a Partner Account. Record types:
 **Federal for partner-agency contacts, GSA for anyone with an `@gsa.gov` address** (user-confirmed —

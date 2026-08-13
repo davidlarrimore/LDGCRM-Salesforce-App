@@ -554,6 +554,110 @@ Re-running `Build-ApplicationLoad.ps1` afterward dropped its blank-Opportunity-l
 
 ---
 
+## Application Contact (junction)
+
+**Source:** the Airtable `Contacts` table's `Applications Record ID (from Applications)` column —
+**not** a table of its own.
+**Target:** `LDGCRM_Application_Contact__c`, the Application↔Contact junction (two plain Lookups, not
+Master-Detail).
+**Script:** `Build-ApplicationContactLoad.ps1`. **Mode: upsert on a COMPOSITE `LDGCRM_External_ID__c`.**
+**Loaded 2026-08-13: 1,880 of 1,880 succeeded, 0 failures.**
+
+### The composite external ID is the whole design
+
+A before-save Flow (`LDGCRM_ApplicationContact_BeforeSave_NewRecordDuplicateCheck`) enforces one row
+per Application+Contact and **throws a hard blocking error** —
+`"This Contact has already been assigned to this Application"` — on any duplicate. It has **no
+bypass**: no permission check, no custom setting, no variables. It fires on **100% of inserts** (no
+entry criteria).
+
+Two properties of that Flow make source-side deduplication mandatory rather than optional:
+1. **It only fires on `Create`.** An upsert resolving to an update never sees it.
+2. **Intra-batch duplicates slip straight through.** Its Get Records reads *committed* database
+   state, so two identical rows inside the same Bulk API batch both pass the check and both insert.
+   **The Flow is not a safety net.**
+
+So this object's `LDGCRM_External_ID__c` is the composite key
+**`"<contactExternalId>|<applicationExternalId>"`** (35 chars against the field's 50). That makes
+uniqueness *structural*: the upsert key itself cannot produce a second row for the same pair, so
+re-running is idempotent and the Flow never has a duplicate to reject. Verified in the output CSV —
+1,880 rows, 1,880 distinct external IDs, 1,880 distinct (contact, application) pairs.
+
+### It reads Airtable's raw Contact ROWS, not the merged Contacts
+
+`Build-ContactLoad.ps1` merges Airtable rows sharing an email into one Contact (see the Contact
+section). But the per-association detail — *which* Applications, and *which* Roles — lives on the
+individual **row**, not on the merged person. So this script iterates the raw rows and maps each onto
+its surviving Contact through `Get-AirtableContactGroups`, the same shared helper
+`Build-ContactLoad.ps1` uses, so the two cannot drift.
+
+That merge is exactly what creates the duplicate risk: **2,797 raw (row, Application) pairs collapse
+to 2,764 distinct (Contact, Application) pairs — 33 collisions**, each of which would have been a
+Flow rejection. The Partner Portal Admin flag is OR-ed across every source row feeding a pair.
+
+### Partner Portal Admin comes from `Contacts.Roles`, NOT the Applications column
+
+The Applications table has a `Partner Portal Admin` column (filled on 875 rows) that looks like the
+obvious source. **It is unusable.** It's a flattened roll-up of all the linked contacts' Roles and is
+*not positionally aligned* with `Contacts Record ID` — the two arrays differ in length on **709 of
+875 rows**:
+
+```
+App rec09x50mFdLT5MI6 [SIMS]
+   Contacts Record ID  (2): reccHQOPwOeBs2DsG, recaDs5hblOUAUwni
+   Partner Portal Admin(8): PAG POC | Program POC | Threat Intel POC | Partner Portal Admin
+```
+
+There is no way to tell which contact a given entry refers to, so using it would assign the flag
+essentially at random. The real per-association source is `Contacts.Roles` on the individual Airtable
+row — which works precisely *because* Airtable duplicates contact rows per association. Same family
+of trap as the Partner Accounts `Opportunities` rollup (see the Opportunity section): **a
+linked-record column that looks authoritative but is derived.**
+
+### Field mapping
+
+| Airtable | Salesforce | Rule |
+| --- | --- | --- |
+| *(composite)* | `LDGCRM_External_ID__c` | `<contactExtId>\|<applicationExtId>` — the upsert key. |
+| Contact row → merged Contact | `LDGCRM_contact__c` (CSV `LDGCRM_contact__r.LDGCRM_External_ID__c`) | **Required.** Note the lower-case `c` in `contact`. |
+| `Applications Record ID (from Applications)` | `LDGCRM_Application__c` (CSV `LDGCRM_Application__r.LDGCRM_External_ID__c`) | Optional in metadata, but always set here — see the blank-Application warning below. |
+| `Roles` contains `Partner Portal Admin` | `LGDCRM_P3_Partner_Portal_Admin__c` | Checkbox. **Note the transposed `LGDCRM_` prefix** — a typo baked into the deployed metadata, and the single most likely CSV-header failure on this object. |
+
+**Not written:** `Name` (the nameField is an **AutoNumber**, `LDGAC-{0000}` — supplying it errors);
+`LDGCRM_Email__c`, `LDGCRM_P3_Team_UUID__c`, `LDGCRM_P3_Partner_Portal_Team_Name__c` (all three are
+formula fields pulling from the parents); `RecordTypeId` (the object has no record types). Every
+other `Roles` value (`Technical POC` 667, `Program POC` 304, `Help Desk POC` 224, `Exec POC` 49,
+`PAG POC` 37, `ConMon Attendee` 29, `Archive` 26, `Threat Intel POC` 18, `UX POC` 1) has **no field
+on this object** and is not migrated.
+
+**A latent Flow bug worth knowing:** `LDGCRM_Application__c` is `required=false`, so a row with a
+blank Application makes the Flow's filter `Application == null AND Contact == <id>`, which matches
+any *other* Application-less row for that Contact and wrongly blocks it. This script always sets an
+Application (pairs are generated *from* the Applications list), so it can't hit this — but a future
+loader that allows blank Applications would.
+
+### Load results
+
+| | Count |
+| --- | --- |
+| Raw (Airtable row, Application) pairs | 2,797 |
+| Distinct (Contact, Application) pairs | 2,764 |
+| — collisions collapsed by the Contact merge | 33 |
+| **Loaded (both sides present)** | **1,880 / 1,880** |
+| Skipped — Application not loaded | 849 |
+| Skipped — Contact not loaded | 31 |
+| Skipped — neither | 4 |
+| Flagged Partner Portal Admin | 666 |
+
+The 884 skipped are overwhelmingly Applications withheld by the unreconciled-Account data-quality
+issue. **They need no code change** — re-running after those Accounts are fixed picks them up.
+
+Also worth noting for any future cleanup: `LDGCRM_contact__c` has `deleteConstraint = Restrict`, so a
+Contact cannot be deleted while junction rows point at it. This is the same class of blocker that
+left one Account undeletable during the 2026-08-13 rebuild.
+
+---
+
 ## Contact
 
 **Source:** Airtable `Contacts` table (1,599 rows, 47 columns as of 2026-08-13).
