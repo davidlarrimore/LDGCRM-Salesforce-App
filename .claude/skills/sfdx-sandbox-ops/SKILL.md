@@ -1,6 +1,6 @@
 ---
 name: sfdx-sandbox-ops
-description: Safety checklist for running or modifying any script that deletes, hard-deletes, or bulk-modifies records in a GSA PEO org (Dev sandbox by default) (e.g. scripts/cleanup/Invoke-OrgCleanup.ps1, future data-migration loads).
+description: Safety checklist for running or modifying any script that deletes, hard-deletes, or bulk-modifies records in a GSA PEO org (Dev sandbox by default) (e.g. scripts/cleanup/Invoke-SandboxFactoryReset.ps1, future data-migration loads).
 ---
 
 # Destructive org operations (Dev/QA/Full/Prod)
@@ -19,9 +19,16 @@ environment — that skips the registry's identity checks.
 (`peodv8dvn`). Anything older referring to `gsa-peo` meant Dev. Never re-create that alias pointing
 at a sandbox.
 
-`Prod` is gated twice — `Assert-LdgcrmProductionConsent` requires the operator to type the org alias
-in full, *in addition to* the script's own typed confirmation. That is not optional and not
-something to route around.
+`Prod` is gated twice on scripts that may legitimately target it — `Assert-LdgcrmProductionConsent`
+requires the operator to type the org alias in full, *in addition to* the script's own typed
+confirmation. That is not optional and not something to route around.
+
+**The Sandbox Factory Reset is the exception: it has no production gate because it has no production
+path.** `Invoke-SandboxFactoryReset.ps1` blocks production three ways — `-Environment` doesn't accept
+`Prod` (rejected at parameter binding), the registry's `IsProduction` flag aborts the run, and
+`Organization.IsSandbox` is read from the org itself to close the `-OrgAlias` escape hatch. Do **not**
+"fix" that by adding `Assert-LdgcrmProductionConsent` to it: a factory reset has no legitimate
+production use, and adding a way to approve it only creates a way to approve it by mistake.
 
 ## Before running any destructive script
 
@@ -32,13 +39,13 @@ something to route around.
    an alias you haven't just confirmed.
 2. **Preflight with a read-only count first.** Show the user how many records will be affected
    (`SELECT COUNT() FROM <Object> WHERE ...`) before anything is deleted or modified —
-   `scripts/cleanup/Invoke-OrgCleanup.ps1` already does this; keep the pattern in any new script.
+   `scripts/cleanup/Invoke-SandboxFactoryReset.ps1` already does this; keep the pattern in any new script.
 3. **Export before delete/modify.** Write the affected record IDs to a CSV in `logs/<category>/`
    before the destructive step runs, so there's an audit trail even though the folder is gitignored.
 
 ## Never bypass the confirmation gate
 
-`Invoke-OrgCleanup.ps1` requires the operator to type `HARD DELETE` verbatim before anything is deleted.
+`Invoke-SandboxFactoryReset.ps1` requires the operator to type `HARD DELETE` verbatim before anything is deleted.
 Don't:
 - pre-answer or script around the `Read-Host` prompt,
 - add a `-Force` / `-Confirm:$false` flag to skip it,
@@ -51,7 +58,7 @@ explicitly, not something to work around.
 ## Order of operations
 
 Child/junction objects before parents when deleting, parents before children when loading — the
-existing object order in `Invoke-OrgCleanup.ps1` (`LDGCRM_Application_Contact__c`,
+existing object order in `Invoke-SandboxFactoryReset.ps1` (`LDGCRM_Application_Contact__c`,
 `LDGCRM_Opportunity_Impediment__c`, `LDGCRM_Application__c`, `Opportunity`, `Contact`,
 `LDGCRM_Impediment__c`, `LDGCRM_Partner_account__c`, `Account`) reflects the master-detail/lookup
 dependencies in the data model — don't reorder it without checking those dependencies still hold.

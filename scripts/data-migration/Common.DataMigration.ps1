@@ -503,6 +503,168 @@ function Get-CleanContactEmail {
     return ""
 }
 
+function Resolve-SalesforceOwnerIdsByName {
+    <#
+        The display-name counterpart to Resolve-SalesforceOwnerIds, for the one
+        source that doesn't carry emails: the production Account export's
+        "Account Owner" column holds a User's DISPLAY NAME ("SNA MSadi"), never
+        an address.
+
+        USE THIS ONLY WHERE THERE IS NO EMAIL. A display name is a weaker join
+        than an email - it is not unique, not stable, and not an identifier - so
+        the guards matter more here than in the email version, not less. Both
+        failure modes are real in this data, not hypothetical:
+          - "Matthew Taylor" matches TWO Users in the Dev sandbox (one active,
+            one inactive);
+          - "SNA JTScholz" matches two, both inactive.
+
+        Same contract as the email resolver: active Users only (Salesforce
+        refuses to assign a record to an inactive one), and a name matching
+        several ACTIVE Users is reported rather than picked.
+
+        Returns a PSCustomObject:
+          IdByName  - hashtable, name -> User Id (PowerShell hashtables are
+                      case-insensitive, which suits "GABRIEL VORLETO" appearing
+                      in an export against "Gabriel Vorleto" in Salesforce).
+          Ambiguous - names matching more than one ACTIVE User.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$Names,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OrgAlias,
+
+        [string]$ApiVersion = "67.0"
+    )
+
+    $Result = [PSCustomObject]@{
+        IdByName  = @{}
+        Ambiguous = @()
+    }
+
+    $Distinct = @($Names |
+        Where-Object { $_ } |
+        ForEach-Object { "$_".Trim() } |
+        Where-Object { $_ } |
+        Sort-Object -Unique)
+
+    if ($Distinct.Count -eq 0) { return $Result }
+
+    $ActiveIdsByName = @{}
+    $ChunkSize = 200
+
+    for ($Offset = 0; $Offset -lt $Distinct.Count; $Offset += $ChunkSize) {
+        $Last = [Math]::Min($Offset + $ChunkSize, $Distinct.Count) - 1
+        $Chunk = @($Distinct[$Offset..$Last])
+
+        $Literals = @($Chunk | ForEach-Object {
+            "'" + ($_ -replace '\\', '\\\\' -replace "'", "\'") + "'"
+        })
+
+        $Soql = "SELECT Id, Name FROM User WHERE IsActive = true AND Name IN (" +
+            ($Literals -join ",") + ")"
+
+        $Users = @(Invoke-SalesforceQuery -Soql $Soql -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
+
+        foreach ($User in $Users) {
+            $Key = "$($User.Name)"
+            if (-not $ActiveIdsByName.ContainsKey($Key)) {
+                $ActiveIdsByName[$Key] = [System.Collections.Generic.List[string]]::new()
+            }
+            if (-not $ActiveIdsByName[$Key].Contains($User.Id)) {
+                $ActiveIdsByName[$Key].Add($User.Id)
+            }
+        }
+    }
+
+    $AmbiguousNames = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($Name in $ActiveIdsByName.Keys) {
+        if ($ActiveIdsByName[$Name].Count -eq 1) {
+            $Result.IdByName[$Name] = $ActiveIdsByName[$Name][0]
+        }
+        else {
+            $AmbiguousNames.Add($Name)
+        }
+    }
+
+    $Result.Ambiguous = @($AmbiguousNames)
+
+    return $Result
+}
+
+function Resolve-FallbackOwnerId {
+    <#
+        Resolves the single fallback owner every transform assigns when a
+        record's own owner can't be determined, and THROWS if it can't be
+        resolved.
+
+        WHY IT THROWS INSTEAD OF DEGRADING: the fallback was originally an empty
+        OwnerId, which makes Salesforce assign the record to whoever ran the
+        load. That was correct while the loader and the intended owner were the
+        same person. They are not any more - GSA IT Operations runs this in
+        production, and the agreed fallback owner is a named Partnerships person
+        - so an empty OwnerId would silently hand thousands of records to
+        whichever engineer happened to run the job. Since these objects use
+        org-wide-default-restricted sharing with owner-based rules, that
+        decides who can SEE the records, not just a label. Failing the run is
+        strictly better than discovering it afterwards.
+
+        KNOWN TRADE-OFF: because the fallback is now written explicitly rather
+        than left blank, a re-run RE-ASSERTS it. A record manually reassigned in
+        Salesforce, and still owned by the fallback owner's records set, will be
+        pushed back to the fallback owner on the next load. The blank-OwnerId
+        design preserved such changes; a named fallback owner cannot. Documented
+        in docs/TRANSFORMATION-RULES.md's "Record ownership" section.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Email,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OrgAlias,
+
+        [string]$ApiVersion = "67.0"
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Email)) {
+        throw "No fallback owner email supplied. Pass -FallbackOwnerEmail; there is no safe default."
+    }
+
+    $Lookup = Resolve-SalesforceOwnerIds -Emails @($Email) -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+    $Key = $Email.Trim().ToLower()
+
+    if (-not $Lookup.IdByEmail.ContainsKey($Key)) {
+        throw ("FALLBACK OWNER NOT RESOLVED: '$Email' does not match an ACTIVE Salesforce User in " +
+               "'$OrgAlias' (checked with and without the sandbox '.invalid' suffix). Every record " +
+               "whose own owner can't be determined would otherwise be assigned to whoever runs the " +
+               "load. Provision or correct that user, or pass a different -FallbackOwnerEmail. " +
+               "Nothing was written.")
+    }
+
+    return $Lookup.IdByEmail[$Key]
+}
+
+function Get-EmailDomain {
+    <#
+        Returns the lower-cased domain part of an address, or "" if there
+        isn't one. Expects an address already cleaned by Get-CleanContactEmail -
+        the raw Airtable Email column embeds names and phone numbers on 28 rows,
+        which would otherwise produce a nonsense "domain".
+    #>
+    param([string]$Email)
+
+    if (-not $Email) { return "" }
+
+    if ($Email -match '@([^@\s]+)$') {
+        return $Matches[1].Trim().ToLower()
+    }
+
+    return ""
+}
+
 function Get-AirtableContactGroups {
     <#
         Collapses Airtable Contact rows into one group per real person.

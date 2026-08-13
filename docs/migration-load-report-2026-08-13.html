@@ -493,7 +493,8 @@
             <td class="num">1,845</td><td class="num">0</td>
             <td class="num delta-neg">−1,845</td><td class="num">0%</td>
             <td><span class="chip chip-none">Not started</span></td>
-            <td class="why">Not yet built. Needs one decision first — see “Still to come”.</td>
+            <td class="why">Deferred — Airtable holds no meeting times. See “Known issue: meetings
+              cannot be migrated as calendar events”.</td>
           </tr>
         </tbody>
       </table>
@@ -741,13 +742,16 @@
             <td class="why">Cannot use the usual matching key, so it compares against existing records instead. Re-running is still safe.</td></tr>
           <tr><td class="obj">Meetings</td>
             <td class="num">&check;</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
-            <td class="why">Data pulls fine; the transform is blocked on the meeting-duration decision below.</td></tr>
+            <td class="why">Data pulls fine. Deferred rather than blocked — the times don't exist in Airtable to load. See the known issue below.</td></tr>
           <tr><td class="obj">Notes</td>
             <td class="num">&check;</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
             <td class="why">Deliberately last — a note must attach to a record that already exists.</td></tr>
           <tr><td class="obj">Record ownership</td>
-            <td class="num">&check;</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
-            <td class="why">Not yet built. See below.</td></tr>
+            <td class="num">&check;</td><td class="num">&check;</td><td class="num">—</td><td class="num">—</td>
+            <td class="why">Built once the four decisions were taken; applies at the next load.</td></tr>
+          <tr><td class="obj">Broker application links</td>
+            <td class="num">&check;</td><td class="num">&check;</td><td class="num">—</td><td class="num">—</td>
+            <td class="why">Built. Generated automatically with the applications, loaded as a second step because Salesforce cannot link a record to another in the same batch.</td></tr>
         </tbody>
       </table>
     </div>
@@ -797,19 +801,76 @@
   </section>
 
   <section>
+    <h2>Known issue: meetings cannot be migrated as calendar events</h2>
+    <p class="lede">This is the one part of the migration that cannot be solved by writing better
+      code, and it needs a decision outside the migration itself.</p>
+
+    <p><strong>Airtable records a meeting date, but no start time, end time or duration.</strong>
+      Salesforce calendar events require them. There is no version of this transformation that
+      doesn't invent information: a fixed start time would have 1,604 meetings all claiming to begin
+      at 9am, and even an "all-day" event asserts something the source never recorded. Those times
+      would then look exactly like real scheduling history to anyone reading the record later.</p>
+
+    <div class="decision">
+      <h4>Decision: don't invent the times — recover the real ones</h4>
+      <p>Rather than fabricate a schedule, the recommendation is to set up
+        <strong>Einstein Activity Capture</strong>, the Salesforce feature that synchronises users'
+        Google Calendar entries and associates them with Salesforce records. Once real calendar
+        events are present, each Airtable meeting can be matched to the actual event it describes —
+        using the date, who led it, who attended, and the meeting name — and the Airtable summary,
+        agenda and action items attached to that real event.</p>
+      <p class="verdict"><b>Effect:</b> the calendar supplies the times, Airtable supplies the
+        meaning, and nothing is fabricated. <b>Meetings are deferred until this is in place</b> and
+        are not part of the next load.</p>
+    </div>
+
+    <h3>What this depends on, and what it will not recover</h3>
+    <p>Two things should be understood before committing to this route, because they cap how much
+      meeting history can realistically be recovered:</p>
+    <ul>
+      <li><strong>Roughly 3 in 10 meetings can never be matched, regardless of how well it works.</strong>
+        Calendar synchronisation works per person, from that person's own calendar. Only
+        <strong>1,315 of the 1,845</strong> meetings were led by someone who has an active Salesforce
+        user today; the remaining 530 were led by people who have left or were never given an account
+        — one person alone led 182 of them. Those meetings have no calendar to synchronise from.
+        <em>Giving those people Salesforce accounts, where they are still staff, raises this ceiling
+        and also fixes the record-ownership gaps described above — the same short list of names
+        appears in both.</em></li>
+      <li><strong>How far back the calendar history reaches is not yet known.</strong> These meetings
+        span February 2024 to August 2026 — 125 in 2024, 931 in 2025, 548 in 2026. Calendar
+        synchronisation keeps a limited history and may only capture meetings from the day it is
+        switched on. If it does not reach back, older meetings will never appear no matter how good
+        the matching is.</li>
+    </ul>
+
+    <div class="callout">
+      <span class="label">What we need from you</span>
+      <p>A decision on whether to pursue Einstein Activity Capture, and who can confirm how far back
+        its calendar history reaches in this organisation. Until that is answered we cannot say how
+        many of the 1,845 meetings are recoverable — only that inventing meeting times is the wrong
+        way to reach a higher number.</p>
+      <p>We also need a decision on the meetings that will never match: discard them, or keep their
+        summaries and action items as notes attached to the relevant agency or opportunity. The
+        second option preserves the record of what was discussed without pretending a calendar entry
+        existed.</p>
+    </div>
+  </section>
+
+  <section>
     <h2>Still to come</h2>
     <ul>
-      <li><strong>Record ownership</strong> — assigning owners from the Airtable data rather than
-        leaving everything with the person who ran the load. Rules proposed above; needs four
-        decisions before it can be built.</li>
-      <li><strong>Meetings (1,845 records)</strong> — Airtable records only a date, with no start or
-        end time. Salesforce calendar events need both, so we need an agreed default duration before
-        loading.</li>
+      <li><strong>Record ownership</strong> — <em>built, awaiting the next load.</em> All four
+        decisions were taken: records are assigned to their Airtable owner where that person has an
+        active Salesforce account, and otherwise to a named fallback owner rather than to whoever
+        happens to run the load. Applications follow their partner account's owner; contacts follow
+        their agency's owner.</li>
+      <li><strong>Broker application relationships</strong> — <em>built, awaiting the next load.</em>
+        63 of 70 links are ready; the rest depend on applications still blocked by the account
+        duplicates described above.</li>
       <li><strong>Notes</strong> — freeform Airtable columns with no dedicated Salesforce field
         (for example partner account descriptions and known blockers) become attached notes. This runs
-        last, once every record it attaches to exists.</li>
-      <li><strong>Broker application relationships</strong> — a small follow-up pass linking
-        applications to their parent application.</li>
+        last, once every record it attaches to exists. It is the next piece of work.</li>
+      <li><strong>Meetings</strong> — deferred, see the known issue above.</li>
       <li><strong>A re-run after cleanup</strong> — every load re-reads Airtable, so fixing the items
         above and re-running picks up the newly valid records with no additional engineering.</li>
     </ul>

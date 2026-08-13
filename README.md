@@ -104,15 +104,22 @@ powershell scripts/metadata/Sync-Metadata.ps1 -Environment QA
 powershell scripts/metadata/Get-LDGCRMDataDictionary.ps1
 ```
 
-**Destructive — test-data cleanup, with optional Account bootstrap:**
+**Destructive — Sandbox Factory Reset (delete everything migrated, then rebuild the Accounts):**
 
 ```powershell
-powershell scripts/cleanup/Invoke-OrgCleanup.ps1                   # Dev (default)
-powershell scripts/cleanup/Invoke-OrgCleanup.ps1 -Environment QA
+powershell -File scripts/cleanup/Invoke-SandboxFactoryReset.ps1                   # Dev (default)
+powershell -File scripts/cleanup/Invoke-SandboxFactoryReset.ps1 -Environment QA
 ```
 
-Hard-deletes records (only rows where `LDGCRM_External_ID__c` is set) after a typed `HARD DELETE`
-confirmation, exporting the deleted IDs to `logs/cleanup/` first as an audit trail. Read the prompts.
+Returns a pre-production sandbox to a known starting state, so a rehearsal begins from the same
+baseline every time. Hard-deletes records (only rows where `LDGCRM_External_ID__c` is set) after a
+typed `HARD DELETE` confirmation, exporting the deleted IDs to `logs/cleanup/` first as an audit
+trail, then offers to rebuild the Account universe from the production export. Read the prompts.
+
+**It cannot be pointed at production.** `-Environment` doesn't accept `Prod`, the registry's
+production flag aborts the run, and `Organization.IsSandbox` is checked against the org itself — so
+even the `-OrgAlias` escape hatch can't reach it. See
+[docs/README.md](docs/README.md#sandbox-factory-reset).
 
 Once the deletes finish it **offers to bootstrap the Account tree** from
 `data/peo-prod-accounts-<date>.xls`, if that export is present. That matters because the pipeline
@@ -124,7 +131,7 @@ non-interactively with `-BootstrapAccounts` / `-SkipBootstrap`.
 pipeline:
 
 ```powershell
-powershell scripts/cleanup/Invoke-OrgCleanup.ps1 -Environment QA -BootstrapAccounts
+powershell scripts/cleanup/Invoke-SandboxFactoryReset.ps1 -Environment QA -BootstrapAccounts
 ```
 
 The bootstrap can also be run on its own — always dry-run it first:
@@ -185,7 +192,7 @@ loading out of order silently withholds records rather than erroring loudly.
 ```mermaid
 flowchart TD
     AIR["PULL — Get-AirtableExport.ps1<br/>Airtable REST API into data/airtable-exports/*.json"]
-    CLEAN["optional reset — Invoke-OrgCleanup.ps1<br/>hard-delete in reverse order, then bootstrap Accounts"]
+    CLEAN["optional reset — Invoke-SandboxFactoryReset.ps1<br/>hard-delete in reverse order, then bootstrap Accounts"]
 
     MS["Market Segment<br/>already loaded — no script, never wiped"]
     BOOT["1a. Account — Invoke-AccountBootstrap.ps1<br/>names + hierarchy + owners, multi-pass INSERT, own loader"]

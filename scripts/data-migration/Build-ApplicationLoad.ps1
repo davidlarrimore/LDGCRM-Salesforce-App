@@ -33,13 +33,15 @@
         found (Issuer Strings links to a table this migration doesn't pull;
         user-confirmed not migrated).
       - LDGCRM_Broker_App_Parent__c: a self-Lookup (Application -> Application).
-        Deliberately NOT written by this script - a first real load attempt
+        Deliberately NOT in the main upsert file - a first real load attempt
         (2026-08-12) confirmed Bulk API 2.0 does not resolve external-ID
         references between two rows in the same upsert batch, so every
         Broker App Parent reference failed with "foreign key external ID not
         found" even though the parent Application was in the very same CSV.
-        Needs a second-pass script/run once every Application row already
-        exists in gsa-peo (see docs/README.md).
+        This script now writes it to a SEPARATE second-pass file
+        (LDGCRM_application__c-broker-parent-upsert.csv) automatically, so there
+        is no extra script to remember - but that file must be LOADED AFTER the
+        main one. See the "SECOND PASS" block below.
 
     Rows with no linked Partner Account are skipped (required field) and
     written to a review CSV, same pattern as every other required-lookup
@@ -55,7 +57,14 @@ param(
     # Empty = use the environment's registered alias (scripts/common/Common.Orgs.ps1).
     # Set this only to reach an org that isn't in the registry; doing so skips
     # the registry's identity checks.
-    [string]$OrgAlias = ""
+    [string]$OrgAlias = "",
+
+    [string]$ApiVersion = "67.0",
+
+    # Owner for records whose own owner can't be determined. Resolved to a User
+    # at run time (never a hard-coded Id - production's differs from every
+    # sandbox's) and the run FAILS if it doesn't match an active User.
+    [string]$FallbackOwnerEmail = "peter.marks@gsa.gov"
 )
 
 $ErrorActionPreference = "Stop"
@@ -260,6 +269,10 @@ Write-Host "$($AirtableApplications.Count) Airtable Application rows loaded."
 # INVALID_FIELD errors back. Checking up front turns those into an explicit,
 # reviewable skip list instead of load-time noise that buries real failures.
 Write-Host ""
+Write-Host "Resolving the fallback owner ($FallbackOwnerEmail)..." -ForegroundColor Cyan
+$FallbackOwnerId = Resolve-FallbackOwnerId -Email $FallbackOwnerEmail -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+Write-Host "Fallback owner resolves to $FallbackOwnerId."
+
 Write-Host "Querying $OrgAlias for Partner Accounts that actually exist..." -ForegroundColor Cyan
 # The same query also carries the Partner Account's owner, which becomes the
 # Application's OwnerId (decided 2026-08-13). Airtable has no Application-level
@@ -447,11 +460,9 @@ foreach ($Row in $AirtableApplications) {
     }
 
     # --- OwnerId: inherited from the Partner Account ---
-    # Blank means "fall back to the loading user" and is deliberate: Bulk API
-    # 2.0 treats an empty value as "not supplied", so an insert lands on the
-    # loading user (the agreed fallback) and a re-run leaves any manual
-    # reassignment in Salesforce intact instead of reverting it.
-    $OwnerId = ""
+    # The fallback is written EXPLICITLY, not left blank - see
+    # Resolve-FallbackOwnerId for why, and for the re-run trade-off it costs.
+    $OwnerId = $FallbackOwnerId
     if ($PartnerAccountOwnerById.ContainsKey($PartnerAccountId)) {
         $OwnerId = $PartnerAccountOwnerById[$PartnerAccountId]
     }
@@ -488,16 +499,119 @@ foreach ($Row in $AirtableApplications) {
     $UpsertRows.Add([PSCustomObject]$OutputRow)
 }
 
+# ============================================================
+# SECOND PASS: LDGCRM_Broker_App_Parent__c (self-referential lookup)
+# ============================================================
+# Built automatically here rather than by a separate script somebody has to
+# remember to run - the whole reason it exists is that it is easy to forget.
+#
+# WHY IT CANNOT GO IN THE MAIN FILE: Bulk API 2.0 does not resolve an external-ID
+# reference between two rows of the SAME batch. Proven, not assumed - the first
+# real load (2026-08-13) failed 68 rows with "Foreign key external ID not found"
+# while the parent Application sat in the very same CSV. Every self-referential
+# lookup in this pipeline needs its own pass, after every row exists.
+#
+# The file is written now but MUST BE LOADED AFTER the main Application file.
+# Loading it first fails every row, for exactly the reason above.
+#
+# A row is only emitted when BOTH sides will exist once the main load finishes:
+# the planned upsert set plus whatever is already in the org (a re-run may skip
+# an Application it loaded previously, if its Partner Account has since become
+# unresolvable).
+Write-Host ""
+Write-Host "Building the Broker App Parent second pass..." -ForegroundColor Cyan
+
+$ExistingApplicationIds = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
+foreach ($App in @(Invoke-SalesforceQuery `
+        -Soql "SELECT LDGCRM_External_ID__c FROM LDGCRM_application__c WHERE LDGCRM_External_ID__c != null" `
+        -OrgAlias $OrgAlias -ApiVersion $ApiVersion)) {
+    if ($App.LDGCRM_External_ID__c) { $ExistingApplicationIds.Add($App.LDGCRM_External_ID__c) | Out-Null }
+}
+
+# Everything that will be present in the org once the main load completes.
+$WillExist = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
+foreach ($Planned in $UpsertRows) { $WillExist.Add($Planned.LDGCRM_External_ID__c) | Out-Null }
+foreach ($Id in $ExistingApplicationIds) { $WillExist.Add($Id) | Out-Null }
+
+$BrokerParentRows = [System.Collections.Generic.List[object]]::new()
+$BrokerSkippedRows = [System.Collections.Generic.List[object]]::new()
+
+foreach ($Row in $AirtableApplications) {
+    $RawParent = $Row.fields.'Broker App Parent'
+    if (-not $RawParent) { continue }          # null-check before @()
+
+    # Verified 0 of 70 rows carry more than one parent, but a lookup holds one
+    # value regardless - take the first and say so rather than silently drop.
+    $ParentId = @($RawParent)[0]
+    if (-not $ParentId) { continue }
+
+    # SELF-REFERENCE. Real in this data: "ACF Login.gov ACF-ockta-oidc" is its
+    # own Broker App Parent. Meaningless as a hierarchy whether or not
+    # Salesforce accepts the write, so it is dropped and reported rather than
+    # loaded. Checked before the existence test because a self-reference is a
+    # source-data defect, not a load-ordering problem, and should be described
+    # as one.
+    #
+    # It is NOT in AIRTABLE-DATA-QUALITY-REQUESTS.md, on purpose. That list is
+    # for things the data owners need to act on, and this blocks nothing - one
+    # optional lookup on one record that migrates fine either way. Putting
+    # zero-impact items on it trains people to ignore the list.
+    if ($ParentId -eq $Row.id) {
+        $BrokerSkippedRows.Add([PSCustomObject]@{
+            AirtableRecordId = $Row.id
+            Name             = $Row.fields.Name
+            BrokerAppParent  = $ParentId
+            NotLoaded        = "n/a - self-reference"
+            Reason           = "This Application is its OWN Broker App Parent. A record cannot be its own parent, so this one link is dropped; the Application itself migrates normally. Recorded here for visibility - deliberately NOT raised as a data-quality request, since it blocks nothing."
+        })
+        continue
+    }
+
+    $Missing = @()
+    if (-not $WillExist.Contains($Row.id))   { $Missing += "the Application itself" }
+    if (-not $WillExist.Contains($ParentId)) { $Missing += "its Broker App Parent" }
+
+    if ($Missing.Count -gt 0) {
+        $BrokerSkippedRows.Add([PSCustomObject]@{
+            AirtableRecordId = $Row.id
+            Name             = $Row.fields.Name
+            BrokerAppParent  = $ParentId
+            NotLoaded        = ($Missing -join " and ")
+            Reason           = "Both sides of a self-referential lookup must exist. The missing side was withheld by the main Application load - usually the unreconciled-Account data-quality issue. Re-run after it loads; no code change needed."
+        })
+        continue
+    }
+
+    $BrokerParentRows.Add([PSCustomObject][ordered]@{
+        LDGCRM_External_ID__c                            = $Row.id
+        "LDGCRM_Broker_App_Parent__r.LDGCRM_External_ID__c" = $ParentId
+    })
+}
+
+Write-Host "$($BrokerParentRows.Count) Broker App Parent link(s) ready; $($BrokerSkippedRows.Count) waiting on a missing side."
+
 $LoadDir = Get-SalesforceLoadDirectory
 $LogDir = Get-LogDirectory -Category "data-migration"
 
 $UpsertFile = Join-Path $LoadDir "LDGCRM_application__c-upsert.csv"
+$BrokerParentFile = Join-Path $LoadDir "LDGCRM_application__c-broker-parent-upsert.csv"
+$BrokerSkippedFile = Join-Path $LogDir "Application-broker-parent-skipped-$Timestamp.csv"
 $SkippedFile = Join-Path $LogDir "Application-skipped-$Timestamp.csv"
 $UnmappedRampUpFile = Join-Path $LogDir "Application-unmapped-rampup-$Timestamp.csv"
 $OverLengthFile = Join-Path $LogDir "Application-overlength-$Timestamp.csv"
 
 if ($UpsertRows.Count -gt 0) {
     Export-DataLoaderCsv -InputObject $UpsertRows.ToArray() -Path $UpsertFile
+}
+
+if ($BrokerParentRows.Count -gt 0) {
+    Export-DataLoaderCsv -InputObject $BrokerParentRows.ToArray() -Path $BrokerParentFile
+}
+
+if ($BrokerSkippedRows.Count -gt 0) {
+    $BrokerSkippedRows | Export-Csv -LiteralPath $BrokerSkippedFile -NoTypeInformation -Encoding UTF8
 }
 
 if ($SkippedRows.Count -gt 0) {
@@ -525,16 +639,35 @@ Write-Host ("{0,-48} {1,8:N0}" -f "Ready for upsert", $UpsertRows.Count)
 Write-Host ("{0,-48} {1,8:N0}" -f "Skipped - no Partner Account in Airtable", $SkippedNoPartnerAccount)
 Write-Host ("{0,-48} {1,8:N0}" -f "Skipped - Partner Account not loaded in org", $SkippedPartnerAccountNotLoaded)
 Write-Host ("{0,-48} {1,8:N0}" -f "Opportunity links blanked (Opportunity not loaded)", $UnresolvedOpportunityCount)
-Write-Host ("{0,-48} {1,8:N0}" -f "Owner inherited from Partner Account", @($UpsertRows | Where-Object { $_.OwnerId }).Count)
-Write-Host ("{0,-48} {1,8:N0}" -f "Owner falls back to the loading user", @($UpsertRows | Where-Object { -not $_.OwnerId }).Count)
+# Compare against the fallback Id, not "is OwnerId set" - every row carries one
+# now, so a truthiness test would report every record as owner-resolved.
+Write-Host ("{0,-48} {1,8:N0}" -f "Owner inherited from Partner Account", @($UpsertRows | Where-Object { $_.OwnerId -ne $FallbackOwnerId }).Count)
+Write-Host ("{0,-48} {1,8:N0}" -f "Owner = fallback ($FallbackOwnerEmail)", @($UpsertRows | Where-Object { $_.OwnerId -eq $FallbackOwnerId }).Count)
 Write-Host ("{0,-48} {1,8:N0}" -f "Unmapped Ramp Up Approach (left blank)", $UnmappedRampUpRows.Count)
 Write-Host ("{0,-48} {1,8:N0}" -f "Demographic Served tags dropped (stale category)", $DroppedDemographicTagCount)
 Write-Host ("{0,-48} {1,8:N0}" -f "Name/URL/date values corrected or blanked", $OverLengthRows.Count)
+Write-Host ""
+Write-Host ("{0,-48} {1,8:N0}" -f "Broker App Parent links (SECOND PASS file)", $BrokerParentRows.Count)
+Write-Host ("{0,-48} {1,8:N0}" -f "  ...waiting on a missing side", $BrokerSkippedRows.Count)
 Write-Host ""
 
 if ($UpsertRows.Count -gt 0) {
     Write-Host "Upsert file (external-ID keyed, requires Partner Account already loaded):" -ForegroundColor Cyan
     Write-Host $UpsertFile
+}
+
+if ($BrokerParentRows.Count -gt 0) {
+    Write-Host ""
+    Write-Host "SECOND PASS - load this AFTER the file above, never before:" -ForegroundColor Yellow
+    Write-Host $BrokerParentFile
+    Write-Host "  scripts\data-migration\Invoke-SalesforceLoad.ps1 -Environment $Environment ``" -ForegroundColor DarkGray
+    Write-Host "      -ObjectApiName ""LDGCRM_application__c"" ``" -ForegroundColor DarkGray
+    Write-Host "      -CsvFile ""data\salesforce-loads\LDGCRM_application__c-broker-parent-upsert.csv""" -ForegroundColor DarkGray
+}
+
+if ($BrokerSkippedRows.Count -gt 0) {
+    Write-Host "Broker App Parent links waiting on a missing side:" -ForegroundColor Yellow
+    Write-Host $BrokerSkippedFile
 }
 
 if ($SkippedRows.Count -gt 0) {

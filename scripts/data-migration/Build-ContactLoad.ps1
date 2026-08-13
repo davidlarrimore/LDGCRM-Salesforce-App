@@ -54,7 +54,22 @@ param(
     # Set this only to reach an org that isn't in the registry; doing so skips
     # the registry's identity checks.
     [string]$OrgAlias = "",
-    [string]$ApiVersion = "67.0"
+    [string]$ApiVersion = "67.0",
+
+    # Turns off the email-domain Account inference entirely, leaving only the
+    # three authored resolution paths. The first thing to reach for if an
+    # inferred link ever puts a contact on the wrong agency.
+    [switch]$DisableDomainInference,
+
+    # How many contacts must already resolve to one Account on a domain before
+    # that domain is trusted to assign it. 1 would let usda.gov claim 19
+    # contacts off a single example; 3 is the agreed floor.
+    [int]$DomainInferenceMinSupport = 3,
+
+    # Owner for records whose own owner can't be determined. Resolved to a User
+    # at run time (never a hard-coded Id - production's differs from every
+    # sandbox's) and the run FAILS if it doesn't match an active User.
+    [string]$FallbackOwnerEmail = "peter.marks@gsa.gov"
 )
 
 $ErrorActionPreference = "Stop"
@@ -225,6 +240,10 @@ foreach ($Row in @(Invoke-SalesforceQuery -Soql "SELECT LDGCRM_External_ID__c FR
 }
 Write-Host "$($LoadedAccountIds.Count) Accounts, $($LoadedPartnerAccountIds.Count) Partner Accounts available to link."
 
+Write-Host "Resolving the fallback owner ($FallbackOwnerEmail)..." -ForegroundColor Cyan
+$FallbackOwnerId = Resolve-FallbackOwnerId -Email $FallbackOwnerEmail -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+Write-Host "Fallback owner resolves to $FallbackOwnerId."
+
 # --- Account fallback: derive via the contact's Applications ---------------
 # A Contact with no AccountId is not just missing data - the unrelated FCIC
 # Apex trigger (GSA_FCIC_ContactTrigger) reacts to a blank AccountId by
@@ -252,6 +271,151 @@ foreach ($App in (Import-AirtableTable -Label "Applications")) {
 }
 Write-Host "$($ApplicationToAccount.Count) Applications resolve to an Account."
 
+# --- Account fallback 2: derive via the contact's Opportunity ---------------
+# The Opportunity Contacts table (this script's second identity source) has no
+# Account column, but every row links to an Opportunity, and the Opportunities
+# table DOES carry "Account Record ID". So the same authored chain exists here
+# as the Application one above - Opportunity Contact -> Opportunity -> Account.
+#
+# This matters far more than it looks. Those contacts are exactly the ones the
+# Airtable Contacts table never had an Account for, so without this hop they
+# are the bulk of the account-less population: it resolves 440 of 520
+# Opportunity Contact rows and rescues 399 Contacts that would otherwise have
+# no Account at all. Since account-less Contacts are now SKIPPED (see below),
+# omitting this chain would have discarded 457 of 503 OpportunityContactRole
+# rows - the junction those very contacts exist to support.
+#
+# NOTE the column name: "Opportunity Record ID (from Opportunities)", NOT
+# "Opportunity Record ID". The latter is the Opportunity Contact row's OWN id
+# (0 of 520 are real Opportunity ids) - the same trap documented for
+# Build-OpportunityContactRoleLoad.ps1.
+Write-Host "Building Opportunity -> Account fallback map..." -ForegroundColor Cyan
+$OpportunityToAccount = @{}
+foreach ($Opp in (Import-AirtableTable -Label "Opportunities")) {
+    $Raw = $Opp.fields.'Account Record ID'
+    if ($Raw) { $OpportunityToAccount[$Opp.id] = @($Raw)[0] }
+}
+
+# Keyed by the Airtable Opportunity Contact ROW id, because that is what a
+# merge group's member rows carry.
+$OpportunityContactRowToAccount = @{}
+foreach ($OppContact in $AirtableOpportunityContacts) {
+    $RawOpp = $OppContact.fields.'Opportunity Record ID (from Opportunities)'
+    if (-not $RawOpp) { continue }
+    $OppId = @($RawOpp)[0]
+    if ($OppId -and $OpportunityToAccount.ContainsKey($OppId)) {
+        $OpportunityContactRowToAccount[$OppContact.id] = $OpportunityToAccount[$OppId]
+    }
+}
+Write-Host "$($OpportunityToAccount.Count) Opportunities carry an Account; $($OpportunityContactRowToAccount.Count) Opportunity Contact rows reach one."
+
+# ============================================================
+# PRE-PASS: resolve the AUTHORED Account links, then learn the domain map
+# ============================================================
+# Split out of the main loop for one reason: domain inference is only defensible
+# if it is learned from contacts whose Account came from a link somebody
+# actually recorded. That means every authored link has to be resolved before
+# the first inference is attempted - which a single pass cannot do.
+#
+# Precedence, strongest evidence first:
+#   1. Airtable's own Contacts.Account column
+#   2. Application -> Partner Account -> Account
+#   3. Opportunity Contact -> Opportunity -> Account
+$AuthoredAccountByGroup = @{}
+$AccountFromApplication = 0
+$AccountFromOpportunity = 0
+
+foreach ($Group in $Groups) {
+    $Rows = $Group.Rows
+
+    $Candidate = Get-FirstLinkedId $Rows "Account"
+    $HadAirtableColumn = [bool]$Candidate
+    if ($Candidate -and -not $LoadedAccountIds.Contains($Candidate)) { $Candidate = "" }
+
+    if (-not $Candidate) {
+        foreach ($Row in $Rows) {
+            $RawApps = $Row.fields.'Applications Record ID (from Applications)'
+            if (-not $RawApps) { continue }
+            foreach ($AppId in @($RawApps)) {
+                if ($ApplicationToAccount.ContainsKey($AppId)) {
+                    $Try = $ApplicationToAccount[$AppId]
+                    if ($LoadedAccountIds.Contains($Try)) {
+                        $Candidate = $Try
+                        $AccountFromApplication++
+                        break
+                    }
+                }
+            }
+            if ($Candidate) { break }
+        }
+    }
+
+    if (-not $Candidate) {
+        foreach ($Row in $Rows) {
+            if ($OpportunityContactRowToAccount.ContainsKey($Row.id)) {
+                $Try = $OpportunityContactRowToAccount[$Row.id]
+                if ($LoadedAccountIds.Contains($Try)) {
+                    $Candidate = $Try
+                    $AccountFromOpportunity++
+                    break
+                }
+            }
+        }
+    }
+
+    $AuthoredAccountByGroup[$Group.ExternalId] = [PSCustomObject]@{
+        AccountId         = $Candidate
+        HadAirtableColumn = $HadAirtableColumn
+    }
+}
+Write-Host "$($AccountFromApplication) Contacts got an Account via an Application; $($AccountFromOpportunity) via an Opportunity."
+
+# --- Learn domain -> Account, from authored links only ----------------------
+# THE ONLY INFERENCE IN THIS SCRIPT, and it is hedged three ways because the
+# naive version is actively wrong:
+#   1. GOVERNMENT DOMAINS ONLY. A consumer domain would otherwise qualify -
+#      gmail.com maps to exactly one Account in this data (one contact), so an
+#      unguarded rule would sweep personal addresses onto that agency.
+#   2. THE DOMAIN MUST MAP TO EXACTLY ONE ACCOUNT. gsa.gov spans 4 and is
+#      correctly excluded by this alone.
+#   3. MINIMUM SUPPORTING EVIDENCE. Without it, usda.gov would claim 19
+#      contacts on the strength of a SINGLE known example, and usdoj.gov 7 on
+#      one. -DomainInferenceMinSupport controls the bar.
+#
+# Worth knowing how little this now buys: adding the Opportunity chain above
+# collapsed its yield from ~95 contacts to ~20, because the authored links
+# already reach nearly everything recoverable. It is kept because a recovered
+# Account is a contact that loads rather than being skipped, but it is the first
+# thing to switch off (-DisableDomainInference) if an inferred link ever
+# misassigns a contact.
+$DomainToAccount = @{}
+$DomainSupport = @{}
+$DomainInferenceRows = [System.Collections.Generic.List[object]]::new()
+$AccountFromDomain = 0
+
+if (-not $DisableDomainInference) {
+    $Observed = @{}
+    foreach ($Group in $Groups) {
+        $Resolved = $AuthoredAccountByGroup[$Group.ExternalId].AccountId
+        if (-not $Resolved) { continue }
+        $Domain = Get-EmailDomain (Get-CleanContactEmail (Get-FirstNonEmpty $Group.Rows "Email"))
+        if (-not $Domain) { continue }
+        if (-not $Observed.ContainsKey($Domain)) { $Observed[$Domain] = @{} }
+        if (-not $Observed[$Domain].ContainsKey($Resolved)) { $Observed[$Domain][$Resolved] = 0 }
+        $Observed[$Domain][$Resolved]++
+    }
+
+    foreach ($Domain in $Observed.Keys) {
+        if ($Domain -notmatch '\.gov$') { continue }
+        if ($Observed[$Domain].Keys.Count -ne 1) { continue }
+        $Total = ($Observed[$Domain].Values | Measure-Object -Sum).Sum
+        if ($Total -lt $DomainInferenceMinSupport) { continue }
+        $DomainToAccount[$Domain] = @($Observed[$Domain].Keys)[0]
+        $DomainSupport[$Domain] = $Total
+    }
+    Write-Host "$($DomainToAccount.Count) .gov domain(s) map to a single Account with $DomainInferenceMinSupport+ supporting contacts."
+}
+
 $UpsertRows = [System.Collections.Generic.List[object]]::new()
 $NameReviewRows = [System.Collections.Generic.List[object]]::new()
 $ValueReviewRows = [System.Collections.Generic.List[object]]::new()
@@ -262,7 +426,9 @@ $NameFromEmail = 0
 $NoNameAtAll = 0
 $FederalRecordTypeCount = 0
 $GsaRecordTypeCount = 0
-$AccountFromApplication = 0
+# NOTE: $AccountFromApplication / $AccountFromOpportunity / $AccountFromDomain
+# are set by the pre-pass above and must NOT be re-initialised here - doing so
+# silently zeroes the counts the summary reports.
 $NoAccountCount = 0
 $AccountReviewRows = [System.Collections.Generic.List[object]]::new()
 
@@ -338,45 +504,52 @@ foreach ($Group in $Groups) {
 
     if ($FirstName.Length -gt 40) { $FirstName = $FirstName.Substring(0, 40) }
 
-    # --- Lookups: blank rather than guess when unresolvable ---
-    $AccountId = Get-FirstLinkedId $Rows "Account"
-    $AccountFromAirtableColumn = [bool]$AccountId
-    if ($AccountId -and -not $LoadedAccountIds.Contains($AccountId)) { $AccountId = "" }
+    # --- Lookups ---
+    # The three AUTHORED resolution paths ran in the pre-pass above (they have
+    # to, because the domain-inference map is learned from their results).
+    $Authored = $AuthoredAccountByGroup[$Group.ExternalId]
+    $AccountId = $Authored.AccountId
+    $AccountFromAirtableColumn = $Authored.HadAirtableColumn
 
-    if (-not $AccountId) {
-        # Fall back through the contact's Applications (see the map built
-        # above). Not a guess: it walks a real Application -> Partner Account
-        # -> Account chain that already exists in the source data.
-        foreach ($Row in $Rows) {
-            $RawApps = $Row.fields.'Applications Record ID (from Applications)'
-            if (-not $RawApps) { continue }
-            foreach ($AppId in @($RawApps)) {
-                if ($ApplicationToAccount.ContainsKey($AppId)) {
-                    $Candidate = $ApplicationToAccount[$AppId]
-                    if ($LoadedAccountIds.Contains($Candidate)) {
-                        $AccountId = $Candidate
-                        $AccountFromApplication++
-                        break
-                    }
-                }
-            }
-            if ($AccountId) { break }
+    if (-not $AccountId -and -not $DisableDomainInference) {
+        # LAST RESORT, AND THE ONLY INFERENCE IN THIS SCRIPT. Everything above
+        # follows a link somebody actually recorded; this guesses from the email
+        # domain, so it is deliberately hedged three ways (see the map build for
+        # the full reasoning) and every hit is written to a review CSV.
+        $Domain = Get-EmailDomain $Email
+        if ($Domain -and $DomainToAccount.ContainsKey($Domain)) {
+            $AccountId = $DomainToAccount[$Domain]
+            $AccountFromDomain++
+            $DomainInferenceRows.Add([PSCustomObject]@{
+                ContactExternalId = $Group.ExternalId
+                Email             = $Email
+                Domain            = $Domain
+                AccountExternalId = $AccountId
+                SupportingContacts = $DomainSupport[$Domain]
+                Reason            = "INFERRED, not a recorded link: every other contact on this domain that DOES have an Account maps to this one. Verify before relying on it."
+            })
         }
     }
 
     if (-not $AccountId) {
-        # Still nothing - this Contact will make the FCIC trigger spawn a junk
-        # Account unless that trigger is disabled for the load.
+        # SKIPPED, not loaded with a blank Account (decided 2026-08-13).
+        # Two reasons: a Contact with no Account makes the FCIC trigger spawn a
+        # junk "FCIC_Individual" Account, and a contact attached to no agency is
+        # not useful in the CRM. Measured cost of skipping, after the two
+        # authored fallbacks above: 0 of 1,880 Application-Contact junction rows
+        # and 22 of 503 OpportunityContactRole rows - versus 457 OCR rows lost
+        # had the Opportunity chain not been added first.
         $NoAccountCount++
         $AccountReviewRows.Add([PSCustomObject]@{
             ContactExternalId = $Group.ExternalId
             Email             = $Email
             Reason            = if ($AccountFromAirtableColumn) {
-                                    "Airtable links this contact to an Account that isn't reconciled in $OrgAlias (duplicate/unmatched Airtable Account - see docs/AIRTABLE-DATA-QUALITY-REQUESTS.md), and no linked Application resolves to one either."
+                                    "SKIPPED - not loaded. Airtable links this contact to an Account that isn't reconciled in $OrgAlias (duplicate/unmatched Airtable Account - see docs/AIRTABLE-DATA-QUALITY-REQUESTS.md), and neither a linked Application nor a linked Opportunity resolves to one."
                                 } else {
-                                    "No Account link in Airtable, and no linked Application resolves to one."
+                                    "SKIPPED - not loaded. No Account link in Airtable, and neither a linked Application nor a linked Opportunity resolves to one."
                                 }
         })
+        continue
     }
 
     $PartnerAccountId = Get-FirstLinkedId $Rows "Partner Account Record ID"
@@ -423,13 +596,10 @@ foreach ($Group in $Groups) {
     }
 
     # --- OwnerId: inherited from the resolved Account ---
-    # Blank = fall back to the loading user, deliberately: Bulk API 2.0 reads an
-    # empty value as "not supplied", so inserts land on the loading user (the
-    # agreed fallback) and re-runs don't revert manual reassignments. The 371
-    # Contacts with no resolvable Account all land here - the same population as
-    # the unmatched-Account data-quality issue, so fixing those Accounts fixes
-    # these owners too, with no code change.
-    $OwnerId = ""
+    # Every Contact reaching this point HAS an Account (account-less ones were
+    # skipped above), so the fallback only applies where that Account's own
+    # owner is missing or inactive.
+    $OwnerId = $FallbackOwnerId
     if ($AccountId -and $AccountOwnerByExternalId.ContainsKey($AccountId)) {
         $OwnerId = $AccountOwnerByExternalId[$AccountId]
     }
@@ -458,6 +628,7 @@ $IdentityMapFile = Join-Path $LoadDir "Contact-identity-map.csv"
 $NameReviewFile = Join-Path $LogDir "Contact-name-review-$Timestamp.csv"
 $ValueReviewFile = Join-Path $LogDir "Contact-value-review-$Timestamp.csv"
 $AccountReviewFile = Join-Path $LogDir "Contact-no-account-$Timestamp.csv"
+$DomainInferenceFile = Join-Path $LogDir "Contact-domain-inferred-account-$Timestamp.csv"
 
 if ($UpsertRows.Count -gt 0) { Export-DataLoaderCsv -InputObject $UpsertRows.ToArray() -Path $UpsertFile }
 # The identity map is an input to the Application-Contact junction chunk, not
@@ -466,6 +637,7 @@ if ($IdentityMapRows.Count -gt 0) { Export-DataLoaderCsv -InputObject $IdentityM
 if ($NameReviewRows.Count -gt 0) { $NameReviewRows | Export-Csv -LiteralPath $NameReviewFile -NoTypeInformation -Encoding UTF8 }
 if ($ValueReviewRows.Count -gt 0) { $ValueReviewRows | Export-Csv -LiteralPath $ValueReviewFile -NoTypeInformation -Encoding UTF8 }
 if ($AccountReviewRows.Count -gt 0) { $AccountReviewRows | Export-Csv -LiteralPath $AccountReviewFile -NoTypeInformation -Encoding UTF8 }
+if ($DomainInferenceRows.Count -gt 0) { $DomainInferenceRows | Export-Csv -LiteralPath $DomainInferenceFile -NoTypeInformation -Encoding UTF8 }
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
@@ -483,17 +655,21 @@ Write-Host ("{0,-52} {1,8:N0}" -f "    email address used as placeholder", $Name
 Write-Host ("{0,-52} {1,8:N0}" -f "    skipped - no name AND no email", $NoNameAtAll)
 Write-Host ""
 Write-Host "  Account link:" -ForegroundColor Cyan
-Write-Host ("{0,-52} {1,8:N0}" -f "    from Airtable's Account column", ($UpsertRows.Count - $AccountFromApplication - $NoAccountCount))
+Write-Host ("{0,-52} {1,8:N0}" -f "    from Airtable's Account column", ($UpsertRows.Count - $AccountFromApplication - $AccountFromOpportunity - $AccountFromDomain))
 Write-Host ("{0,-52} {1,8:N0}" -f "    recovered via Application -> Partner Acct", $AccountFromApplication)
-Write-Host ("{0,-52} {1,8:N0}" -f "    NO Account (FCIC trigger will spawn one)", $NoAccountCount)
+Write-Host ("{0,-52} {1,8:N0}" -f "    recovered via Opportunity -> Account", $AccountFromOpportunity)
+Write-Host ("{0,-52} {1,8:N0}" -f "    INFERRED from .gov email domain", $AccountFromDomain)
+Write-Host ("{0,-52} {1,8:N0}" -f "  SKIPPED - no Account could be resolved", $NoAccountCount)
 Write-Host ""
 Write-Host "  Record type:" -ForegroundColor Cyan
 Write-Host ("{0,-52} {1,8:N0}" -f "    Federal (partner-agency contacts)", $FederalRecordTypeCount)
 Write-Host ("{0,-52} {1,8:N0}" -f "    GSA (@gsa.gov staff)", $GsaRecordTypeCount)
 Write-Host ""
 Write-Host ""
-Write-Host ("{0,-52} {1,8:N0}" -f "Owner inherited from the Account", @($UpsertRows | Where-Object { $_.OwnerId }).Count)
-Write-Host ("{0,-52} {1,8:N0}" -f "Owner falls back to the loading user", @($UpsertRows | Where-Object { -not $_.OwnerId }).Count)
+# Compare against the fallback Id, not against "is OwnerId set" - every row now
+# carries an OwnerId, so a truthiness test would report 100% inherited.
+Write-Host ("{0,-52} {1,8:N0}" -f "Owner inherited from the Account", @($UpsertRows | Where-Object { $_.OwnerId -ne $FallbackOwnerId }).Count)
+Write-Host ("{0,-52} {1,8:N0}" -f "Owner = fallback ($FallbackOwnerEmail)", @($UpsertRows | Where-Object { $_.OwnerId -eq $FallbackOwnerId }).Count)
 Write-Host ""
 Write-Host ("{0,-52} {1,8:N0}" -f "Values dropped for review (Subscription Type)", $ValueReviewRows.Count)
 Write-Host ""
@@ -511,6 +687,14 @@ if ($NameReviewRows.Count -gt 0) {
 if ($ValueReviewRows.Count -gt 0) {
     Write-Host "Dropped values for review:" -ForegroundColor Yellow
     Write-Host $ValueReviewFile
+}
+if ($AccountReviewRows.Count -gt 0) {
+    Write-Host "SKIPPED - no Account could be resolved (not loaded):" -ForegroundColor Yellow
+    Write-Host $AccountReviewFile
+}
+if ($DomainInferenceRows.Count -gt 0) {
+    Write-Host "Accounts INFERRED from an email domain (verify these):" -ForegroundColor Yellow
+    Write-Host $DomainInferenceFile
 }
 
 }

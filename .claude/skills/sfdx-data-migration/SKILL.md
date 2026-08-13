@@ -39,7 +39,7 @@ data into a GSA PEO org. This skill is the convention to follow when adding thos
 4. **Load order follows the data model's dependencies** — parents before children/junctions:
    Account / `LDGCRM_Partner_account__c` before `LDGCRM_Application__c`, Contact before
    `LDGCRM_Application_Contact__c`, Opportunity before `LDGCRM_Opportunity_Impediment__c`, etc. This
-   is the reverse of the delete order in `scripts/cleanup/Invoke-OrgCleanup.ps1` — that script's object
+   is the reverse of the delete order in `scripts/cleanup/Invoke-SandboxFactoryReset.ps1` — that script's object
    list is a ready reference for the dependency order either direction.
 5. **Dry run before a full load.** Validate mapping and row counts against a small batch (or a
    CSV-only export step) before loading everything — Bulk API loads at scale are hard to partially

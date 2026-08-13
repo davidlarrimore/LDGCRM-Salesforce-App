@@ -18,7 +18,8 @@ Partnerships lead on 2026-08-13 and are implemented in the existing `Build-*.ps1
 
 ### Decisions taken (2026-08-13)
 
-1. **Fallback owner:** the loading/integration user.
+1. **Fallback owner:** `peter.marks@gsa.gov`. *(Revised from "the loading user" once it was confirmed
+   GSA IT Operations runs the production load — see below.)*
 2. **Applications** take their **Partner Account's** owner (*not* Airtable's `Account Owner`, which
    is a rollup from the parent Account).
 3. **Contacts** inherit their **Account's** owner.
@@ -28,27 +29,34 @@ Partnerships lead on 2026-08-13 and are implemented in the existing `Build-*.ps1
 
 ### How it was implemented
 
-One shared resolver, `Resolve-SalesforceOwnerIds` in `Common.DataMigration.ps1`, used by every
-transform. The fallback is expressed as a **blank `OwnerId`**, not an explicit Id — Bulk API 2.0
-reads empty as "not supplied", so inserts land on the loading user *and* re-runs don't revert manual
-reassignments. Full rationale, the per-object source table, and the three silent
-email-to-User resolution traps are in [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)'s
-"Record ownership" section.
+Two shared resolvers in `Common.DataMigration.ps1`, used by every transform:
+`Resolve-SalesforceOwnerIds` (email → active User, fixing three silent traps the hand-rolled version
+had) and `Resolve-FallbackOwnerId`, which resolves `-FallbackOwnerEmail` at run time and **throws**
+if it doesn't match an active User.
+
+**The fallback is written explicitly, not left blank — this reversed the original design.** Blank
+meant "whoever ran the load", which was fine while that was the intended owner and wrong the moment
+GSA IT Operations took over the production run. Cost of the reversal: a re-run now re-asserts the
+fallback owner, so a manual reassignment of a fallback-owned record gets reverted. Full rationale in
+[`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)'s "Record ownership" section.
 
 Coverage produced by the rebuilt transforms:
 
-| Object | Owner resolved | Falls back |
+| Object | Own owner | Fallback |
 | --- | --- | --- |
-| Opportunity | 476 of 742 | 266 |
-| `LDGCRM_application__c` | 511 of 688 | 177 |
-| Contact | 1,116 of 1,943 | 827 |
+| Opportunity | 471 | 271 |
+| `LDGCRM_application__c` | 511 | 177 |
+| Contact | 1,553 | 0 |
+| `LDGCRM_Impediment__c` | 0 | 39 |
+| `LDGCRM_Application_Contact__c` | 0 | 1,880 |
 | Meetings (when built) | 1,315 of 1,845 | 530 |
 
-**⚠️ Contact ownership can't be verified in gsa-peo.** The 2026-08-13 rebuild seeded Accounts
-Name-only, so 1,346 of 1,350 Accounts are owned by the loading user — Contacts inherit correctly, but
-inherit *that*. The code is right; the sandbox just can't demonstrate it. Seeding Account `OwnerId`
-in `Build-ProdAccountSeed.ps1` would fix that if a sandbox demonstration is wanted; it was built
-Name-only on the basis that nothing read Account ownership, which is no longer true.
+**⚠️ Contact ownership can't be verified in the sandbox, and may not be worth having in production.**
+The Account bootstrap loads Name + hierarchy only, so nearly every sandbox Account is owned by the
+loading user and Contacts inherit *that*. It cannot easily be fixed either: the production export
+names Account owners by display name, not email. And in production, 92% of Accounts are owned by
+`SystemUser DataLoader` or one individual — so inheritance would put 92% of Contacts under one of
+those two. Confirmed as-is on 2026-08-13; revisit if ownership reporting proves misleading.
 
 ### Original analysis (kept for reference)
 
@@ -123,68 +131,167 @@ people block ownership in two places, so provisioning or reassigning them fixes 
 
 ---
 
-## 2. Meetings (1,845 Airtable rows, 0 loaded)
+## 2. Meetings (1,845 Airtable rows, 0 loaded) — approach changed 2026-08-13
 
-**Status:** not started. **Blocked on three decisions, not one** — the source data was inspected on
-2026-08-13 and the mapping is less clean than this entry originally assumed.
+**Status: deferred by decision, and no longer a straight transform.** It now depends on an org
+configuration change that sits outside this repo. **The reload should proceed without Meetings.**
 
-### 2a. `Meeting Type` doesn't fit the Salesforce field (the biggest of the three)
+### Why the original approach was rejected
 
-`LDGCRM_Meeting_Type__c` on Activity is a **single-value restricted picklist** with 10 values.
-Airtable's `Meeting Type` is a **multi-select**, and its values largely don't match:
+Airtable records a meeting **date only** — no start time, no end time, no duration. Salesforce Events
+require both. Every option for closing that gap invents data: a fixed 09:00 start would have had
+1,604 meetings all claiming to begin at 9am, and even an all-day event asserts a shape the source
+never recorded.
 
-| Airtable value | Meetings | Salesforce picklist |
+**The decision (2026-08-13): don't synthesize the time — get the real one.**
+
+### The agreed approach
+
+1. **Stand up Einstein Activity Capture (EAC)** so users' actual Google Calendar events sync into
+   Salesforce and associate themselves with Salesforce records.
+   *(Correct product name: **Einstein Activity Capture**. Searching for "Einstein Activity Monitor"
+   finds nothing — worth knowing before anyone opens a ticket.)*
+2. **Match each Airtable Meeting to the real calendar event** it describes, using fuzzy criteria
+   across date, organizer, attendees and subject.
+3. **Enrich the matched event** with what Airtable holds and a calendar entry doesn't — `Summary`,
+   `Action Items`, `Agenda`, `Notes`, `Meeting Type` — rather than creating a duplicate meeting.
+
+The real calendar supplies the times; Airtable supplies the meaning. Neither is fabricated.
+
+---
+
+### ⚠️ Prerequisite spike — do this before designing anything further
+
+**One unknown determines whether the rest of this plan is buildable at all**, and it must be answered
+against the actual org rather than from documentation:
+
+> **Do EAC-captured events exist as standard `Event` records, or in Einstein Activity Capture's own
+> data store?**
+
+EAC has historically stored captured activity in a separate store surfaced through the Activity
+Timeline, **not** as standard `Event` sObjects. If that holds here, the events are not reliably
+queryable via SOQL, and the entire matching design below — which assumes we can query candidate
+events — needs rethinking. If they do land as standard `Event` records, the design works as written.
+
+Also confirm, in the same spike:
+
+- **Retention window.** How far back does captured activity persist? This data spans
+  **2024-02-05 → 2026-08-13**: 125 meetings in 2024, 931 in 2025, 548 in 2026. A 24-month window
+  loses most of 2024; a 6-month window loses nearly everything.
+- **Backfill vs forward-only.** Does connecting a calendar import history, or only capture from
+  setup onward? If forward-only, **no historical meeting will ever match** and this approach only
+  helps meetings held after go-live.
+- **Licensing**, and which users are actually covered.
+
+### ⚠️ A hard coverage ceiling that exists regardless of the spike
+
+EAC syncs **per user, from that user's connected calendar**. A meeting can only be matched if its
+organizer has an active Salesforce user with a connected calendar.
+
+From the ownership analysis: **1,315 of 1,845 meetings have a Meeting Leader who resolves to an
+active Salesforce User.** The remaining 530 are led by people who are deactivated or have no user at
+all (`elizabeth.mays@gsa.gov` alone leads 182). **Those meetings can never sync**, because there is
+no calendar to connect. That is a ceiling of roughly **71%**, before any matching accuracy is
+considered — and it overlaps exactly with the missing-logins item in
+[`AIRTABLE-DATA-QUALITY-REQUESTS.md`](AIRTABLE-DATA-QUALITY-REQUESTS.md), so provisioning those users
+raises this ceiling as well as fixing record ownership.
+
+---
+
+### Matching design (proposed)
+
+**Signals Airtable actually provides**, verified against the export:
+
+| Signal | Coverage | Quality |
 | --- | --- | --- |
-| `General Follow Up` | 465 | **no match** — SF offers `BD Ad-hoc Follow Up` / `AM Ad-hoc Follow Up` |
-| `Launch meeting` | 213 | `Launch Meeting` — differs by case |
-| `Internal` | 37 | **no match** |
-| `Contact Center` | 30 | **no match** |
-| `Informal Sync` | 20 | **no match** |
-| `Renewals` | 14 | **no match** |
+| `Date` | 1,604 / 1,845 | Exact day. The natural blocking key. |
+| `Meeting Leader` | 1,622 | **Structured** — collaborator object with a real email. Strongest signal; maps to the calendar organizer. |
+| `Internal Attendees` | 1,279 | **Structured** — array of collaborator objects with emails. Excellent for attendee-overlap scoring. |
+| `Topic` | 1,845 | Free text, always present. |
+| `Meeting Name` | 1,633 | Free text, closest thing to a calendar subject. |
+| `External Attendees` | 1,015 | **Inconsistent free text** — some rows are RFC-style `"Name" <email>` lists, others are bullet lists of bare names with no address at all. Parse opportunistically; treat as a weak signal only. |
+| `Accounts Record ID` / `Opportunity Record ID` | 1,522 / 792 | Contextual confirmation against the event's `WhatId`. |
 
-`Intro Call`, `Technical Consultation`, `AM - Regular Sync`, `Exec Leadership`,
-`Quarterly Business Review`, `Networking` and `Demo` all match exactly.
+**Proposed algorithm:**
 
-**566 meetings carry a value with no destination**, and **83 rows carry two or more types** against a
-single-select field. This reads as a config gap rather than a data problem — the same shape as the
-`Login_gov` record-type picklist gap and the Demographic Served expansion, both of which were fixed
-by deploying values. **Not being guessed at:** splitting `General Follow Up` into SF's BD vs AM
-variants is a human call, per the no-workarounds-for-bad-data rule.
+1. **Block on date** — candidate events on the same calendar day (allow ±1 day for timezone drift).
+   This alone reduces the search space enormously and is cheap.
+2. **Require organizer agreement** — Airtable `Meeting Leader` email = the event's organizer/owner.
+   Treat this as a near-hard gate rather than a score component; two different people's meetings on
+   the same day are not the same meeting.
+3. **Score the remainder**, weighted:
+   - internal-attendee email overlap (Jaccard) — the highest-signal fuzzy component, since both
+     sides are structured emails;
+   - subject similarity (`Meeting Name` / `Topic` vs event subject), normalized and token-based;
+   - `WhatId` agreement with Airtable's Account / Opportunity;
+   - parsed external-attendee overlap where addresses exist.
+4. **Auto-link only unambiguous, high-confidence matches.** One candidate clearly above threshold →
+   link. Two plausible candidates → **review CSV, not a guess.** This follows the rule the rest of
+   this pipeline already runs on: load what is genuinely clean, report the rest.
+5. **Idempotency** — stamp the matched event with the Airtable `Meeting Record ID` in
+   `LDGCRM_External_ID__c` so re-runs match rather than duplicate.
 
-**Needs:** (a) which values to add to the picklist, (b) what `General Follow Up` should become, and
-(c) for the 83 multi-type rows — first value wins, or does the field need to become a multi-select?
+**Thresholds must be tuned against real synced data, not guessed in advance.** Expect the first pass
+to be run in report-only mode and the weights adjusted from its output.
 
-### 2b. Start/end times (the original blocker)
+### Open question: what happens to meetings that never match
 
-Airtable records only a **date**, no time. Salesforce Events require both. Needs an agreed convention
-(e.g. all-day event, or 09:00 for 60 minutes). Dates run 2024-02-05 → 2026-08-13.
+Likely the majority, given the coverage ceiling and retention limits. Needs a decision — this is the
+main thing to settle once the spike reports back:
 
-### 2c. 241 meetings have no date at all
+- **(a) Don't migrate them.** Cleanest, loses ~2 years of meeting summaries and action items.
+- **(b) Attach them as Notes** to their Account or Opportunity. Preserves `Summary` / `Action Items`
+  / `Agenda` verbatim without pretending a calendar event existed. Fits naturally with the Notes
+  chunk (item 4) and needs no invented times — **currently the most attractive option.**
+- **(c) Create an all-day Event as a fallback.** Returns to the fabrication this decision rejected,
+  but only for records that would otherwise be lost.
 
-230 of them are marked `(Past)`. An Event can't be created without a date, so these are skipped
-unless they should become dateless Tasks instead.
+### Decisions still inherited from the original design
+
+These do not go away — they apply to whatever record ultimately carries the meeting:
+
+- **`Meeting Type` doesn't fit the field.** `LDGCRM_Meeting_Type__c` is a **single-value restricted
+  picklist**; Airtable's is a **multi-select** whose values largely don't match. 566 meetings carry a
+  value with no valid target (`General Follow Up` 465, `Internal` 37, `Contact Center` 30,
+  `Informal Sync` 20, `Renewals` 14) and `Launch meeting` differs from `Launch Meeting` only by case.
+  83 rows carry two or more types. Reads as a config gap — the same shape as the `Login_gov`
+  record-type fix — but splitting `General Follow Up` between Salesforce's `BD Ad-hoc Follow Up` and
+  `AM Ad-hoc Follow Up` is a human call, not a guess.
+- **241 meetings have no date at all** (230 marked `(Past)`). These cannot be matched by date and
+  cannot become an Event; they are the strongest candidates for option (b) above.
+- **287 link to neither an Opportunity nor an Account.**
 
 ### Also worth knowing before building it
 
-- **Link coverage:** 792 → Opportunity, 766 → Account only, and **287 link to neither** — those would
-  be Events with no `WhatId` (legal, but floating).
-- **`Meeting Leader` is a real owner source** — 1,315 of 1,845 resolve to an active User. This entry
-  previously assumed Meetings had no owner column; it does. See item 1.
-- Activity is a shared object with the unrelated FCIC and CTI apps (its field list includes
-  `CTI_*` and `Template_*` columns), and `TriggerControls__c` has a record for **`Task`** — so
-  **check the live org for Event/Task triggers before the first load**, per the standing rule.
+Activity is shared with the unrelated FCIC and CTI apps (its field list carries `CTI_*` and
+`Template_*` columns) and `TriggerControls__c` has a record for **`Task`** — so **check the live org
+for Event/Task triggers before the first load**, per the standing rule that burned the Contact load.
 
 ---
 
 ## 3. Broker application relationships (second pass)
 
-**Status:** not started. Small, self-contained.
+**Status: BUILT 2026-08-13, not yet loaded.**
 
-`LDGCRM_Broker_App_Parent__c` links an Application to its parent Application. It is **deliberately not
-written by the main Application load**: Bulk API does not resolve external-ID references between two
-rows in the same batch, which was proven — 68 rows failed even though the parent was in the same file.
-It needs a follow-up pass that re-upserts only the external ID and the parent reference, after every
-Application exists. Roughly 68 relationships.
+`LDGCRM_Broker_App_Parent__c` links an Application to its parent Application. It cannot go in the main
+upsert file: Bulk API does not resolve external-ID references between two rows of the same batch,
+proven when 68 rows failed with the parent sitting in the same file.
+
+**`Build-ApplicationLoad.ps1` now writes the second-pass file automatically**
+(`LDGCRM_application__c-broker-parent-upsert.csv`) — deliberately not a separate transform script,
+since a pass you have to remember to run is one you eventually forget. Only the *load* is separate,
+and it must come **after** the main Application load; the transform prints the exact command.
+
+A row is emitted only when both sides will exist once the main load finishes (planned set ∪ what's
+already in the org), so a re-run picks up newly-resolvable links with no code change.
+
+Of 70 Airtable rows carrying a Broker App Parent: **63 ready**, 6 waiting on an Application withheld
+by the Account data-quality issue, and **1 dropped as a self-reference** (`ACF Login.gov
+ACF-ockta-oidc` lists itself as its own parent). The self-reference is handled entirely in code and
+**not raised with the data owners**: it costs one optional lookup on one record that otherwise
+migrates fine, so it fails the "does this unblock anything?" test the data-quality list exists to
+meet. No longer cycles exist, and the deepest chain is 1, so no multi-pass hierarchy walk is needed
+(unlike the Account bootstrap, which goes four levels deep).
 
 ---
 
@@ -198,6 +305,13 @@ their parent. Candidates identified so far: Partner Account `Account Description
 Application `Notes` / `Launch Notes` / `IdV Upgrade Notes`. Mechanically different from every other
 chunk — `ContentNote.Content` is base64, and attaching is a second object (`ContentDocumentLink`).
 Re-derive the candidate list per table when this is built; don't assume the current list is complete.
+
+**This chunk may have to absorb Meetings.** Option (b) in item 2 — attaching unmatched meetings to
+their Account or Opportunity as Notes, preserving `Summary` / `Action Items` / `Agenda` without
+inventing a calendar event — is currently the most attractive answer for the meetings EAC can never
+recover (the 241 with no date, plus everything outside the retention window or led by someone with no
+Salesforce user). If that option is chosen, the volume here grows by up to ~1,800 records and Notes
+stops being a small final chunk. Settle item 2's spike before sizing this one.
 
 ---
 

@@ -40,13 +40,25 @@ Treat finding one as a defect, not a typo.
 ### D1. Scope of the wipe — ✅ settled
 
 The wipe includes an option to **bootstrap the production Accounts**, so the load is as
-production-like as possible. `Build-ProdAccountSeed.ps1` parses `data/peo-prod-accounts-2026-07-16.xls`
-(an HTML table saved with an `.xls` extension — a Salesforce report export, not binary Excel) and
-inserts every production Account name the target org doesn't already have.
+production-like as possible. `Invoke-SandboxFactoryReset.ps1` takes `-BootstrapAccounts` (run it without
+prompting) or `-SkipBootstrap` (never run it), and calls `Invoke-AccountBootstrap.ps1`, which rebuilds
+Account **names and the parent hierarchy** from `data/peo-prod-accounts-<yyyy-MM-dd>.xls` — an HTML
+table saved with an `.xls` extension, a Salesforce report export, not binary Excel.
 
-Know what the Account wipe actually does, because it is not intuitive: `cleanup-gsa-peo.ps1` only
-deletes rows **where `LDGCRM_External_ID__c` is populated**. Untagged rows — including previously
-seeded production Account names — survive, and the seed then re-inserts only what's missing by name.
+Know what the Account wipe actually does, because it is not intuitive: cleanup only deletes rows
+**where `LDGCRM_External_ID__c` is populated**, and bootstrapped Accounts carry none. Bootstrapped
+Accounts therefore survive a later cleanup, which is exactly what makes the bootstrap safely
+repeatable — it inserts only what's missing, by name.
+
+**The bootstrap now sets Account owners too** (added 2026-08-13). The export names owners by *display
+name* (`SNA MSadi`) rather than email, so it uses `Resolve-SalesforceOwnerIdsByName` — same
+active-only and refuse-to-guess-on-duplicates guards as the email resolver, because this data trips
+both (`Matthew Taylor` matches two Users in Dev, one active and one inactive). Owners are set **only
+on insert**; an existing Account keeps whatever owner it has.
+
+⚠️ It does **not** make Contact ownership meaningful — see D2. In production 92% of Accounts are
+owned by a service account or one person, so faithfully reproducing that reproduces something
+largely uninformative. It makes the rehearsal *accurate*, not the data *useful*.
 
 ### D2. Contact ownership — ⚠️ needs a decision, see the analysis below
 
@@ -95,9 +107,11 @@ ownership*. That premise expired the moment Contact ownership started reading it
   assignment or another bulk-load artifact. Roughly 111 Accounts' contacts would get genuine owners.
 - **(c) Keep as agreed.** Accept that ~92% of Contacts land on a service account or one person.
 
-Worth confirming with whoever owns the production org what the `SNA ` prefix denotes — four owners
-carry it (`SNA MSadi`, `SNA YMekonnen`, `SNA NALohning`, `SNA JTScholz`), which reads like a class of
-account rather than four unrelated individuals.
+**Resolved 2026-08-13: `SNA ` is a prefix on real people, not a class of service account.** All 14
+owner names in the export match real Users — `SNA MSadi` → `mahendar.sadineni@gsa.gov`,
+`SNA YMekonnen` → `yonathan.mekonnen@gsa.gov`, `SNA NALohning` → `nicholas.lohning@gsa.gov`,
+`SNA JTScholz` → `jennifer.scholz@gsa.gov`. Most are inactive in the Dev sandbox; their status in
+production is unverified, since production isn't authorized on this machine.
 
 ---
 
@@ -203,13 +217,15 @@ foreach ($o in $objs) {
 
 ## Phase 2 — Wipe
 
-`scripts/cleanup/cleanup-gsa-peo.ps1` is **interactive and destructive**. It exports the record IDs it
-is about to delete first (audit trail), then requires a typed `HARD DELETE` confirmation. Against
+`scripts/cleanup/Invoke-SandboxFactoryReset.ps1` is **interactive and destructive**. It exports the record IDs
+it is about to delete first (audit trail), then requires a typed `HARD DELETE` confirmation. Against
 production it additionally requires typing the org alias (`Assert-LdgcrmProductionConsent`).
 
 - [ ] **Run it from a real new process** or the typed prompt won't appear:
-      `powershell -File scripts\cleanup\cleanup-gsa-peo.ps1 -Environment Dev`
+      `powershell -File scripts\cleanup\Invoke-SandboxFactoryReset.ps1 -Environment Dev -BootstrapAccounts`
       The `&` call operator hits "NonInteractive mode" in some harnesses.
+- [ ] Decide `-BootstrapAccounts` (rebuild the Account tree straight after the deletes, no prompt) vs
+      `-SkipBootstrap` (never). Omitting both prompts interactively.
 - [ ] Scope with `-ObjectsCsv` if not wiping everything. Comma-separated, no spaces.
 
 **Default delete order** (correct — reverse of load order):
@@ -238,27 +254,32 @@ LDGCRM_Application_Contact__c -> LDGCRM_Opportunity_Impediment__c -> LDGCRM_Appl
 
 ## Phase 3 — 🚦 Ownership test batch (HARD GATE)
 
-**Do not proceed until this passes.** The ownership design rests on a behaviour never exercised
-against this org: a **partially-populated `OwnerId` column**, resolved rows carrying a User Id and
-fallback rows blank.
+**Do not proceed until this passes.** Every record now carries an explicit `OwnerId` — either the
+record's own owner or the named fallback (`peter.marks@gsa.gov`). This pipeline has never written
+`OwnerId` at all before, so the whole column is unexercised. A 19-row Opportunity batch already
+failed 19/19 once on an assumption that looked equally safe.
 
-The intent: Bulk API 2.0 reads empty as "not supplied", so an insert lands on the loading user and a
-re-run leaves a manually-reassigned owner alone. That is documented behaviour, not proof. A 19-row
-Opportunity batch already failed 19/19 once on an assumption that looked equally safe.
-
-- [ ] Build a **15–25 row Opportunity batch containing both cases** — at least 5 rows with a resolved
-      `OwnerId`, at least 5 blank. A single-kind batch proves nothing.
-- [ ] Load it. Confirm **0 failures**, specifically no `INACTIVE_OWNER_OR_USER` and no null-owner
-      rejection.
-- [ ] **Verify blank rows landed on the loading user** — not nobody, not an error.
+- [ ] **Confirm the fallback owner resolves before anything else.** Every transform now calls
+      `Resolve-FallbackOwnerId`, which **throws** rather than degrading if the address doesn't match
+      an active User. A transform that runs at all has already proved this — but in a *new*
+      environment it is the first thing that will fail, and the message is explicit about why.
+- [ ] Build a **15–25 row Opportunity batch containing both cases** — at least 5 rows owned by a
+      resolved `Pod Opportunity Lead`, at least 5 on the fallback owner. A single-kind batch proves
+      nothing.
+- [ ] Load it. Confirm **0 failures**, specifically no `INACTIVE_OWNER_OR_USER`.
+- [ ] **Verify fallback rows landed on `peter.marks@gsa.gov`** — not on the loading user. If they
+      landed on the loader, the explicit Id isn't being written and Ops would silently own them in
+      production.
 - [ ] **Verify resolved rows landed on the right person** — spot-check 2–3 against Airtable's
       `Pod Opportunity Lead`.
-- [ ] **Test the non-revert claim** — the other half of the design. Manually reassign one loaded
-      record to a different user, re-run the same load, confirm the owner is **unchanged**. If it
-      reverts, every re-run of this pipeline will stomp real reassignments.
+- [ ] **Confirm the known re-run behaviour, so nobody reports it as a bug later.** Manually reassign
+      one fallback-owned record, re-run the load, and expect the owner to be **pushed back to the
+      fallback owner**. That is the accepted cost of a named fallback (see
+      `TRANSFORMATION-RULES.md`); it is not a defect, but Operations should know before they discover
+      it on live data.
 
-**If the gate fails:** the contingency is writing the fallback owner's Id explicitly instead of a
-blank — fixes the insert path, sacrifices non-revert. A real tradeoff. Stop and discuss.
+**If the gate fails:** stop and discuss — do not work around it by blanking `OwnerId`, which would
+silently hand every unresolved record to whoever runs the load.
 
 ---
 
@@ -274,6 +295,7 @@ Market Segment (already loaded - do not touch)
   -> Contact                       ⚠️ requires -DisableTriggerControl
   -> Opportunity
   -> LDGCRM_application__c
+  -> LDGCRM_application__c SECOND PASS (Broker App Parent self-lookup only)
   -> LDGCRM_Opportunity_Impediment__c
   -> LDGCRM_Application_Contact__c
   -> OpportunityContactRole        (INSERT + read-then-diff, never upsert)
@@ -281,7 +303,27 @@ Market Segment (already loaded - do not touch)
 
 ### 4a. Account
 
-- [ ] `Build-ProdAccountSeed.ps1` → `Invoke-SalesforceLoad.ps1 -Operation Insert`
+- [ ] **Bootstrap first** (skip if `Invoke-SandboxFactoryReset.ps1 -BootstrapAccounts` already did it). Always
+      dry-run before applying — it is read-only and writes the pass plan to `logs/data-migration/`:
+      ```powershell
+      powershell scripts/data-migration/Invoke-AccountBootstrap.ps1 -Environment Dev -PlanOnly
+      powershell scripts/data-migration/Invoke-AccountBootstrap.ps1 -Environment Dev
+      ```
+      It runs multiple passes by design: `Account.ParentId` is self-referential and the export names
+      parents by name, so the tree is built outward from the roots until a pass changes nothing —
+      four levels deep in the current export. Confirm it converged rather than stopping early.
+- [ ] ⚠️ **Verify Account owners actually got set — this path is unexercised.** The bootstrap now
+      assigns `OwnerId` from the export's "Account Owner" display name (added 2026-08-13), but
+      **only on INSERT**; an Account that already exists keeps its current owner. A `-PlanOnly` run
+      against the un-wiped Dev sandbox shows **0 inserts**, so nothing has ever tested it. After the
+      wipe there will be inserts, and this is the first run where it matters:
+      ```
+      sf data query -q "SELECT Owner.Name, COUNT(Id) FROM Account GROUP BY Owner.Name ORDER BY COUNT(Id) DESC" --target-org <alias> --result-format csv
+      ```
+      Expect a spread across `SystemUser DataLoader` and a handful of named people — **not** every
+      Account on the loading user. Only 5 of the export's 14 owner names match an *active* User in
+      Dev (notably `SNA MSadi`, who owns 607 production Accounts, is inactive there), so a large
+      share legitimately falls back to the loading user. That is expected, not a failure.
 - [ ] `Build-AccountReconciliation.ps1` → `Invoke-SalesforceLoad.ps1 -Operation Update` (Id-keyed,
       **not** upsert)
 - [ ] Expect ~587 matched, ~169 unmatched. The unmatched are the known Airtable duplicate-row problem
@@ -298,13 +340,19 @@ Market Segment (already loaded - do not touch)
 
 ### 4c. Contact — ⚠️ the one load that disables another app's trigger
 
-- [ ] Run `Build-ContactLoad.ps1`.
+- [ ] Run `Build-ContactLoad.ps1`. Expect **~1,553 ready**, **~390 skipped for no Account**, and an
+      Account-source split of roughly **965 Airtable column / 151 via Application / 399 via
+      Opportunity / 38 inferred from a `.gov` domain**.
+- [ ] ⚠️ **Contacts with no resolvable Account are now SKIPPED, not loaded** (new 2026-08-13). Review
+      `logs/data-migration/Contact-no-account-*.csv`. Most trace to the unmatched-Account problem and
+      return automatically once that is fixed.
+- [ ] Spot-check `logs/data-migration/Contact-domain-inferred-account-*.csv` — the only inferred
+      links in the pipeline. `-DisableDomainInference` turns them off; they are worth ~38 contacts.
 - [ ] **Expect the name-source counts to swing hard, and expect that.** Pre-wipe the transform reports
       ~973 real names + ~970 "recovered from an existing Salesforce Contact". That second number is
       largely the transform **reading back its own previously-loaded placeholders** — 978 existing
       Contacts have an email address in `LastName`. Once Contact is wiped that source is gone, so
-      expect roughly **481 real / ~8 recovered / ~998 email placeholders / 45 skipped**, matching the
-      original load. Correct behaviour, not a regression.
+      expect a large shift toward email placeholders. Correct behaviour, not a regression.
 - [ ] Load **with the trigger bypass** (needs explicit sign-off per load):
       ```powershell
       scripts\data-migration\Invoke-SalesforceLoad.ps1 -Environment Dev `
@@ -340,8 +388,26 @@ Market Segment (already loaded - do not touch)
       far more.
 - [ ] Load (upsert). Expect 688/688.
 - [ ] Verify Market Segment came from the Flow; no formula field was written.
-- [ ] ⚠️ `LDGCRM_Broker_App_Parent__c` is **not** loaded — self-referential lookup needing a second
-      pass, **not yet built** (~68 rows). Expected gap, not a failure.
+### 4e-bis. `LDGCRM_application__c` — Broker App Parent SECOND PASS
+
+- [ ] ⚠️ **Load `LDGCRM_application__c-broker-parent-upsert.csv`, and only AFTER 4e.** It is written
+      automatically by `Build-ApplicationLoad.ps1` (no separate transform to run), but loading it
+      before the main file fails every row: Bulk API 2.0 does not resolve an external-ID reference
+      between two rows of the same batch, which is the entire reason this pass exists.
+      ```powershell
+      scripts\data-migration\Invoke-SalesforceLoad.ps1 -Environment Dev `
+          -ObjectApiName "LDGCRM_application__c" `
+          -CsvFile "data\salesforce-loads\LDGCRM_application__c-broker-parent-upsert.csv"
+      ```
+- [ ] Expect **63 links**, 7 withheld. Confirm 63/63 succeed — a `Foreign key external ID ... not
+      found` failure here means it ran before the main load.
+- [ ] Review `logs/data-migration/Application-broker-parent-skipped-*.csv`: 6 rows wait on an
+      Application the Account data-quality issue withheld, and **1 is a self-reference**
+      (`ACF Login.gov ACF-ockta-oidc` is its own Broker App Parent) which is dropped by design.
+- [ ] Spot-check the hierarchy landed:
+      ```
+      sf data query -q "SELECT COUNT() FROM LDGCRM_application__c WHERE LDGCRM_Broker_App_Parent__c != null" --target-org <alias>
+      ```
 
 ### 4f. `LDGCRM_Opportunity_Impediment__c`
 
@@ -357,6 +423,29 @@ Market Segment (already loaded - do not touch)
       duplicates** — it is not a safety net. Any duplicate error here means the composite key
       regressed.
 
+### 4i. Notes — LAST, after every other object
+
+- [ ] Run `Build-NotesLoad.ps1 -Environment Dev`. Expect **~537 notes ready**, ~59 placeholder values
+      skipped (`None`/`N/A`), ~200 waiting on a parent the Account issue withheld.
+- [ ] Dry-run the loader first: `Invoke-NotesLoad.ps1 -Environment Dev -PlanOnly`.
+- [ ] ⚠️ **The access preflight must pass.** The org has an unmanaged
+      `ContentDocumentLinkTrigger` that rejects a link when the running user lacks **Edit** access to
+      the parent record — and **its kill switch is inert**, so it cannot be turned off. The loader
+      checks every parent and refuses to create anything if any fail; do not bypass it. Notes are
+      created before they are linked, so a mid-run failure leaves orphaned notes with no external ID
+      to find them by.
+- [ ] Load: `Invoke-NotesLoad.ps1 -Environment Dev` (typed `LOAD` gate). It runs three steps —
+      insert `ContentNote`, resolve `ContentDocumentId`s, insert `ContentDocumentLink`.
+- [ ] **Keep the created-note-Id file** it prints (`logs/data-migration/Notes-created-noteids-*.csv`).
+      `ContentNote` has no external ID, so that file is the only record of what the run created.
+- [ ] Verify notes are attached and **visible in the UI** on a Partner Account and an Application,
+      and that line breaks render (not literal `&lt;br&gt;`). Visibility depends on the layout
+      carrying `RelatedContentNoteList` — Partner Account's was missing entirely and was deployed on
+      2026-08-13. In a **different environment that change has to be deployed too**, or 144 notes
+      load successfully and nobody can see them.
+- [ ] Confirm sharing landed as `ShareType=I` / `Visibility=InternalUsers` — these notes carry
+      internal partner commentary and the org has active Guest users.
+
 ### 4h. `OpportunityContactRole`
 
 - [ ] **INSERT + read-then-diff, never upsert** — Salesforce forbids External ID fields on this object
@@ -370,11 +459,13 @@ Market Segment (already loaded - do not touch)
 
 - [ ] Owner distribution matches the transform's predicted split:
 
-      | Object | Expect resolved | Expect fallback |
+      | Object | Expect own owner | Expect fallback (`peter.marks@gsa.gov`) |
       | --- | --- | --- |
-      | Opportunity | 476 | 266 |
+      | Opportunity | 471 | 271 |
       | `LDGCRM_application__c` | 511 | 177 |
-      | Contact | 1,116 | 827 |
+      | Contact | 1,553 | 0 |
+      | `LDGCRM_Impediment__c` | 0 | 39 |
+      | `LDGCRM_Application_Contact__c` | 0 | 1,880 |
 
       ```
       sf data query -q "SELECT OwnerId, Owner.Name, COUNT(Id) FROM Opportunity GROUP BY OwnerId, Owner.Name ORDER BY COUNT(Id) DESC" --target-org <alias> --result-format csv
@@ -424,7 +515,8 @@ was found this way, never in a success count.
 | Phase 3 ownership gate | passed | | |
 | Account | per D1 | | |
 | `LDGCRM_Partner_Account__c` | ~76 | | |
-| Contact | ~1,939 | | |
+| Contact | ~1,553 (account-less now skipped) | | |
+| Fallback owner resolved | `peter.marks@gsa.gov` | | |
 | Opportunity | 744 | | |
 | `LDGCRM_application__c` | 691 | | |
 | `LDGCRM_Opportunity_Impediment__c` | 268 | | |
@@ -443,7 +535,14 @@ Expected, documented, not to be logged as failures:
 
 - **~169 unmatched Airtable Accounts**, cascading into 142 Opportunities, 359 Applications, 849
   Application-Contact pairs and 20 Partner Accounts. Fixed at source in Airtable.
-- **`LDGCRM_Broker_App_Parent__c`** (~68 rows) — second pass not built.
-- **Meetings** (1,845 rows) — blocked on three decisions. See `BACKLOG.md` §2.
-- **Notes chunk** — must be built last, not started.
+- **`LDGCRM_Broker_App_Parent__c`** — 7 of 70 links stay unloaded: 6 waiting on an Application the
+  Account issue withheld, 1 a self-reference needing an Airtable fix. The other 63 load in step 4e-bis.
+- **Meetings** (1,845 rows) — **deferred by decision 2026-08-13, and out of scope for this reload.**
+  Rather than synthesize the start/end times Airtable never recorded, the approach is now to stand up
+  **Einstein Activity Capture**, let real Google Calendar events sync, and fuzzy-match Airtable's
+  meetings onto them. That depends on an org configuration change outside this repo and an unresolved
+  spike (do EAC events exist as standard `Event` records at all?). See `BACKLOG.md` §2.
+- **Notes** — **built 2026-08-13** (`Build-NotesLoad.ps1` + `Invoke-NotesLoad.ps1`), but runs *after*
+  everything else by definition, so it is a step at the end of this reload rather than a known gap.
+  537 notes ready; 200 wait on parents the Account data-quality issue withheld.
 - **Contact ownership meaningfulness** — see D2.

@@ -94,61 +94,157 @@ ownership-backfill script**, because the decision was made alongside a full wipe
 correct owners are produced by the normal load rather than patched on afterwards.
 
 **The rule:** if the Airtable owner has a matching **active** Salesforce User, assign the record to
-them; otherwise fall back to the loading user.
+them; otherwise assign the **named fallback owner**, `peter.marks@gsa.gov` (overridable per run via
+`-FallbackOwnerEmail`).
 
-### The fallback is expressed as a BLANK `OwnerId`, not an explicit Id
+### The fallback is written EXPLICITLY, and that decision was reversed once
 
-This is the single most important implementation detail and it looks like an omission if you don't
-know why. Bulk API 2.0 treats an empty CSV value as *"no value supplied"*, which gives both halves of
-the desired behaviour for free:
+The first implementation left `OwnerId` **blank** for fallback rows. Bulk API 2.0 reads an empty
+value as "not supplied", so an insert lands on whoever is authenticated and a re-run leaves an
+existing owner untouched — which gave idempotency for free.
 
-- on **insert**, Salesforce assigns the record to the loading user — exactly the agreed fallback;
-- on a **re-run that updates** an existing record, the current owner is left untouched, so a manual
-  reassignment made by a human in Salesforce is not silently reverted every time the pipeline runs.
+**That was correct only while the person running the load was the intended owner.** It stopped being
+true on 2026-08-13, when it was confirmed that **GSA IT Operations runs this in production**. A blank
+`OwnerId` would then have handed thousands of records to whichever engineer ran the job — and since
+Account, Contact, Opportunity and the three `LDGCRM_` objects use org-wide-default-restricted sharing
+with owner-based rules, ownership decides **who can see the record**, not just whose name is on it.
+It was also non-deterministic: the owner depended on who was on shift.
 
-Writing the loading user's Id explicitly would satisfy the rule on insert but stomp real
-reassignments on every subsequent run. Every transform therefore emits `""`, never a hard-coded Id.
+So every transform now resolves `-FallbackOwnerEmail` to a real User Id at run time and writes it
+explicitly. `Resolve-FallbackOwnerId` (`Common.DataMigration.ps1`) is the single implementation and
+**throws** if the address doesn't match an active User, rather than degrading back to the loading
+user — a failed run is strictly better than discovering the wrong ownership afterwards. It resolves
+by **email, never a hard-coded Id**, because the Id differs between production and every sandbox.
 
-**⚠️ Confirm this on the test batch before the full load.** The empty-value semantics above are the
-design intent and match documented Bulk API 2.0 behaviour, but they have **not yet been exercised
-against gsa-peo** — this pipeline has never before submitted a partially-populated `OwnerId` column.
-The 15–25 row test batch must deliberately include **both** a resolved owner and a blank one, and
-verify (a) the blank rows don't fail with `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`-style errors or
-a null-owner rejection, and (b) they actually land on the loading user rather than erroring. Same
-discipline as the record-type picklist case: prove the assumption on a small batch, don't infer it
-from documentation.
+**⚠️ The trade-off this costs, which is real:** because the fallback is asserted rather than omitted,
+**a re-run re-applies it**. A fallback-owned record that someone manually reassigns in Salesforce
+will be pushed back to the fallback owner on the next load. The blank-`OwnerId` design preserved such
+changes; a named fallback owner cannot. If that becomes a problem, the fix is to query existing
+owners per record and skip rows already owned by someone else — deliberately not built, because it
+adds a query and a failure mode for a case that hasn't arisen yet.
 
 ### Which object takes its owner from where
 
-| Object | Owner source | Coverage (2026-08-13) |
+| Object | Owner source | Own owner / fallback (2026-08-13) |
 | --- | --- | --- |
-| Opportunity | `Pod Opportunity Lead` (collaborator, scalar — verified 0 of 826 rows are multi-valued) | **476 of 742** |
-| `LDGCRM_application__c` | its Partner Account's `LDGCRM_Partner_Account_Owner__c` | **511 of 688** |
-| Contact | its resolved Account's `OwnerId` | 1,116 of 1,943 — but see the warning below |
-| `LDGCRM_Impediment__c` | *none — the Airtable table has no owner column* | 0 (all fallback) |
-| `LDGCRM_Application_Contact__c` | *none — Airtable records the association, not an owner* | 0 (all fallback) |
+| Opportunity | `Pod Opportunity Lead` (collaborator, scalar — verified 0 of 826 rows are multi-valued) | **471 / 271** |
+| `LDGCRM_application__c` | its Partner Account's `LDGCRM_Partner_Account_Owner__c` | **511 / 177** |
+| Contact | its resolved Account's `OwnerId` | **1,553 / 0** — see the warning below |
+| `LDGCRM_Impediment__c` | *none — the Airtable table has no owner column* | 0 / 39 |
+| `LDGCRM_Application_Contact__c` | *none — Airtable records the association, not an owner* | 0 / 1,880 |
 | Activity/Event (Meetings) | `Meeting Leader` (collaborator) — **not yet built** | 1,315 of 1,845 would resolve |
 | `LDGCRM_Partner_Account__c` | **n/a — no `OwnerId`.** Master-Detail child of Account, inherits its owner | — |
 | `LDGCRM_Opportunity_Impediment__c` | **n/a — no `OwnerId`.** Two Master-Details | — |
+| `OpportunityContactRole` | **n/a — no `OwnerId`.** A junction on Opportunity | — |
 | Account | **deliberately untouched.** Airtable has no Account owner column, and Accounts pre-date the migration | — |
+
+`LDGCRM_Impediment__c` is the one object whose transform had to *gain* Salesforce access for this:
+it was a purely offline Airtable→CSV script, and resolving an email to a User Id needs a query. The
+alternative was leaving 39 records on whoever ran the load, so the offline property was traded away
+deliberately.
+
+**A counting caveat in the summaries:** each script reports "own owner vs fallback" by comparing
+against the fallback Id, so any record whose *genuine* owner happens to be the fallback person is
+counted as fallback. `peter.marks@gsa.gov` leads 5 Opportunities, which is why that split reads
+471/271 rather than 476/266. Cosmetic, not a data issue.
 
 Application deliberately does **not** use Airtable's `Account Owner` column: on that table it is a
 **rollup from the parent Account**, so using it would assert that an agency's account owner
 personally owns each individual application. The Partner Account's own owner is the nearest authored
 value, and every Application has a required Partner Account.
 
+### Contact: the Account waterfall, and why account-less Contacts are now skipped
+
+Decided 2026-08-13. A Contact with no Account is not loaded at all — two reasons: a blank `AccountId`
+makes the FCIC trigger spawn a junk Account, and a contact attached to no agency isn't useful in the
+CRM. Ownership depends on it too, since Contacts inherit their Account's owner.
+
+Taken literally that rule was **far more destructive than it looked**: of 827 account-less contacts,
+315 were referenced by a real junction, so skipping all of them would have destroyed **457 of 503
+OpportunityContactRole rows (91%)**. The fix was not to soften the rule but to resolve more Accounts,
+via a link that was already in the source data and simply wasn't being used.
+
+Resolution order, strongest evidence first (the first three are **authored links**, not inference):
+
+| # | Path | Contacts resolved |
+| --- | --- | --- |
+| 1 | Airtable's own `Contacts.Account` column | 965 |
+| 2 | Application → Partner Account → Account | 151 |
+| 3 | **Opportunity Contact → Opportunity → Account** *(added 2026-08-13)* | **399** |
+| 4 | `.gov` email domain, inferred | 38 |
+| — | none — **skipped, not loaded** | 390 |
+
+**Path 3 is the one that matters.** Opportunity Contacts come from a separate Airtable table with no
+Account column, so those people were the bulk of the account-less population — but every row links to
+an Opportunity, and the Opportunities table carries `Account Record ID`. Adding that hop resolves 492
+of 520 Opportunity Contact rows and cut the downstream cost of the skip rule from 457 lost
+OpportunityContactRole rows to **22**, with **0** Application-Contact rows lost either way.
+
+Watch the column name: **`Opportunity Record ID (from Opportunities)`**, not `Opportunity Record ID`
+— the latter is the row's OWN id (0 of 520 are real Opportunity ids), the same trap documented in the
+OpportunityContactRole section.
+
+### Path 4 is the only inference in this pipeline, and it is hedged three ways
+
+Learned from contacts that already resolved via an authored link, never from the domain string
+itself. Three guards, each of which the raw version fails:
+
+1. **`.gov` only.** `gmail.com` maps to exactly one Account in this data (one contact), so an
+   unguarded "unambiguous domain" rule would sweep personal addresses onto that agency.
+2. **The domain must map to exactly one Account.** `gsa.gov` spans 4 and is excluded by this alone.
+3. **Minimum supporting evidence** (`-DomainInferenceMinSupport`, default 3). At 1, `usda.gov` would
+   claim 19 contacts on the strength of a *single* known example, and `usdoj.gov` 7 on one.
+
+Every inferred link is written to `logs/data-migration/Contact-domain-inferred-account-<ts>.csv`.
+`-DisableDomainInference` turns the whole path off.
+
+**It is barely worth having, and that is worth recording.** Before path 3 existed it would have
+recovered ~95 contacts; afterwards it recovers **38**, because the authored links already reach
+nearly everything recoverable. It is kept only because a recovered Account is a contact that loads
+instead of being skipped — and it is the first thing to switch off if an inferred link ever puts a
+contact on the wrong agency.
+
 ### ⚠️ Contact ownership cannot be demonstrated in gsa-peo today
 
-The rule is correct and will work in production, but the sandbox cannot show it working. The
-2026-08-13 rebuild inserted 1,342 Accounts from the production export with **Name only, no owner**
-(`Build-ProdAccountSeed.ps1`), so **1,346 of gsa-peo's 1,350 Accounts are owned by the loading
-user**. Contacts faithfully inherit their Account's owner — and that owner is the loading user in
-almost every case, making the result indistinguishable from the fallback.
+The Account bootstrap loads Accounts **Name and parent hierarchy only, no owner**, so nearly every
+Account in the Dev sandbox is owned by whoever ran it. Contacts faithfully inherit their Account's
+owner — and that owner is the loading user in almost every case, making the result indistinguishable
+from the fallback. That is why the Contact summary reads "1,553 inherited / 0 fallback" while telling
+you almost nothing.
 
-In production, where Accounts carry real owners, the same code produces real Contact owners with no
-change. If the sandbox needs to demonstrate this, `Build-ProdAccountSeed.ps1` would have to seed
-Account `OwnerId` too — it was built Name-only on the explicit basis that nothing in the migration
-read Account ownership, which **is no longer true** now that Contact inherits from it.
+**The bootstrap now does seed Account owners** (added 2026-08-13) via `Resolve-SalesforceOwnerIdsByName`,
+since the export names owners by *display name* rather than email. A display name is a weaker join
+than an email — not unique, not stable, not an identifier — so it carries the same active-only and
+refuse-to-guess-on-duplicates guards; both fire on real data (`Matthew Taylor` matches two Users in
+Dev, `SNA JTScholz` two). Owners are set **only on insert**, never on an Account that already exists.
+
+That makes the sandbox faithful to production, which is the point of a rehearsal — but read the next
+paragraph before expecting it to make Contact ownership *useful*.
+
+**More importantly, production Account ownership may not be worth inheriting at all.** Measured from
+the real export:
+
+| Account owner in production | Accounts | Share |
+| --- | --- | --- |
+| `SystemUser DataLoader` | 651 | 48% |
+| `SNA MSadi` | 607 | 44% |
+| 12 named individuals | 111 | 8% |
+
+**92% of production Accounts are owned by a data-loader service account or a single user**, so
+"Contacts inherit their Account's owner" would put ~92% of Contacts under one of those two — which
+looks like real ownership while carrying no information. The rule was confirmed as-is on 2026-08-13
+after this was raised. Worth revisiting if ownership-based reporting turns out to be misleading.
+
+**The `SNA ` prefix is settled: those are real people, not service accounts** — `SNA MSadi` →
+`mahendar.sadineni@gsa.gov`, `SNA YMekonnen` → `yonathan.mekonnen@gsa.gov`, `SNA NALohning` →
+`nicholas.lohning@gsa.gov`, `SNA JTScholz` → `jennifer.scholz@gsa.gov`. All 14 owner names in the
+export match a real User. Most are inactive in Dev (including `SNA MSadi`, who owns 607 production
+Accounts), so a large share of bootstrapped Accounts still falls back to the loading user there.
+Their production status is unverified — production isn't authorized on this machine.
+
+`SystemUser DataLoader` is worth noting separately: an **active service account owning 651 production
+Accounts**. That is a working precedent for running production loads as a dedicated integration user
+rather than an individual's login — the recommendation recorded above.
 
 ### Resolving an email to a User: three traps, all silent
 
@@ -204,25 +300,172 @@ not a single-object CSV upsert like every `Build-*.ps1` script so far. Figure ou
 mechanics (Bulk API CSV with a base64 `Content` column is supported, but untested here yet) when
 this chunk actually gets built.
 
-**Candidate fields found so far** (from Partner Accounts' currently-excluded columns — re-evaluate
-every other table's excluded columns the same way when this chunk is reached, don't assume this list
-is exhaustive):
-- **Strong candidate:** `Account Description` — genuine multi-paragraph freeform prose (e.g. "App
-  Name: OneWYOPOC\nDescription: MAX is a driver services application...").
-- **Moderate candidate:** `Known Blockers` — short phrases (`"N/A"`, `"None"`, `"Agreement
-  Alignment"`, `"Unresponsive"`, `"Feature - IAL2"`), less prose-like than `Account Description` but
-  still a distinct "type" of note per the user's framing.
-- **Not a Notes candidate — flag as a separate open question instead:** `Escalated User Support
-  Cases` looks like a linked-record field (`"Unnamed record"` placeholders, or a single Google Doc
-  link) pointing at some Airtable table **not among the nine tables this migration currently pulls**.
-  Needs its own investigation (does that source table need pulling at all?) before it's clear whether
-  this becomes Notes, a real relationship, or gets dropped.
-- **Ambiguous — decide when building this chunk, not now:** `Goals` has a small set of repeated
-  short values (`"Add Identity Verification"`, `"Increase Adoption"`, `"Increasing IDV usage"`,
-  `"Launch Large Applications"`) that read more like a controlled vocabulary than freeform notes —
-  might deserve its own dedicated multi-select picklist field on Partner Account instead of becoming
-  a `ContentNote`. Not every currently-excluded column is a Notes candidate; some may need a
-  dedicated-field decision of their own, same as any other field.
+### Candidate fields, re-derived from the data (2026-08-13)
+
+The earlier list was written from a partial look at Partner Accounts. Re-derived properly by
+inventorying **every** column across all eight pulled tables, measuring text length and distinct-value
+ratio, then cross-checking each against what the transforms actually write. Two changes came out of
+it — one addition, one removal — which is why the "re-derive per table" instruction exists.
+
+**Method, worth repeating for any future pass:** a column is a Notes candidate only if it is
+(a) genuinely unmapped, (b) long-form, and (c) *mostly unique* across rows. Distinct-value ratio is
+what separates prose from a controlled vocabulary, and it is not obvious from reading a sample.
+
+| Column | Rows | Max chars | Distinct | Verdict |
+| --- | --- | --- | --- | --- |
+| Application `Notes` | 380 | 1,715 | mostly unique | **Note** |
+| Application `IdV Upgrade Notes` | 95 | 159 | mostly unique | **Note** |
+| Application `Launch Notes` | 86 | 6,992 | mostly unique | **Note** |
+| Partner Account `Tasks` | 51 | 1,844 | 49 of 51 | **Note — newly found, was not in the old list** |
+| Partner Account `Account Description` | 10 | 564 | 10 of 10 | **Note** |
+| Partner Account `Known Blockers` | 92 | short | **17 of 92** | **NOT a note** — see below |
+| Partner Account `Goals` | 100 | short | **9 of 100** | **NOT a note** — controlled vocabulary |
+| Partner Account `Escalated User Support Cases` | 14 | 718 | — | **Still an open question** — points at an Airtable table this migration doesn't pull |
+
+**`Known Blockers` was demoted, and it matters.** The old list called it a "moderate candidate". The
+data says otherwise: 17 distinct values across 92 rows, and **42 of those 92 (46%) are literally
+`"None"` or `"N/A"`** — the same placeholder-for-nothing pattern as the Impediment record named
+`None` that this migration deliberately excludes. Loading those as notes would assert a blocker
+exists on 42 Partner Accounts whose data says the opposite.
+
+Its *real* values (`Feature - IAL2`, `Unresponsive`, `Agreement Alignment`, `Okta integration`) are
+also conspicuously **Impediment-shaped** — `Unresponsiveness` is already the highest-volume genuine
+Impediment in the base. Worth asking whether `Known Blockers` should become
+`LDGCRM_Opportunity_Impediment__c`-style links rather than a picklist or a note. Not decided here.
+
+`Goals` is confirmed as a controlled vocabulary (9 distinct across 100 rows) — a multi-select
+picklist candidate, not a note, exactly as the earlier open question suspected.
+
+**Meetings is excluded from this list entirely** — its note-like columns (`Summary` 1,561 rows,
+`Notes` 377, `Agenda` 570, `Action Items` 1,572) are deferred with the rest of that object. But see
+the warning below: if Meetings resolves to "attach unmatched meetings as notes", this chunk grows by
+up to ~1,800 records and stops being small.
+
+### Mechanics: `ContentNote` cannot be upserted
+
+Confirmed against the org, and it shapes the whole chunk: **`ContentNote` has 0 custom fields and 0
+external ID fields, and cannot be given any** — it is a Files object, not an ordinary sObject. Its
+only createable fields are `Title`, `Content`, `OwnerId`, `SharingPrivacy` and the audit fields.
+
+That puts it in the same class as `OpportunityContactRole`: **there is no upsert key, so idempotency
+has to be read-then-diff.** Query the notes already linked to each parent record, key them on
+`(LinkedEntityId, Title)`, and insert only what's missing. That composite works precisely *because*
+the agreed design is one note per (record, source-field): `Title` carries the field label, so the
+pair is naturally unique.
+
+**It is also a genuinely multi-step load**, unlike every other chunk here, which is why
+`Invoke-SalesforceLoad.ps1` can't drive it alone:
+
+1. Insert `ContentNote` (`Title`, `Content`).
+2. **Correlate the inserted rows back to their Ids** from the Bulk API success results, then query
+   those notes for their `ContentDocumentId` — the link object references the *document*, not the
+   note.
+3. Insert `ContentDocumentLink` (`ContentDocumentId`, `LinkedEntityId`, `ShareType`, `Visibility`).
+
+Step 2 is the awkward one and the reason this needs its own orchestration script, closer in shape to
+`Invoke-AccountBootstrap.ps1` than to a `Build-*.ps1` transform.
+
+### ⚠️ Proof of concept, 2026-08-13 — and the two things it disproved
+
+One real note was created end to end against Dev to prove the mechanism before any automation was
+trusted. It worked — the note is attached to the `SL_MD` Partner Account, the unmanaged trigger
+accepted the link, `ShareType='I'` / `Visibility='InternalUsers'` were both valid, and the body
+stored real `<br>` tags with no escaping bug.
+
+It also killed two assumptions that the (now-disabled) `Invoke-NotesLoad.ps1` was built on. Neither
+would have shown up before a live insert:
+
+1. **Bulk API cannot load `ContentNote` at all.** `Content` is a binary/base64 field, and Bulk API 2.0
+   CSV ingest rejects it outright:
+   `InvalidBatch : Binary field Content is only supported for content types ZIP_XML and ZIP_CSV`.
+   Every other chunk in this pipeline loads via `sf data import bulk`; this one **cannot**. The
+   working path is REST, which accepts base64 as an ordinary JSON string.
+2. **`ContentNote` has no `ContentDocumentId` field.** The three-step sequence above is really two
+   steps: the note's **own Id is the ContentDocument Id** (it appears in `ContentDocument` with
+   `FileType = 'SNOTE'`). Querying for `ContentDocumentId` fails with *"No such column"*. Feed the Id
+   returned by the create straight into `ContentDocumentLink.ContentDocumentId`.
+
+`Build-NotesLoad.ps1` is unaffected — its staging file, including the base64 encoding, is correct as
+written. Only the loader needs rebuilding, against `POST /composite/sobjects` (200 records per call,
+so ~3 calls for 537 notes) rather than Bulk.
+
+**The general lesson, which has now cost two objects:** an object's *load mechanism* deserves the same
+small-batch proof as its field mappings. `OpportunityContactRole` could not be upserted;
+`ContentNote` cannot be bulk-loaded. Both were found by trying, not by reading metadata.
+
+Other mechanics to get right:
+
+- **`Content` is base64**, and Enhanced Notes expect an HTML-ish body — so the value must be
+  HTML-escaped and have newlines converted to `<br>` **before** base64-encoding, and escaped *first*
+  or the generated tags get escaped too. Same trap already documented for Opportunity's three `Html`
+  fields.
+- **`OwnerId` is createable**, so the record-ownership rule applies here as well: inherit from the
+  parent record where sensible, otherwise the fallback owner.
+- **`ShareType = 'I'`, `Visibility = 'InternalUsers'`** (decided 2026-08-13). `'I'` is *Inferred* —
+  access to the note follows access to the record it hangs off, which is exactly what was asked for.
+  `Visibility` is deliberately **not** `'AllUsers'`: this org has 5 active Guest users and 2,637
+  Chatter-only users, and these notes carry internal commentary about partners.
+
+### The layout has to carry the related list, and that is checked per object
+
+A note can load perfectly and still be **invisible**, because whether users ever see it depends on the
+parent's page layout carrying `RelatedContentNoteList`. Checked per object on 2026-08-13 rather than
+generalised — and the generalisation was wrong:
+
+| Layout | Before | After |
+| --- | --- | --- |
+| `LDGCRM_application__c` | `RelatedContentNoteList` + `RelatedNoteList` | unchanged |
+| `LDGCRM_Partner_Account__c` | **neither** | `RelatedContentNoteList` **added and deployed** |
+| Account (Federal) | `RelatedContentNoteList` | unchanged |
+| Opportunity | `RelatedNoteList` only (legacy) | unchanged — not a note target today |
+
+**144 of the 537 notes target Partner Account**, whose layout had no note related list of any kind.
+The earlier "gsa-peo uses Enhanced Notes" decision was verified against the **Account** layout and
+carried across to the other objects without re-checking — the same generalisation trap this document
+warns about for picklists and field types. Deployed as a metadata-only change with
+`--test-level NoTestRun`, per the org-wide FCIC Apex compile error.
+
+**This layout gap is NOT a reason to fall back to the legacy `Note` object.** That was considered
+(legacy `Note.ParentId` does support both targets, and it would collapse the load to a single insert
+and dodge the trigger described below) and rejected: a missing related list is a one-line metadata
+fix, and letting it drive the choice of platform technology would trade a permanent step backwards
+for a temporary inconvenience. Enhanced Notes stay.
+
+Note that Application's layout also still carries the legacy `RelatedNoteList`. Harmless — it will
+simply show an empty "Notes & Attachments" list, since nothing writes legacy `Note` records.
+
+### ⚠️ An unmanaged trigger on `ContentDocumentLink` gates the whole load
+
+Found 2026-08-13 by the standing "check the live org before loading a new object" rule — it is not in
+this repo, because the manifest is LDGCRM-scoped. This is the second time that rule has caught
+something load-breaking, after `GSA_FCIC_ContactTrigger`.
+
+`ContentDocumentLinkTrigger` → `ContentDocumentLinkTriggerHelper.beforeInsert` queries
+`UserRecordAccess` for the **running user** against every `LinkedEntityId` and rejects the row if they
+lack **Edit** access:
+
+> *"You do not have permission to attach a file to this record. Please cancel this request"*
+
+Three consequences, all of which shaped `Invoke-NotesLoad.ps1`:
+
+1. **The kill switch is inert — do not rely on it.** The helper looks bypassable via
+   `Trigger_Settings__mdt.ContentDocumentLinkTrigger.isActive__c`, and that record exists and is
+   `true`. But `IsDisabled()` sets a flag and its `if (!isTriggerActive) { return; }` returns from
+   *itself*, not from the trigger; `ContentDocumentTriggerDispatcher.Run` then calls `beforeInsert`
+   unconditionally. Setting the metadata to `false` changes nothing. (Unlike FCIC's
+   `TriggerControls__c`, which genuinely works.)
+2. **Whoever runs the load must have Edit access to every parent record** — Partner Accounts and
+   Applications, both org-wide-default-restricted. This is another reason the production run needs a
+   deliberate, adequately-permissioned integration user rather than whoever is on shift.
+3. **A missing access row throws rather than rejects.** The trigger does
+   `!recordAccessMap.get(cdl.LinkedEntityId)` with no null check, so a `LinkedEntityId` absent from
+   `UserRecordAccess` yields a null `Boolean` and an unhandled `NullPointerException` — failing the
+   **whole batch**, not one row.
+
+`Invoke-NotesLoad.ps1` therefore **preflights edit access on every parent and stops before creating
+anything** if any record fails. That ordering matters: notes are created in step 1 and linked in step
+3, so a step-3 failure leaves notes that exist, are attached to nothing, and have no external ID to
+find them by.
 
 **Heuristic for Title/Body (proposed, not yet implemented or user-confirmed in detail)**: one
 `ContentNote` per (record, note-type-field) that has content, not one note merging multiple fields —

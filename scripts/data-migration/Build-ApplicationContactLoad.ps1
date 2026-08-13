@@ -10,13 +10,15 @@
     whose either side can't resolve fails outright, so unresolvable pairs are
     skipped rather than submitted.
 
-    OwnerId is deliberately NOT set. This object DOES have one (it joins its two
-    parents by plain Lookup, not Master-Detail, so it is not owner-inheriting
-    the way LDGCRM_Opportunity_Impediment__c is), but Airtable records no owner
-    for an application-contact association - only the association itself. Under
-    the ownership rule agreed 2026-08-13 that means the fallback owner, which is
-    what leaving OwnerId unset already produces. Inheriting the Contact's or the
-    Application's owner would be inventing a rule nobody agreed to.
+    OwnerId is set to the FALLBACK owner on every row. This object does have one
+    (it joins its two parents by plain Lookup, not Master-Detail, so it is not
+    owner-inheriting the way LDGCRM_Opportunity_Impediment__c is), but Airtable
+    records no owner for an application-contact association - only the
+    association itself. Inheriting the Contact's or the Application's owner
+    would be inventing a rule nobody agreed to, so the ownership rule agreed
+    2026-08-13 applies its fallback. It is written explicitly rather than left
+    blank because blank means "whoever ran the load", which in production is a
+    GSA IT Operations engineer rather than the agreed owner.
 
     THREE THINGS DRIVE THE DESIGN:
 
@@ -71,7 +73,12 @@ param(
     # Set this only to reach an org that isn't in the registry; doing so skips
     # the registry's identity checks.
     [string]$OrgAlias = "",
-    [string]$ApiVersion = "67.0"
+    [string]$ApiVersion = "67.0",
+
+    # Owner for every junction row, since Airtable records the association but
+    # no owner for it. Resolved to a User at run time; the run FAILS if it
+    # doesn't match an active User.
+    [string]$FallbackOwnerEmail = "peter.marks@gsa.gov"
 )
 
 $ErrorActionPreference = "Stop"
@@ -113,6 +120,10 @@ foreach ($Group in $Groups) {
 Write-Host "$($Groups.Count) merged Contacts; $($RowToContactExternalId.Count) Airtable rows mapped onto them."
 
 Write-Host ""
+Write-Host "Resolving the fallback owner ($FallbackOwnerEmail)..." -ForegroundColor Cyan
+$FallbackOwnerId = Resolve-FallbackOwnerId -Email $FallbackOwnerEmail -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+Write-Host "Fallback owner resolves to $FallbackOwnerId."
+
 Write-Host "Querying $OrgAlias for loaded Contacts and Applications..." -ForegroundColor Cyan
 $LoadedContactIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 foreach ($Row in @(Invoke-SalesforceQuery -Soql "SELECT LDGCRM_External_ID__c FROM Contact WHERE LDGCRM_External_ID__c != null" -OrgAlias $OrgAlias -ApiVersion $ApiVersion)) {
@@ -184,6 +195,7 @@ foreach ($Key in $Pairs.Keys) {
         # Composite key - see the header. This is what makes one row per
         # (Contact, Application) structural rather than merely intended.
         LDGCRM_External_ID__c                             = $Key
+        OwnerId                                           = $FallbackOwnerId
         "LDGCRM_contact__r.LDGCRM_External_ID__c"         = $Pair.ContactExternalId
         "LDGCRM_Application__r.LDGCRM_External_ID__c"     = $Pair.ApplicationExternalId
         LGDCRM_P3_Partner_Portal_Admin__c                 = if ($Pair.PartnerPortalAdmin) { "true" } else { "false" }

@@ -47,10 +47,17 @@
       - It never touches LDGCRM_External_ID__c. That field is the Airtable
         correlation key; Build-AccountReconciliation.ps1 owns it. Bootstrapped
         Accounts deliberately carry none, which is also why
-        Invoke-OrgCleanup.ps1 (which only deletes external-ID-tagged records)
+        Invoke-SandboxFactoryReset.ps1 (which only deletes external-ID-tagged records)
         leaves them alone.
-      - It does not set OwnerId. The export's "Account Owner" is a display
-        name, not an email, and Resolve-SalesforceOwnerIds matches on email.
+      - It DOES set OwnerId on inserted Accounts, from the export's "Account
+        Owner" column, via Resolve-SalesforceOwnerIdsByName - the export carries
+        a display name rather than an email, so the usual email resolver can't
+        be used. Unresolvable owners are left blank (the record then lands on
+        the loading user, the org default for an insert) rather than being given
+        the migration's fallback owner: this bootstrap recreates a baseline of
+        Accounts the migration does not own, so inventing an owner for them
+        would misrepresent it. Owners are only set on INSERT - an Account that
+        already exists keeps whatever owner it has.
         Consequence, worth knowing before a rehearsal: Contact ownership
         inherits from Account, so it still cannot be demonstrated outside
         production. See TRANSFORMATION-RULES.md's "Record ownership" section.
@@ -353,6 +360,31 @@ foreach ($Name in $RecordTypeNames) {
 # ============================================================
 
 Write-Host ""
+# --- Account owners, from the export's display-name column -----------------
+# The export identifies owners by DISPLAY NAME, never email, so this uses the
+# name-based resolver rather than the email one every other transform uses. A
+# display name is a weaker join - see Resolve-SalesforceOwnerIdsByName for the
+# duplicate/inactive guards, both of which this data actually trips.
+#
+# Verified 2026-08-13: all 14 distinct owner names in the production export
+# match a real User, and the "SNA " prefix denotes real people (SNA MSadi ->
+# mahendar.sadineni@gsa.gov), not service accounts. Most are INACTIVE in the Dev
+# sandbox though, so expect a large share to resolve to nothing there.
+Write-Host "Resolving Account owners from the export's display names..." -ForegroundColor Cyan
+$OwnerLookup = Resolve-SalesforceOwnerIdsByName `
+    -Names @($ExportRows | ForEach-Object { $_.OwnerName }) `
+    -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+$OwnerIdByName = $OwnerLookup.IdByName
+$OwnerResolvedCount = 0
+$OwnerUnresolvedCount = 0
+
+$DistinctOwnerNames = @($ExportRows | ForEach-Object { $_.OwnerName } | Where-Object { $_ } | Sort-Object -Unique)
+Write-Host "$($OwnerIdByName.Count) of $($DistinctOwnerNames.Count) owner name(s) match a single ACTIVE User."
+if (@($OwnerLookup.Ambiguous).Count -gt 0) {
+    Write-Host "$(@($OwnerLookup.Ambiguous).Count) name(s) match MORE THAN ONE active User - left to the org default." -ForegroundColor Yellow
+}
+
+Write-Host ""
 Write-Host "Reading current Accounts from $OrgAlias..." -ForegroundColor Cyan
 
 $AccountIndex = Get-OrgAccountIndex -Org $OrgAlias -Version $ApiVersion
@@ -555,10 +587,26 @@ for ($Pass = 1; $Pass -le $MaxPasses; $Pass++) {
             # ParentId of every other row in the file - a wrong load with no
             # error anywhere. Bulk API 2.0 reads an empty value as "not
             # supplied", which is exactly right for a root.
+            # OwnerId, from the export's "Account Owner" DISPLAY NAME. Blank
+            # where that name has no single active User, which leaves the record
+            # on the loading user - the org default for an insert. Deliberately
+            # NOT the migration's fallback owner: this bootstrap recreates a
+            # starting universe of Accounts that the migration does not own, so
+            # inventing an owner for them would misrepresent the baseline.
+            $OwnerId = ""
+            if ($Row.OwnerName -and $OwnerIdByName.ContainsKey($Row.OwnerName)) {
+                $OwnerId = $OwnerIdByName[$Row.OwnerName]
+                $OwnerResolvedCount++
+            }
+            elseif ($Row.OwnerName) {
+                $OwnerUnresolvedCount++
+            }
+
             $InsertRows.Add([PSCustomObject][ordered]@{
                 Name         = $Row.Name
                 RecordTypeId = $RecordTypeIdByName[(Get-NormalizedName -Name $Row.RecordType)]
                 ParentId     = $ParentId
+                OwnerId      = $OwnerId
             })
             continue
         }

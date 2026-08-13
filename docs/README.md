@@ -24,11 +24,12 @@ The pipeline has four stages that run in order:
    gsa-peo this way (see `TRANSFORMATION-RULES.md`'s Impediment section for what that first real load
    surfaced).
 4. **Notes** — freeform/journal-style Airtable columns that don't belong in a dedicated field become
-   `ContentNote` records (Enhanced Notes, confirmed via the Account layout's `RelatedContentNoteList`)
-   attached to their parent record. **Must be the last chunk built** — a Note needs its parent record
-   to already exist, so this can't run until every other object's records are loaded. Not started; see
-   `TRANSFORMATION-RULES.md`'s "Notes" section for the mechanism, candidate fields found so far, and
-   the proposed (not yet implemented) Title/Body heuristic.
+   `ContentNote` records (Enhanced Notes) attached to their parent record. **Runs last** — a note
+   needs its parent to already exist. **Built 2026-08-13**: `Build-NotesLoad.ps1` +
+   `Invoke-NotesLoad.ps1`. This is the one chunk that does **not** use the Bulk API — `ContentNote.Content`
+   is a binary field that Bulk 2.0 CSV refuses, so it loads over REST
+   (`POST /composite/sobjects`), proven end to end against Dev. See `TRANSFORMATION-RULES.md`'s
+   "Notes" section.
 
 ## Environments and org aliases
 
@@ -101,10 +102,65 @@ checks are skipped in that case, because there's nothing to check it against.
 
 ### Production
 
-`Prod` is gated twice: whatever the script already asks for (`HARD DELETE`, `LOAD`, `BOOTSTRAP`),
-plus typing the org alias in full at a separate production guard. Nothing about production is
-authorized on this machine today, and per the coordination note below, a production run also needs
-the Operations team in the loop.
+`Prod` is gated twice on the scripts that can legitimately target it: whatever the script already
+asks for (`LOAD`, `BOOTSTRAP`), plus typing the org alias in full at a separate production guard.
+Nothing about production is authorized on this machine today, and per the coordination note below, a
+production run also needs the Operations team in the loop.
+
+**One script cannot target production at all**: the **Sandbox Factory Reset**. It has no gate for
+production because it has no path to production — see the next section.
+
+## Sandbox Factory Reset
+
+`scripts/cleanup/Invoke-SandboxFactoryReset.ps1` returns a pre-production sandbox to a known starting
+state, so a migration rehearsal begins from the same baseline every time. It does two things in one
+run:
+
+1. **Hard-deletes every record this migration created** — scoped to rows carrying
+   `LDGCRM_External_ID__c`, in child-before-parent order, exporting the ids first for an audit trail
+   and behind a typed `HARD DELETE` confirmation.
+2. **Rebuilds the Account universe** by offering to run `Invoke-AccountBootstrap.ps1` against the same
+   environment, so the org looks like production before anything is loaded into it. `-BootstrapAccounts`
+   answers yes up front; `-SkipBootstrap` suppresses the prompt.
+
+```powershell
+powershell -File scripts/cleanup/Invoke-SandboxFactoryReset.ps1 -Environment Dev
+powershell -File scripts/cleanup/Invoke-SandboxFactoryReset.ps1 -Environment QA -BootstrapAccounts
+```
+
+### It cannot run against production — by construction, not by policy
+
+A factory reset has no legitimate production use, so production isn't a guarded option; it isn't an
+option. Three independent layers, any one of which stops it:
+
+1. **`-Environment` does not accept `Prod`.** The ValidateSet is `Dev|QA|Full`, so PowerShell rejects
+   the argument before a line of the script runs. There is deliberately no typed-confirmation path,
+   unlike the load scripts which legitimately need one.
+2. **The registry is checked.** If the resolved environment is ever marked `IsProduction`, the run
+   aborts — catching someone repointing a sandbox key in `Common.Orgs.ps1`.
+3. **The org itself is asked.** `Organization.IsSandbox` is read from the target and the run aborts
+   unless it's true. This closes the `-OrgAlias` escape hatch, which deliberately bypasses the
+   registry's identity checks.
+
+Layer 3 is the one that matters most: an `sf` alias is a local, mutable pointer, so the only
+trustworthy statement about what it points at comes from the org on the other end.
+
+### Two things it handles that aren't obvious
+
+- **`OpportunityContactRole` is in the delete list** (added 2026-08-13). It was missing, and the gap
+  was easy to miss because those rows cascade away when their Opportunity is deleted — so a *full*
+  reset looked complete. A scoped run excluding Opportunity would have left all 515 behind, and
+  `Build-OpportunityContactRoleLoad.ps1` diffs against what exists, so the survivors would have
+  suppressed the re-insert rather than erroring.
+- **Notes are found by walking their parents, and deleted first.** `ContentNote` permits no custom
+  fields, so it can't be scoped by external ID like everything else. Worse, deleting a record removes
+  its `ContentDocumentLink` but leaves the note orphaned in Files — so ignoring notes would quietly
+  accumulate junk across every reset. They're located via the links from records that *do* carry an
+  external ID, while those parents still exist to be walked, and scoped to `FileType = 'SNOTE'` so
+  genuine uploaded files are never touched.
+
+`LDGCRM_Market_Segment__c` is deliberately **not** reset: all 6 records are correct, three before-save
+Flows depend on them, and nothing in the migration recreates them.
 
 ## Rebuilding an org's Account tree (the bootstrap)
 
@@ -132,7 +188,7 @@ powershell scripts/data-migration/Invoke-AccountBootstrap.ps1 -Environment QA
 ```
 
 It is idempotent — it inserts only what's missing by name and only ever *fills in* a blank
-`ParentId`, never reparents an Account that already has one. `Invoke-OrgCleanup.ps1` offers to run
+`ParentId`, never reparents an Account that already has one. `Invoke-SandboxFactoryReset.ps1` offers to run
 it automatically once its deletes finish.
 
 ### What it refuses to guess
@@ -194,7 +250,7 @@ process end to end:
    what the real production reconciliation pass will look like, not a sandbox-only approximation.
 
 **Full rebuild completed 2026-08-13**, after the user asked to first hard-delete the Dev sandbox's
-existing test-created Account/Partner Account data (via `scripts/cleanup/Invoke-OrgCleanup.ps1`,
+existing test-created Account/Partner Account data (via `scripts/cleanup/Invoke-SandboxFactoryReset.ps1`,
 then named `cleanup-gsa-peo.ps1`, scoped to just those two objects with its `-ObjectsCsv` override —
 see that script's own docs) rather than layer the seed on top of it, for a genuinely clean test:
 - Cleanup: 584 of 585 external-ID-tagged Accounts deleted, all 74 external-ID-tagged Partner Accounts
@@ -223,8 +279,9 @@ write to the same org, so before anyone actually runs a load (GUI or CLI) — ev
 batch — coordinate first so two loads don't
 race each other or double-load the same records. Nothing in this directory automatically loads
 anything; every `Build-*.ps1` script here only reads Airtable/Salesforce and writes local CSVs.
-Actually invoking the Data Loader CLI is a separate, explicit step (Stage 3, not built yet) that
-should not happen without that coordination.
+Actually loading is always a separate, explicit step behind a typed confirmation —
+`Invoke-SalesforceLoad.ps1` for every object bar one, `Invoke-NotesLoad.ps1` for Notes — and should
+not happen without that coordination.
 
 **For the full field-by-field mapping rules and every gotcha discovered per object, see
 [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)** — that's the authoritative detail; this file
@@ -331,7 +388,7 @@ Airtable pull of 2026-08-12.
 ## Load order
 
 Parents before children/junctions (the reverse of the delete order in
-`scripts/cleanup/Invoke-OrgCleanup.ps1`). In an org that has just been cleaned or refreshed, the
+`scripts/cleanup/Invoke-SandboxFactoryReset.ps1`). In an org that has just been cleaned or refreshed, the
 Account step means running `Invoke-AccountBootstrap.ps1` first — reconciliation has nothing to match
 against otherwise:
 

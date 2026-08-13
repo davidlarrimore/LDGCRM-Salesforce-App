@@ -15,7 +15,7 @@ because they can contain PII from Login.gov applicants.
 - `peo-prod-accounts-<yyyy-MM-dd>.xls` — a production Account export from a Salesforce report.
   **Despite the extension it is an HTML table, not a binary Excel file** (a browser "Export" from
   Salesforce), and it is parsed as such. Source for `Invoke-AccountBootstrap.ps1`, which rebuilds an
-  org's Account names + parent hierarchy; `scripts/cleanup/Invoke-OrgCleanup.ps1` offers to run that
+  org's Account names + parent hierarchy; `scripts/cleanup/Invoke-SandboxFactoryReset.ps1` offers to run that
   when this file is present. **The filename pattern matters** — it is glob-matched and the newest
   date wins, so dropping in a fresher export is all it takes to refresh the source. Renamed from
   `PEO PROD Accounts 07162026 (1).xls` on 2026-08-13.

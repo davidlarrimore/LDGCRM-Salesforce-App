@@ -1,20 +1,50 @@
 #Requires -Version 5.1
 
 <#
-    Interactive, destructive record cleanup for a chosen environment, with an
-    optional Account bootstrap afterwards. See sfdx-sandbox-ops for the safety
-    checklist this follows (target-org verification, preflight counts,
+    SANDBOX FACTORY RESET
+    =====================
+    Returns a pre-production sandbox to a known starting state: hard-delete
+    every record this migration created, then rebuild the Account universe from
+    a production export so the org looks like production before a migration
+    rehearsal begins.
+
+    "Factory reset" is the deliberate name. This is not a tidy-up - it is the
+    single operation that puts an org back to the baseline a rehearsal starts
+    from, and it is meant to be run repeatedly. See sfdx-sandbox-ops for the
+    safety checklist it follows (target-org verification, preflight counts,
     export-before-write, typed HARD DELETE confirmation).
 
-    Renamed from cleanup-gsa-peo.ps1 on 2026-08-13. The old name baked in an
-    org alias that pointed at the DEV sandbox while reading like production -
-    see scripts/common/Common.Orgs.ps1 for the whole story. This script now
-    targets an ENVIRONMENT (-Environment Dev|QA|Full|Prod, default Dev) and
-    resolves the alias from the registry, so what it is about to destroy is
-    stated in terms a human can check against the banner it prints.
+    ------------------------------------------------------------------
+    THIS CANNOT RUN AGAINST PRODUCTION. BY CONSTRUCTION, NOT BY POLICY.
+    ------------------------------------------------------------------
+    A factory reset has no legitimate production use, so production is not a
+    guarded option here - it is not an option at all. Three independent layers,
+    each of which alone would stop it:
 
-    -ObjectsCsv overrides the default full object list, for scoped cleanup
-    runs that don't need to touch every migrated object (e.g. re-testing just
+      1. -Environment does not accept "Prod". The ValidateSet is Dev|QA|Full,
+         so PowerShell rejects the argument before a single line of this script
+         runs. There is no typed-confirmation path to production, unlike the
+         load scripts, which legitimately need one.
+
+      2. The registry entry is checked. If the resolved environment is ever
+         marked IsProduction, the script aborts - this catches someone editing
+         Common.Orgs.ps1 to point a sandbox key at a production org.
+
+      3. The ORG ITSELF is asked. Organization.IsSandbox is queried from the
+         target and the run aborts unless it is true. This is the layer that
+         closes the -OrgAlias escape hatch, which deliberately bypasses the
+         registry's identity checks and would otherwise be a way to aim this at
+         anything at all.
+
+    Layer 3 is the one that matters most: an `sf` alias is a local, mutable
+    pointer, so the only trustworthy statement about what an alias points at
+    comes from the org on the other end of it.
+
+    ------------------------------------------------------------------
+    SCOPE
+    ------------------------------------------------------------------
+    -ObjectsCsv overrides the default full object list, for scoped resets
+    that don't need to touch every migrated object (e.g. re-testing just
     the Account/Partner Account chain without disturbing already-loaded/
     verified Impediment records). Comma-separated (not a real PowerShell
     array parameter) specifically so it survives being passed through a
@@ -26,6 +56,15 @@
     default list, or deletes will fail against Restrict-type
     deleteConstraints (e.g. LDGCRM_application__c.LDGCRM_Partner_Account__c
     blocks deleting a Partner Account any Application still references).
+
+    NOTES ARE HANDLED SEPARATELY, BEFORE THE OBJECT LIST. Every other object is
+    scoped by "has LDGCRM_External_ID__c", but ContentNote cannot be - it is a
+    Files object that permits no custom fields at all. Worse, deleting a record
+    removes its ContentDocumentLinks but leaves the note itself behind as an
+    orphan in Files, so ignoring notes would quietly accumulate junk across
+    every reset. They are therefore found by walking the links from records that
+    DO carry an external ID, and deleted first, while those parents still exist
+    to be walked. See Remove-MigratedNotes.
 
     ------------------------------------------------------------------
     THE ACCOUNT BOOTSTRAP OPTION
@@ -59,11 +98,15 @@
 #>
 
 param(
-    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    # LAYER 1 OF THE PRODUCTION BLOCK: "Prod" is absent on purpose. PowerShell
+    # rejects it at bind time, so there is no code path to production at all.
+    # Do not add it back - a factory reset has no production use.
+    [ValidateSet("Dev", "QA", "Full")]
     [string]$Environment = "Dev",
 
-    # Escape hatch for an org that isn't in the registry. Skips the registry's
-    # identity checks - see Assert-LdgcrmOrgTarget.
+    # Escape hatch for a sandbox that isn't in the registry. Skips the
+    # registry's identity checks (see Assert-LdgcrmOrgTarget) - which is exactly
+    # why the Organization.IsSandbox check below is not optional.
     [string]$OrgAlias = "",
 
     [string]$ObjectsCsv = "",
@@ -75,15 +118,28 @@ param(
     [switch]$SkipBootstrap
 )
 
+# Children and junctions first, parents last. Getting this order wrong doesn't
+# silently skip records - it fails the delete outright against Restrict-type
+# deleteConstraints.
 $DefaultObjects = @(
     "LDGCRM_Application_Contact__c",
     "LDGCRM_Opportunity_Impediment__c",
+    # Added 2026-08-13. It was missing, and its absence was easy to miss because
+    # OpportunityContactRole cascades away when its Opportunity is deleted - so
+    # a full reset LOOKED complete. A scoped run that doesn't include Opportunity
+    # would have left all 515 rows behind, and the next
+    # Build-OpportunityContactRoleLoad.ps1 run diffs against what exists, so
+    # those survivors would have suppressed the re-insert instead of erroring.
+    "OpportunityContactRole",
     "LDGCRM_Application__c",
     "Opportunity",
     "Contact",
     "LDGCRM_Impediment__c",
     "LDGCRM_Partner_account__c",
     "Account"
+    # Market Segment is deliberately excluded: all 6 records are correct, three
+    # before-save Flows depend on them, and nothing in the migration recreates
+    # them. A "factory reset" that removed them would need a manual rebuild.
     #"LDGCRM_Market_Segment__c"
 )
 
@@ -107,8 +163,8 @@ $ApiVersion = "67.0"
 $ExternalIdField = "LDGCRM_External_ID__c"
 $WaitMinutes = 30
 
-$Timestamp = Start-ScriptLog -Category "cleanup" -ScriptName "Invoke-OrgCleanup"
-$OutputDirectory = Join-Path (Get-LogDirectory -Category "cleanup") "org-cleanup-$Timestamp"
+$Timestamp = Start-ScriptLog -Category "cleanup" -ScriptName "Invoke-SandboxFactoryReset"
+$OutputDirectory = Join-Path (Get-LogDirectory -Category "cleanup") "sandbox-factory-reset-$Timestamp"
 
 # ============================================================
 # FUNCTIONS
@@ -216,6 +272,63 @@ function Test-DeleteFile {
     return $Rows.Count
 }
 
+function Get-MigratedNoteDocumentIds {
+    <#
+        Finds the ContentNotes this migration created, by walking
+        ContentDocumentLink from the records that carry an external ID.
+
+        WHY IT CANNOT USE THE EXTERNAL-ID FILTER LIKE EVERYTHING ELSE:
+        ContentNote is a Files object and permits NO custom fields at all, so
+        there is nothing on the note itself to identify it by. The only durable
+        statement about a migrated note is "it is attached to a record the
+        migration tagged".
+
+        WHY IT MUST RUN BEFORE THE PARENTS ARE DELETED: deleting a record
+        removes its ContentDocumentLinks but leaves the ContentDocument behind,
+        orphaned in Files and now unreachable by this query. Skip this and every
+        reset silently accumulates junk notes that nothing can find again.
+
+        Scoped to FileType 'SNOTE' so genuine uploaded files attached to the
+        same records are never touched.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$ParentObjects
+    )
+
+    $DocumentIds = [System.Collections.Generic.HashSet[string]]::new()
+
+    foreach ($ObjectApiName in $ParentObjects) {
+        $ParentIds = @()
+
+        try {
+            $ParentIds = @(Invoke-SalesforceQuery `
+                -Soql "SELECT Id FROM $ObjectApiName WHERE $ExternalIdField != null" `
+                -OrgAlias $OrgAlias -ApiVersion $ApiVersion | ForEach-Object { $_.Id })
+        }
+        catch {
+            # An object with no external ID field (or no access) simply can't
+            # hold migrated notes - not an error worth stopping a reset for.
+            continue
+        }
+
+        for ($Offset = 0; $Offset -lt $ParentIds.Count; $Offset += 200) {
+            $Last = [Math]::Min($Offset + 200, $ParentIds.Count) - 1
+            $Literals = (@($ParentIds[$Offset..$Last]) | ForEach-Object { "'$_'" }) -join ","
+
+            foreach ($Link in @(Invoke-SalesforceQuery `
+                    -Soql ("SELECT ContentDocumentId FROM ContentDocumentLink " +
+                           "WHERE LinkedEntityId IN ($Literals) " +
+                           "AND ContentDocument.FileType = 'SNOTE'") `
+                    -OrgAlias $OrgAlias -ApiVersion $ApiVersion)) {
+                if ($Link.ContentDocumentId) { $DocumentIds.Add($Link.ContentDocumentId) | Out-Null }
+            }
+        }
+    }
+
+    return $DocumentIds
+}
+
 function Remove-Records {
     param(
         [Parameter(Mandatory = $true)]
@@ -319,7 +432,7 @@ function Invoke-AccountBootstrapStep {
 try {
 
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host " SALESFORCE ORG DATA CLEANUP" -ForegroundColor Cyan
+Write-Host " SANDBOX FACTORY RESET" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 
 # Confirm that Salesforce CLI is installed.
@@ -329,6 +442,37 @@ Invoke-SalesforceCli -Arguments @("--version")
 # counting anything. This replaces the old "print `sf org display` and hope the
 # operator reads it" check - a repointed alias now stops the run outright.
 $OrgInfo = Assert-LdgcrmOrgTarget -Environment $Environment -OrgAlias $OrgAlias
+
+# ============================================================
+# PRODUCTION BLOCK - LAYERS 2 AND 3
+# ============================================================
+# Layer 1 (the ValidateSet on -Environment) already ran at bind time. These two
+# cover what it cannot: a registry edited to point a sandbox key somewhere else,
+# and the -OrgAlias override, which deliberately skips the registry entirely.
+#
+# Both abort rather than prompt. There is no typed confirmation for production
+# here on purpose - a factory reset against production is never the intent, so
+# offering a way to approve it would only create a way to approve it by mistake.
+
+# Layer 2: the registry's own opinion of this environment.
+$EnvironmentEntry = Get-LdgcrmEnvironment -Environment $Environment
+if ($EnvironmentEntry.IsProduction) {
+    throw ("SAFETY STOP: environment '$Environment' is marked IsProduction in " +
+           "scripts/common/Common.Orgs.ps1. A Sandbox Factory Reset must never run against " +
+           "production. Nothing was read or deleted.")
+}
+
+# Layer 3: ask the ORG, not the alias. Assert-LdgcrmOrgTarget already queried
+# Organization.IsSandbox and attached it, which is authoritative in a way no
+# local config can be - an alias is a mutable pointer, the org is not.
+if (-not $OrgInfo.isSandbox) {
+    throw ("SAFETY STOP: alias '$OrgAlias' resolves to a NON-SANDBOX org " +
+           "($($OrgInfo.orgName), $($OrgInfo.instanceUrl)). A Sandbox Factory Reset only runs " +
+           "against pre-production sandboxes. Nothing was read or deleted.")
+}
+
+Write-Host ""
+Write-Host "Production block: PASSED - target is a sandbox ($($OrgInfo.orgName))." -ForegroundColor Green
 
 Write-Host "API version:       $ApiVersion"
 Write-Host "External ID field: $ExternalIdField"
@@ -371,8 +515,16 @@ foreach ($ObjectApiName in $Objects) {
     }
 }
 
+# Notes are counted here rather than in the loop above because they aren't
+# selected the same way - see Get-MigratedNoteDocumentIds. This must happen
+# while the parent records still exist to be walked.
 Write-Host ""
-Write-Host "Total records selected: $($TotalRecords.ToString('N0'))" `
+Write-Host "Finding migrated notes (walked from their parent records)..." -ForegroundColor Cyan
+$NoteDocumentIds = Get-MigratedNoteDocumentIds -ParentObjects $Objects
+Write-Host ("{0,-35} {1,12:N0}" -f "ContentNote (migrated)", $NoteDocumentIds.Count)
+
+Write-Host ""
+Write-Host "Total records selected: $(($TotalRecords + $NoteDocumentIds.Count).ToString('N0'))" `
     -ForegroundColor Yellow
 
 $Results = @()
@@ -410,15 +562,17 @@ Write-Host "They will not be placed in the Recycle Bin." `
     -ForegroundColor Red
 Write-Host ""
 
-if (-not (Assert-LdgcrmProductionConsent -Environment $Environment -Action "HARD DELETE $($TotalRecords.ToString('N0')) migrated record(s)")) {
-    exit 0
-}
-
+# NOTE: there is deliberately no Assert-LdgcrmProductionConsent call here, and
+# its absence is not an oversight. That helper exists to let an operator APPROVE
+# a production write; this script cannot target production at all (see the three
+# layers at the top), so calling it would be dead code that implies a production
+# path exists. The typed confirmation below is the only gate, and it guards a
+# sandbox.
 $Confirmation = Read-Host "Type HARD DELETE to continue"
 
 if ($Confirmation -cne "HARD DELETE") {
     Write-Host ""
-    Write-Host "Cleanup cancelled. No records were deleted." `
+    Write-Host "Factory reset cancelled. No records were deleted." `
         -ForegroundColor Yellow
     exit 0
 }
@@ -435,6 +589,36 @@ New-Item `
 Write-Host ""
 Write-Host "Output directory:" -ForegroundColor Cyan
 Write-Host $OutputDirectory
+
+# ============================================================
+# DELETE MIGRATED NOTES - FIRST, WHILE THEIR PARENTS STILL EXIST
+# ============================================================
+# Order is load-bearing. Once a parent record is deleted its ContentDocumentLink
+# goes with it, and the note becomes an unreachable orphan in Files. The ids
+# were collected during preflight for exactly this reason.
+
+if ($NoteDocumentIds.Count -gt 0) {
+    Write-Host ""
+    Write-Host "============================================================"
+    Write-Host "Processing migrated notes (ContentDocument)" -ForegroundColor Cyan
+    Write-Host "============================================================"
+
+    $NoteIdFile = Join-Path $OutputDirectory "ContentDocument-ids.csv"
+    $NoteDocumentIds | ForEach-Object { [PSCustomObject]@{ Id = $_ } } |
+        Export-Csv -LiteralPath $NoteIdFile -NoTypeInformation -Encoding UTF8
+
+    Write-Host "Exported $($NoteDocumentIds.Count) note id(s) for the audit trail:"
+    Write-Host "  $NoteIdFile"
+
+    # Deleting the ContentDocument removes the note and its links together.
+    # Deleting ContentNote directly is not the equivalent operation.
+    Remove-Records -ObjectApiName "ContentDocument" -CsvFile $NoteIdFile
+
+    $Results += [PSCustomObject]@{
+        Object  = "ContentDocument (notes)"
+        Deleted = $NoteDocumentIds.Count
+    }
+}
 
 # ============================================================
 # EXPORT AND DELETE

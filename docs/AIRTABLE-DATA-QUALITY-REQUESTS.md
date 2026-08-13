@@ -379,12 +379,29 @@ guessing would invent role data on 716 records. The value is currently dropped.
 **What we need:** either confirm that "Technical Emails" should map to "Technical POC", or add a
 matching subscription option in Salesforce, or confirm it isn't needed.
 
-### Contacts: 371 have no usable Account link
+### Contacts: 390 can't be linked to any agency, so they are no longer migrated
 
-Most are the **same unmatched-Account problem** described at the top of this document — the contact
-points at an Airtable Account that doesn't match a Salesforce one, so fixing those Accounts fixes
-these contacts automatically. The migration already recovers 145 more by tracing the contact's
-Applications back to an Account, so no separate action is needed for those.
+**Changed 2026-08-13.** Contacts with no resolvable Account are now **skipped rather than loaded**. A
+contact attached to no agency isn't usable in the CRM, can't inherit an owner, and each one caused
+Salesforce to auto-create a junk placeholder Account.
+
+Before skipping any, we exhaust three recorded links — Airtable's own Account column (965 contacts),
+the contact's Application via its Partner Agreement (151), and, newly, **the contact's Opportunity**
+(399). That last route matters: those people come from the Opportunity Contacts table, which has no
+Account column of its own, and adding it rescued 399 contacts that would otherwise have been dropped
+along with 435 of their Opportunity contact-role records.
+
+A further 38 are matched by email domain where every other contact on that `.gov` domain belongs to
+the same agency (listed in `logs/data-migration/Contact-domain-inferred-account-*.csv` — these are
+inferred, not recorded, and are worth a spot-check).
+
+**That leaves 390 with no agency at all.** Most trace back to the unmatched-Account problem at the
+top of this document, so fixing those Accounts brings these contacts back automatically with no
+further work. The rest genuinely have no agency recorded anywhere.
+
+**What we need:** nothing separate — fixing the Account duplicates above is what recovers these. The
+full list is in `logs/data-migration/Contact-no-account-*.csv` if you want to review them
+individually.
 
 ### Impediments: what does the impediment named "None" mean?
 

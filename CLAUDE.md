@@ -312,7 +312,7 @@ self-referential lookup can't resolve within its own upsert batch and needs a se
 
 **Current sandbox state (rebuilt 2026-08-13 — see `docs/README.md`'s "Production Account seed"
 section for the full rebuild):** the Account/Partner Account chain was deliberately hard-deleted
-(scoped, via `scripts/cleanup/Invoke-OrgCleanup.ps1`) and rebuilt from a real production Account
+(scoped, via `scripts/cleanup/Invoke-SandboxFactoryReset.ps1`) and rebuilt from a real production Account
 export to make reconciliation testing meaningful, rather than testing against arbitrary sandbox seed
 data. **Treat every count below as a moving target, not a fixed baseline** — it's shifted several
 times in a single day already. Current: 1,346 Accounts (1,342 inserted from the production export +
@@ -334,7 +334,7 @@ backfill — read-only against Salesforce, writing an update CSV plus human-revi
 it can't confidently match; see `docs/README.md` for the full pipeline.
 
 **Load order** (parents before children/junctions — the reverse of the delete order in
-`scripts/cleanup/Invoke-OrgCleanup.ps1`): Market Segment → Account → `LDGCRM_Partner_Account__c` →
+`scripts/cleanup/Invoke-SandboxFactoryReset.ps1`): Market Segment → Account → `LDGCRM_Partner_Account__c` →
 Contact → Opportunity → `LDGCRM_application__c` → `LDGCRM_Opportunity_Impediment__c` (needs
 `LDGCRM_Impediment__c` and Opportunity first) → `LDGCRM_Application_Contact__c` →
 `OpportunityContactRole` → Activity (Meetings, needs Account/Opportunity first).
@@ -368,11 +368,20 @@ Current scripts:
   metadata types — see `scripts/metadata/ldgcrm-manifest-ignore.json` for confirmed non-LDGCRM
   components that should stop resurfacing in that report). Then runs `sf project retrieve start`
   against the manifest. `-WhatIf` reports only; `-SkipDiscovery` retrieves the manifest as-is.
-- `scripts/cleanup/Invoke-OrgCleanup.ps1` (renamed from `cleanup-gsa-peo.ps1` 2026-08-13) —
-  **interactive and destructive**: hard-deletes records by object (only rows where
+- `scripts/cleanup/Invoke-SandboxFactoryReset.ps1` — **the Sandbox Factory Reset**: returns a
+  pre-production sandbox to a known starting state so a migration rehearsal always begins from the
+  same baseline. **Interactive and destructive**: hard-deletes records by object (only rows where
   `LDGCRM_External_ID__c` is populated), after a typed `HARD DELETE` confirmation. Exports the
-  record IDs it deletes first for an audit trail. Treat with the same caution as any prod-affecting
-  script even though it defaults to a sandbox. When the deletes finish it **offers to run
+  record IDs it deletes first for an audit trail.
+  **It cannot target production, by construction rather than by policy** — `-Environment` doesn't
+  accept `Prod` (rejected at parameter binding), the registry's `IsProduction` flag aborts the run,
+  and `Organization.IsSandbox` is read from the org itself to close the `-OrgAlias` escape hatch.
+  There is deliberately no production confirmation prompt: offering one would only create a way to
+  approve it by mistake. Two non-obvious inclusions: `OpportunityContactRole` (which cascades away
+  on a full reset, so its absence was invisible until a scoped run) and migrated **Notes**, which
+  can't be scoped by external ID and are instead found by walking `ContentDocumentLink` from tagged
+  parents *before* those parents are deleted — otherwise the notes survive orphaned in Files.
+  When the deletes finish it **offers to run
   `Invoke-AccountBootstrap.ps1`** against the same environment, if `data/peo-prod-accounts-*.xls`
   exists — because deleting is only half a rebuild (see the next bullet). `-BootstrapAccounts` /
   `-SkipBootstrap` answer that prompt non-interactively.

@@ -7,11 +7,17 @@
     this is a straight upsert-on-external-ID transform with no Salesforce query
     needed first.
 
-    OwnerId is deliberately NOT set. Checked, not overlooked: the Airtable
-    Impediments table has no owner/assignee column of any kind (its only
-    non-content columns are Airtable-side rollups). Under the ownership rule
-    agreed 2026-08-13, "no Airtable owner" means fall back to the loading user,
-    which is what leaving OwnerId unset already does.
+    The Airtable Impediments table has no owner/assignee column of any kind
+    (checked, not overlooked - its only non-content columns are Airtable-side
+    rollups), so every Impediment takes the FALLBACK owner under the ownership
+    rule agreed 2026-08-13.
+
+    That fallback is written explicitly, which is the one reason this script now
+    touches Salesforce at all: leaving OwnerId blank would assign all 39 records
+    to whoever runs the load, and in production that is a GSA IT Operations
+    engineer rather than the agreed owner. Resolving an email to a User Id needs
+    a query, so the "no Salesforce access" property was traded for correct
+    ownership deliberately.
 
     Field notes (checked against the Airtable export and LDGCRM_Impediment__c's
     metadata before assuming a same-name mapping, per the "States + DC/PR" lesson
@@ -37,14 +43,31 @@
     columns - those drive LDGCRM_Opportunity_Impediment__c (a later, junction
     chunk), not this object.
 
-    Does not query Salesforce - this script only reads the Airtable export and
-    writes a local CSV.
+    Reads Salesforce only to resolve the fallback owner (see above); every
+    field value comes from the Airtable export. Writes local CSVs only.
 #>
+
+param(
+    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [string]$Environment = "Dev",
+
+    # Empty = use the environment's registered alias (scripts/common/Common.Orgs.ps1).
+    # Set this only to reach an org that isn't in the registry; doing so skips
+    # the registry's identity checks.
+    [string]$OrgAlias = "",
+    [string]$ApiVersion = "67.0",
+
+    # Owner for every Impediment, since Airtable records none. Resolved to a
+    # User at run time and the run FAILS if it doesn't match an active User.
+    [string]$FallbackOwnerEmail = "peter.marks@gsa.gov"
+)
 
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\common\Common.ps1")
 . (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
+
+$OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-ImpedimentLoad"
 
@@ -65,6 +88,10 @@ Write-Host "============================================================" -Foreg
 Write-Host ""
 Write-Host "This script does not query or write to Salesforce - local files only." -ForegroundColor Yellow
 Write-Host ""
+
+Write-Host "Resolving the fallback owner ($FallbackOwnerEmail)..." -ForegroundColor Cyan
+$FallbackOwnerId = Resolve-FallbackOwnerId -Email $FallbackOwnerEmail -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+Write-Host "Fallback owner resolves to $FallbackOwnerId."
 
 Write-Host "Loading Airtable Impediments export..." -ForegroundColor Cyan
 $AirtableImpediments = Import-AirtableTable -Label "Impediments"
@@ -105,6 +132,7 @@ foreach ($Row in $AirtableImpediments) {
 
     $UpsertRows.Add([PSCustomObject]@{
         LDGCRM_External_ID__c   = $RecId
+        OwnerId                 = $FallbackOwnerId
         Name                    = $Name
         LDGCRM_Category__c      = $MappedCategory
         LDGCRM_Description__c   = $Row.fields.Description

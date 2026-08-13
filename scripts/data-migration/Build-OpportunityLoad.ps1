@@ -79,7 +79,12 @@ param(
     # Set this only to reach an org that isn't in the registry; doing so skips
     # the registry's identity checks.
     [string]$OrgAlias = "",
-    [string]$ApiVersion = "67.0"
+    [string]$ApiVersion = "67.0",
+
+    # Owner for records whose own owner can't be determined. Resolved to a User
+    # at run time (never a hard-coded Id - production's differs from every
+    # sandbox's) and the run FAILS if it doesn't match an active User.
+    [string]$FallbackOwnerEmail = "peter.marks@gsa.gov"
 )
 
 $ErrorActionPreference = "Stop"
@@ -280,6 +285,9 @@ $LeadEmails = @($AirtableOpportunities |
     ForEach-Object { $_.fields.'Pod Opportunity Lead'.email } |
     Where-Object { $_ })
 
+$FallbackOwnerId = Resolve-FallbackOwnerId -Email $FallbackOwnerEmail -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+Write-Host "Fallback owner ($FallbackOwnerEmail) resolves to $FallbackOwnerId."
+
 $OwnerLookup = Resolve-SalesforceOwnerIds -Emails $LeadEmails -OrgAlias $OrgAlias -ApiVersion $ApiVersion
 $DistinctLeads = @($LeadEmails | ForEach-Object { $_.ToLower() } | Sort-Object -Unique)
 Write-Host "$($OwnerLookup.IdByEmail.Count) of $($DistinctLeads.Count) distinct leads resolve to an active User."
@@ -442,16 +450,12 @@ foreach ($Row in $AirtableOpportunities) {
     }
 
     # --- OwnerId ---
-    # BLANK IS THE FALLBACK, AND IT IS DELIBERATE. Bulk API 2.0 treats an empty
-    # CSV value as "no value supplied", which means:
-    #   - on INSERT, Salesforce assigns the record to the loading user, which is
-    #     exactly the agreed fallback owner; and
-    #   - on a re-run that UPDATES an existing record, the current owner is left
-    #     untouched, so a manual reassignment made in Salesforce is not silently
-    #     reverted every time this pipeline runs.
-    # Writing the loading user's Id explicitly would satisfy the rule on insert
-    # but stomp real reassignments on every subsequent run.
-    $OwnerId = ""
+    # The fallback is written EXPLICITLY, not left blank. A blank OwnerId makes
+    # Salesforce assign the record to whoever ran the load, which stopped being
+    # the right owner once GSA IT Operations took over running this in
+    # production - see Resolve-FallbackOwnerId for the full reasoning and the
+    # re-run trade-off it costs.
+    $OwnerId = $FallbackOwnerId
     $LeadEmail = $Row.fields.'Pod Opportunity Lead'.email
     if ($LeadEmail) {
         $LeadKey = "$LeadEmail".Trim().ToLower()
@@ -545,8 +549,10 @@ Write-Host ("{0,-50} {1,8:N0}" -f "Skipped - no Account link in Airtable", $Skip
 Write-Host ("{0,-50} {1,8:N0}" -f "Skipped - Account not reconciled in org", $SkippedAccountUnreconciled)
 Write-Host ("{0,-50} {1,8:N0}" -f "Partner Account linked (via Applications)", @($UpsertRows | Where-Object { $_.'LDGCRM_Partner_Account__r.LDGCRM_External_ID__c' }).Count)
 Write-Host ("{0,-50} {1,8:N0}" -f "Partner Account known but not loaded yet", $UnresolvedPartnerAccountCount)
-Write-Host ("{0,-50} {1,8:N0}" -f "Owner set from Pod Opportunity Lead", @($UpsertRows | Where-Object { $_.OwnerId }).Count)
-Write-Host ("{0,-50} {1,8:N0}" -f "Owner falls back to the loading user", @($UpsertRows | Where-Object { -not $_.OwnerId }).Count)
+# Compare against the fallback Id, not "is OwnerId set" - every row carries one
+# now, so a truthiness test would report every record as owner-resolved.
+Write-Host ("{0,-50} {1,8:N0}" -f "Owner set from Pod Opportunity Lead", @($UpsertRows | Where-Object { $_.OwnerId -ne $FallbackOwnerId }).Count)
+Write-Host ("{0,-50} {1,8:N0}" -f "Owner = fallback ($FallbackOwnerEmail)", @($UpsertRows | Where-Object { $_.OwnerId -eq $FallbackOwnerId }).Count)
 Write-Host ("{0,-50} {1,8:N0}" -f "CloseDate came from a fallback field", $CloseDateFallbackRows.Count)
 Write-Host ("{0,-50} {1,8:N0}" -f "Demographic tags dropped (unmapped)", $DroppedDemographicCount)
 Write-Host ("{0,-50} {1,8:N0}" -f "Other values blanked for review", $ValueReviewRows.Count)
