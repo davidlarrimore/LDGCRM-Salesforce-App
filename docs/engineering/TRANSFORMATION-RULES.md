@@ -2021,23 +2021,40 @@ exports on disk are a subset of the base by construction, and "not in any export
 statement than "not in Airtable." The same caution applies to Partner Accounts' `Escalated User
 Support Cases`, still an open question for exactly this reason.
 
-**Airtable models this one level down from where Salesforce wants it.** Salesforce puts the team on
-the Application; Airtable records it on each **issuer string**, and an Application has many. So the
-value has to be collapsed upward, which only works if an Application's issuer strings agree.
+**Airtable stores this one level down from where it belongs.** The partner-portal team is a property
+of the **Application** (user-confirmed 2026-08-13). Airtable records it on each **issuer string**
+instead, so it is duplicated across every issuer string an Application has — and **every copy is
+supposed to be identical**. Salesforce stores it once, on the Application.
+
+So this is a **de-duplication, not a merge of distinct facts**: read the one value the copies agree
+on, write the Application once. That framing is what decides the handling of disagreement — a set
+that doesn't agree is duplicated data that has *drifted*, i.e. a defect to fix at source, never a
+signal that an Application legitimately has two teams.
 
 Measured across the 2026-08-13 export (901 issuer strings → 887 distinct Applications):
 
 | Outcome | Applications | Handling |
 | --- | --- | --- |
-| Exactly one Team UUID across all its issuer strings | **696** | Migrated. |
-| No Team UUID on any issuer string | 182 | Both fields left blank. |
-| **Two different Team UUIDs** | **9** | Both fields left blank + review CSV. |
+| Identical team on **every** issuer string | **678** | Migrated. Clean. |
+| Team on **some** issuer strings, blank/`#N/A` on others | **18** | Migrated (unambiguous) + `INCOMPLETE` review row. |
+| **Two different Team UUIDs** | **9** | Both fields left blank + `CONFLICT` review row. |
+| No Team UUID anywhere | 182 | Nothing to carry over. |
 
-The 9 are a genuine source defect — one Airtable Application whose issuer strings belong to two
-portal teams, typically a dev/test string under one team and a prod string under another. **There is
-no defensible tie-break** (first-wins would silently pick whichever issuer string sorted first), so
-both fields are skipped and reported, per the standing rule against inventing values to improve a
-count.
+The 9 are a genuine source defect — one Airtable Application whose issuer strings carry two different
+teams, typically a dev/test string under one and a prod string under another. **There is no
+defensible tie-break** (first-wins would silently pick whichever issuer string sorted first), so both
+fields are skipped and reported, per the standing rule against inventing values to improve a count.
+
+The 18 change **nothing** about the load — the team is unambiguous, so those Applications get the
+right value. They are reported anyway because under the "every copy identical" rule the blanks are
+*missing copies*, not absent data. Both kinds share one review CSV
+(`Application-portal-team-review-*.csv`) with an `Issue` column separating them, so the 9 that block
+something are not buried among the 18 that don't.
+
+Two further shape notes: **7 issuer strings link to no Application**, so their team reaches nothing;
+and **2 rows are entirely empty** (no issuer string, no team). The empty ones are labelled in the
+review CSV rather than rendered as a blank cell — an unexplained empty cell in a report reads as a
+bug in the report.
 
 Two shape facts worth keeping:
 - **`#N/A` is a literal string in this table**, not an Airtable empty — 136 Team Names and 137 Team

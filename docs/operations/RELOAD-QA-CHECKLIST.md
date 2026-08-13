@@ -648,9 +648,14 @@ Market Segment (already loaded - do not touch)
         **2 with a UUID but a blank name** (team name over the 50-char field limit).
       - This is a Salesforce-config item, not an Airtable one — see
         [the data-quality doc](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md#applications-the-partner-portal-team-fields-cant-be-loaded-yet--a-salesforce-setting-blocks-them---open).
-- [ ] Review `logs/data-migration/Application-portal-team-conflicts-*.csv`: expect **9 Applications**
-      whose issuer strings name two different portal teams. Both fields are deliberately left blank on
-      those — there is no defensible tie-break. Needs an Airtable fix, not a code change.
+- [ ] Review `logs/data-migration/Application-portal-team-review-*.csv` — **27 rows, two kinds**, told
+      apart by the `Issue` column. The team belongs to the Application and Airtable duplicates it onto
+      every issuer string, so both are "the copies disagree"; they differ in whether that's resolvable.
+      - **`CONFLICT` — 9 Applications** whose issuer strings name two different teams. Both fields
+        deliberately left blank; there is no defensible tie-break. Airtable fix, not a code change.
+      - **`INCOMPLETE` — 18 Applications** carrying the team on only some issuer strings. **Expected
+        and non-blocking** — the team is unambiguous so it migrates correctly. Do not treat these as
+        failures; they are listed so the missing copies can be filled in.
 ### 4e-bis. `LDGCRM_application__c` — Broker App Parent SECOND PASS
 
 - [ ] ⚠️ **Load `LDGCRM_application__c-broker-parent-upsert.csv`, and only AFTER 4e.** It is written

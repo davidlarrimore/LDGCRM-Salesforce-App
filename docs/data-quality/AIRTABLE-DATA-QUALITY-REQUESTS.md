@@ -298,14 +298,20 @@ filled in) and because it makes the table read as 92% complete when the real fig
 lookup was meant to produce — a team that's missing here is a team that can't migrate. Low urgency,
 but the sooner it's fixed the less it spreads.
 
-### Issuer Strings: 9 Applications belong to two different partner-portal teams at once — 🔴 OPEN
+### Issuer Strings: Team Name / Team UUID are duplicated per issuer string, and 9 copies have drifted apart — 🔴 OPEN
 
-**New 2026-08-13.** Salesforce records **one** partner-portal team per Application. Airtable records
-the team on each **issuer string** instead, and an Application usually has several — so for this to
-migrate, all of an Application's issuer strings have to name the same team.
+**New 2026-08-13.** **The partner-portal team is a property of the Application** (confirmed by the
+project owner). Airtable stores it on each **issuer string** instead, so it's copied onto every issuer
+string an Application has — and **every copy is meant to be identical**. Salesforce stores it once, on
+the Application, which is where it belongs.
 
-**They almost always do: 696 of the 705 Applications that have any team at all are consistent.** These
-9 are the exceptions — each has issuer strings split across two genuinely different teams:
+That makes this a de-duplication rather than a merge: we read the one value the copies agree on and
+write it to the Application a single time. **They almost always do agree — 678 Applications are
+identical across every issuer string.** The rest are copies that have drifted:
+
+**9 Applications have issuer strings naming two genuinely different teams.** Because the copies are
+supposed to match, this isn't an Application that legitimately has two teams — it's an error. Both
+fields are left blank on these:
 
 | Application's issuer strings are split between | and |
 | --- | --- |
@@ -319,24 +325,38 @@ migrate, all of an Application's issuer strings have to name the same team.
 | `PRIMIS-IAS` | `PRIMIS-IAC` |
 | `IAM Team` | `NSF-LoginGov Integration` |
 
-The usual shape is a **test/dev issuer string owned by one team and a production one owned by
+The usual shape is a **test/dev issuer string carrying one team and a production one carrying
 another**, filed under a single Application row. Two look like they may just be the same team recorded
 under two spellings (`DOI - FWS - ECOS` / `DOI-FWS-ECOSphere`, and possibly `PRIMIS-IAS` /
 `PRIMIS-IAC`), which would be the easiest kind to fix. One (`Sunil Kumar`) is a **person's name in a
 team field**, which is likely just wrong.
 
-**We are not guessing which team wins.** Both fields are left blank on these 9 Applications rather
-than picking whichever issuer string happened to sort first. Full detail, including every issuer
-string involved, is in `logs/data-migration/Application-portal-team-conflicts-*.csv`.
+**We are not guessing which copy wins** — that would mean picking whichever issuer string happened to
+sort first.
 
-**What we need:** for each of the 9, either confirm which team is correct (and move the other issuer
-strings to the Application they actually belong to), or confirm the Application should be split into
-one record per team. Where it's the same team spelled two ways, just make the spelling consistent.
+**What we need:** for each of the 9, decide which team is correct and make **every** one of that
+Application's issuer strings say the same thing. (If some of those issuer strings genuinely belong to
+a different application, moving them to the right Application row fixes it just as well.)
+
+**Separately, 18 Applications have the team on only *some* of their issuer strings** — the rest are
+blank or `#N/A`. **Nothing is blocked and these migrate correctly**, since the copies that do exist
+agree; they're listed only because the copies should all match. Examples: `DFC-CMS` (1 of 4 blank),
+`data.gov` (2 of 3), `RRB - Benefit Connect` (2 of 3), `DOL - OASAM - OCIO` (three separate
+Applications).
+
+Both kinds are in `logs/data-migration/Application-portal-team-review-*.csv`, tagged `CONFLICT`
+(blocks the fields) or `INCOMPLETE` (tidy-up only).
+
+**The root fix, if it's ever on the table:** because the team belongs to the Application, storing it
+on the Applications table directly — rather than copying it onto each issuer string — would make all
+27 of these impossible by construction. Not needed for the migration, which handles the current shape
+fine; worth knowing if the Airtable base is ever restructured.
 
 **Also worth a look:** **7 issuer strings aren't linked to any Application at all**, so whatever team
-they name can't reach Salesforce. And 182 Applications have no team recorded on any of their issuer
-strings — that may be entirely legitimate, but it's a quarter of the table, so it's worth confirming
-it's expected rather than a gap.
+they name can't reach Salesforce, and **2 rows are completely empty** (no issuer string, no team —
+same as the blank Impediment rows noted further down; safe to delete). And 182 Applications have no
+team on any of their issuer strings — that may be entirely legitimate, but it's a quarter of the
+table, so it's worth confirming it's expected rather than a gap.
 
 ### Issuer Strings: 8 partner-portal team names are too long for Salesforce — 🔴 OPEN
 

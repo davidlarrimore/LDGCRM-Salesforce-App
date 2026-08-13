@@ -288,17 +288,28 @@ function Get-PortalTeamByApplication {
         UUID up to one value per Application, returning a hashtable keyed by
         Airtable Application record ID.
 
-        WHY THIS NEEDS RULES AT ALL: Airtable records the partner-portal team on
-        each ISSUER STRING, and an Application has many issuer strings. The
-        migration needs one value per Application, so the set has to agree.
+        WHY THIS NEEDS RULES AT ALL: the partner-portal team is a property of the
+        APPLICATION (user-confirmed 2026-08-13). Airtable stores it on each
+        ISSUER STRING instead, so it is duplicated across every issuer string an
+        Application has, and **every copy is supposed to be identical**. The
+        Application is therefore updated ONCE, from the single value they agree
+        on - this is a de-duplication, not a merge of distinct facts.
+
+        That framing decides how disagreement is handled: a set that does not
+        agree is duplicated data that has DRIFTED, i.e. a defect to fix at
+        source, never a signal that the Application legitimately has two teams.
+
         Verified against the 2026-08-13 export (901 issuer strings, 887 distinct
         Applications):
-          - 696 Applications resolve to exactly one Team UUID.
-          - 182 have no Team UUID on any of their issuer strings.
-          -   9 carry two DIFFERENT Team UUIDs across their issuer strings.
+          - 678 agree on one Team UUID across every issuer string.  Clean.
+          -  18 carry it on some issuer strings and leave others blank.
+                Still unambiguous, so the Application gets the right team and
+                nothing is blocked - but the blanks are reported, because under
+                the rule above they are missing copies, not absent data.
+          -   9 carry two DIFFERENT Team UUIDs.  Left blank + reported.
+          - 182 have no Team UUID anywhere.  Nothing to carry over.
 
-        Those 9 are a genuine source-data defect, not a shape this script should
-        paper over: they are single Airtable Application rows whose issuer
+        The 9 are a genuine source defect - single Application rows whose issuer
         strings belong to two different portal teams (typically a dev/test
         string owned by one team and a prod string owned by another). There is
         no defensible tie-break - "first wins" would silently pick whichever
@@ -321,7 +332,7 @@ function Get-PortalTeamByApplication {
         # Not [Parameter(Mandatory)] - these are always passed, but a Mandatory
         # collection parameter REJECTS an empty list, and both of these start
         # empty on every run. Same shape as Resolve-UrlValue's $ReviewList.
-        [System.Collections.Generic.List[object]]$ConflictList,
+        [System.Collections.Generic.List[object]]$ReviewList,
 
         [System.Collections.Generic.List[object]]$OverLengthList,
 
@@ -351,9 +362,17 @@ function Get-PortalTeamByApplication {
                 $Observations[$Key] = [System.Collections.Generic.List[object]]::new()
             }
 
+            # 2 rows in the table are entirely empty - no team AND no issuer
+            # string. Label them so a review CSV cell is never just blank with
+            # no explanation; an empty cell reads as a bug in the report.
+            $IssuerStringText = $IssuerRow.fields.'Issuer String'
+            if ([string]::IsNullOrWhiteSpace($IssuerStringText)) {
+                $IssuerStringText = "(blank row $($IssuerRow.id) - no issuer string either)"
+            }
+
             $Observations[$Key].Add([PSCustomObject]@{
                 IssuerStringRecordId = $IssuerRow.id
-                IssuerString         = $IssuerRow.fields.'Issuer String'
+                IssuerString         = $IssuerStringText
                 TeamName             = $TeamName
                 TeamUuid             = $TeamUuid
             })
@@ -373,16 +392,38 @@ function Get-PortalTeamByApplication {
         if ($DistinctUuids.Count -eq 0) { continue }   # nothing to carry over
 
         if ($DistinctUuids.Count -gt 1 -or $DistinctNames.Count -gt 1) {
-            $ConflictList.Add([PSCustomObject]@{
+            $ReviewList.Add([PSCustomObject]@{
+                Issue                 = "CONFLICT - blocks both fields"
                 AirtableApplicationId = $Key
                 IssuerStringCount     = $Seen.Count
+                BlankIssuerStrings    = @($Seen | Where-Object { -not $_.TeamUuid }).Count
                 DistinctTeamUuids     = $DistinctUuids.Count
                 TeamUuids             = ($DistinctUuids -join " | ")
                 TeamNames             = ($DistinctNames -join " | ")
                 IssuerStrings         = (@($Seen | ForEach-Object { $_.IssuerString }) -join " | ")
-                Reason                = "This Application's issuer strings belong to more than one partner-portal team, so there is no single Team UUID to migrate. Both Partner Portal Team Name and Team UUID are left BLANK for this Application. Needs a decision in Airtable: either the issuer strings are on the wrong Application, or the Application should be split per team."
+                Reason                = "The partner-portal team belongs to the Application, and Airtable duplicates it onto every one of that Application's issuer strings - so all copies should be identical. Here they are not: this Application's issuer strings name two different teams. That is drifted duplicate data, not an Application with two teams, so there is nothing to migrate and both fields are left BLANK. Fix in Airtable: decide which team is correct and make every issuer string match (or move the issuer strings that belong to the other team onto the Application they actually belong to)."
             })
             continue
+        }
+
+        # Unambiguous, so the Application still gets the right team - but under
+        # the "every copy should be identical" rule these blanks are MISSING
+        # COPIES rather than absent data, so they are reported. Deliberately
+        # non-blocking: nothing about the load changes because of them.
+        $BlankCount = @($Seen | Where-Object { -not $_.TeamUuid }).Count
+        if ($BlankCount -gt 0) {
+            $ReviewList.Add([PSCustomObject]@{
+                Issue                 = "INCOMPLETE - migrates correctly, tidy-up only"
+                AirtableApplicationId = $Key
+                IssuerStringCount     = $Seen.Count
+                BlankIssuerStrings    = $BlankCount
+                DistinctTeamUuids     = 1
+                TeamUuids             = $DistinctUuids[0]
+                TeamNames             = ($DistinctNames -join " | ")
+                IssuerStrings         = (@($Seen | Where-Object { -not $_.TeamUuid } |
+                                            ForEach-Object { $_.IssuerString }) -join " | ")
+                Reason                = "$BlankCount of this Application's $($Seen.Count) issuer strings have a blank (or '#N/A') Team Name/Team UUID while the rest agree on one team. NOT BLOCKING - the team is unambiguous, so it migrates correctly. Listed because the copies should all match: worth filling in so the table doesn't read as though this Application's team is only partly known. The issuer strings named here are the blank ones."
+            })
         }
 
         $ResolvedName = $null
@@ -529,7 +570,7 @@ $UpsertRows = [System.Collections.Generic.List[object]]::new()
 $SkippedRows = [System.Collections.Generic.List[object]]::new()
 $OverLengthRows = [System.Collections.Generic.List[object]]::new()
 $UnmappedRampUpRows = [System.Collections.Generic.List[object]]::new()
-$PortalTeamConflictRows = [System.Collections.Generic.List[object]]::new()
+$PortalTeamReviewRows = [System.Collections.Generic.List[object]]::new()
 $DroppedDemographicTagCount = 0
 $UnresolvedOpportunityCount = 0
 
@@ -559,7 +600,7 @@ if (-not $TeamNameField -or -not $TeamUuidField) {
 
 $PortalTeam = Get-PortalTeamByApplication `
     -IssuerStringRows $AirtableIssuerStrings `
-    -ConflictList $PortalTeamConflictRows `
+    -ReviewList $PortalTeamReviewRows `
     -OverLengthList $OverLengthRows `
     -MaxTeamNameLength ([int]$TeamNameField.length)
 
@@ -571,9 +612,22 @@ if ($PortalTeam.OrphanIssuerStrings -gt 0) {
     Write-Host ("$($PortalTeam.OrphanIssuerStrings) issuer string(s) link to no Application at all - " +
                 "they carry no team to anywhere and are ignored.") -ForegroundColor Yellow
 }
-if ($PortalTeamConflictRows.Count -gt 0) {
-    Write-Host ("$($PortalTeamConflictRows.Count) Application(s) have issuer strings from MORE THAN ONE " +
-                "portal team - both fields left blank, see the review CSV.") -ForegroundColor Yellow
+# The team belongs to the Application and Airtable duplicates it onto every
+# issuer string, so these two are both "the copies disagree" - they differ only
+# in whether the disagreement is resolvable. Counted apart because one blocks
+# the fields and the other changes nothing about the load.
+$PortalTeamConflictCount = @($PortalTeamReviewRows |
+    Where-Object { $_.Issue -like "CONFLICT*" }).Count
+$PortalTeamIncompleteCount = @($PortalTeamReviewRows |
+    Where-Object { $_.Issue -like "INCOMPLETE*" }).Count
+
+if ($PortalTeamConflictCount -gt 0) {
+    Write-Host ("$PortalTeamConflictCount Application(s) have issuer strings naming MORE THAN ONE " +
+                "portal team - drifted duplicates, both fields left blank. See the review CSV.") -ForegroundColor Yellow
+}
+if ($PortalTeamIncompleteCount -gt 0) {
+    Write-Host ("$PortalTeamIncompleteCount Application(s) carry the team on only SOME of their issuer " +
+                "strings - unambiguous, so they migrate correctly; listed as tidy-up only.")
 }
 
 # ---------- UNIQUE-CONSTRAINT PREFLIGHT ----------
@@ -904,7 +958,7 @@ $BrokerSkippedFile = Join-Path $LogDir "Application-broker-parent-skipped-$Times
 $SkippedFile = Join-Path $LogDir "Application-skipped-$Timestamp.csv"
 $UnmappedRampUpFile = Join-Path $LogDir "Application-unmapped-rampup-$Timestamp.csv"
 $OverLengthFile = Join-Path $LogDir "Application-overlength-$Timestamp.csv"
-$PortalTeamConflictFile = Join-Path $LogDir "Application-portal-team-conflicts-$Timestamp.csv"
+$PortalTeamReviewFile = Join-Path $LogDir "Application-portal-team-review-$Timestamp.csv"
 
 if ($UpsertRows.Count -gt 0) {
     Export-DataLoaderCsv -InputObject $UpsertRows.ToArray() -Path $UpsertFile
@@ -930,8 +984,8 @@ if ($OverLengthRows.Count -gt 0) {
     $OverLengthRows | Export-Csv -LiteralPath $OverLengthFile -NoTypeInformation -Encoding UTF8
 }
 
-if ($PortalTeamConflictRows.Count -gt 0) {
-    $PortalTeamConflictRows | Export-Csv -LiteralPath $PortalTeamConflictFile -NoTypeInformation -Encoding UTF8
+if ($PortalTeamReviewRows.Count -gt 0) {
+    $PortalTeamReviewRows | Export-Csv -LiteralPath $PortalTeamReviewFile -NoTypeInformation -Encoding UTF8
 }
 
 Write-Host ""
@@ -964,7 +1018,8 @@ else {
     Write-Host ("{0,-48} {1,8:N0}" -f "Partner Portal Team resolved", @($UpsertRows | Where-Object { $_.LDGCRM_P3_Team_UUID__c }).Count)
     Write-Host ("{0,-48} {1,8:N0}" -f "  ...Team Name blank (over length limit)", @($UpsertRows | Where-Object { $_.LDGCRM_P3_Team_UUID__c -and -not $_.LDGCRM_P3_Partner_Portal_Team_Name__c }).Count)
 }
-Write-Host ("{0,-48} {1,8:N0}" -f "Applications w/ conflicting portal teams", $PortalTeamConflictRows.Count)
+Write-Host ("{0,-48} {1,8:N0}" -f "Applications w/ conflicting portal teams", $PortalTeamConflictCount)
+Write-Host ("{0,-48} {1,8:N0}" -f "  ...team on only some issuer strings (tidy-up)", $PortalTeamIncompleteCount)
 Write-Host ""
 Write-Host ("{0,-48} {1,8:N0}" -f "Broker App Parent links (SECOND PASS file)", $BrokerParentRows.Count)
 Write-Host ("{0,-48} {1,8:N0}" -f "  ...waiting on a missing side", $BrokerSkippedRows.Count)
@@ -1004,9 +1059,9 @@ if ($OverLengthRows.Count -gt 0) {
     Write-Host $OverLengthFile
 }
 
-if ($PortalTeamConflictRows.Count -gt 0) {
-    Write-Host "Applications whose issuer strings span two portal teams (Airtable fix needed):" -ForegroundColor Yellow
-    Write-Host $PortalTeamConflictFile
+if ($PortalTeamReviewRows.Count -gt 0) {
+    Write-Host "Partner-portal team review (CONFLICT rows block the fields; INCOMPLETE rows are tidy-up):" -ForegroundColor Yellow
+    Write-Host $PortalTeamReviewFile
 }
 
 }

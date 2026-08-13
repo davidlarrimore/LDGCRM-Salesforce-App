@@ -366,11 +366,15 @@ self-referential lookup can't resolve within its own upsert batch and needs a se
 Strings** table — documented here twice as having "no Airtable source" until PR #1 pulled the table.
 The source column search that produced that wrong answer only covered the *Applications* table's own
 columns: **"not in any export" is far weaker than "not in Airtable" — check
-`GET /v0/meta/bases/{baseId}/tables` before declaring a Salesforce field sourceless.** Airtable
-records the team on each issuer string and Salesforce wants one per Application, so the value is
-collapsed upward: 696 of 887 Applications agree, 182 have no team, and **9 carry two different teams
-and are left blank + reported** rather than tie-broken. `#N/A` is a literal string in that table (273
-cells) and must be filtered.
+`GET /v0/meta/bases/{baseId}/tables` before declaring a Salesforce field sourceless.**
+**The team is a property of the APPLICATION** (user-confirmed); Airtable stores it on each issuer
+string, so it is duplicated and **every copy should be identical**. This is therefore a
+de-duplication — read the agreed value, update the Application **once** — not a merge of distinct
+facts, which is what makes disagreement a *defect* rather than a legitimate two-team Application.
+Of 887 Applications: 678 agree everywhere, **18 carry it on only some issuer strings** (unambiguous,
+so they migrate correctly — reported as tidy-up), **9 carry two different teams** (left blank +
+reported, never tie-broken), 182 have none. `#N/A` is a literal string in that table (273 cells) and
+must be filtered.
 **Both fields are `unique=true`, which is wrong for this data** — a portal team owns many
 Applications (one owns 54), so 442 of 696 would fail `DUPLICATE_VALUE`. **CHANGE SET NEEDED: set
 `Unique = false` on both** (neither is an External ID; nothing keys on them). Until then
