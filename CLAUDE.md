@@ -427,8 +427,10 @@ export to make reconciliation testing meaningful, rather than testing against ar
 data. **Treat every count below as a moving target, not a fixed baseline** — it's shifted several
 times in a single day already. Current: 1,346 Accounts (1,342 inserted from the production export +
 4 untouched pre-existing test records), 588 carry `LDGCRM_External_ID__c` after the reconciliation
-backfill, all 6 Market Segments exist (unaffected by the rebuild — Market Segment was never in
-scope), **Partner Account has 76 records** (74 loaded + 2 pre-existing test records) and
+backfill, **Market Segment is now IN the reset scope and IS loaded by the pipeline** (changed
+2026-08-14 — 5 tagged segments deleted and reloaded by `Build-MarketSegmentLoad.ps1`; the untagged
+`Test Market Segment` survives like any other untagged row), **Partner Account has 76 records**
+(74 loaded + 2 pre-existing test records) and
 **Impediment has 40** (untouched by the rebuild — deliberately preserved, not part of the Account
 chain). Airtable has 757 Account rows against 588 tagged Salesforce Accounts — **don't assume 1:1**
 — reconcile by external ID first, then by name, and treat any Airtable Account row that doesn't

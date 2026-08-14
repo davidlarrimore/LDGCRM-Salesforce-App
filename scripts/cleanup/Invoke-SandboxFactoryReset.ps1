@@ -142,11 +142,28 @@ $DefaultObjects = @(
     "Contact",
     "LDGCRM_Impediment__c",
     "LDGCRM_Partner_account__c",
-    "Account"
-    # Market Segment is deliberately excluded: all 6 records are correct, three
-    # before-save Flows depend on them, and nothing in the migration recreates
-    # them. A "factory reset" that removed them would need a manual rebuild.
-    #"LDGCRM_Market_Segment__c"
+    "Account",
+    # LAST, and it has to be last. Account, Opportunity, LDGCRM_application__c and
+    # LDGCRM_Partner_Account__c all carry a lookup TO Market Segment, so it is the
+    # parent - children go first.
+    #
+    # Included as of 2026-08-14. It used to be excluded on the grounds that
+    # "nothing in the migration recreates them", which was true and was itself the
+    # bug: Market Segment was the one object the pipeline required but refused to
+    # load. Build-MarketSegmentLoad.ps1 is now step 1 of the load, so a reset that
+    # left the segments behind would no longer be returning the org to a baseline.
+    #
+    # ⚠️ ALL FOUR REFERENCING LOOKUPS ARE SetNull, NOT Restrict. Deleting a
+    # segment does not fail - it silently blanks the lookup on anything still
+    # pointing at it. Tagged records are being deleted anyway, so the only
+    # lasting casualties are UNTAGGED records pointing at a TAGGED segment.
+    # Measured end-to-end in Dev on 2026-08-14 (delete, then reload both steps):
+    # Accounts holding a segment went 586 -> 585. One untagged Account lost its
+    # segment permanently, because reconciliation only re-touches Accounts that
+    # match an Airtable row. Small, but it does not come back - so a reset is not
+    # perfectly reversible for untagged records, which is true of the Account
+    # pre-image too.
+    "LDGCRM_Market_Segment__c"
 )
 
 $Objects = if ($ObjectsCsv) { $ObjectsCsv -split "," | ForEach-Object { $_.Trim() } } else { $DefaultObjects }

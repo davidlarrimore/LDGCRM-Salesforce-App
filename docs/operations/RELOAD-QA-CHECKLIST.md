@@ -415,7 +415,7 @@ Parents before children. Per object: run the transform, read its review CSVs, lo
 move on. **Do not batch these** — an error early silently withholds rows from everything later.
 
 ```
-Market Segment (already loaded - do not touch)
+Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
   -> Account (prod seed INSERT, then reconciliation UPDATE)
   -> LDGCRM_Partner_Account__c
   -> Contact                       ⚠️ requires -DisableTriggerControl
@@ -491,6 +491,13 @@ Market Segment (already loaded - do not touch)
       Operations hand-off.
 - [ ] ⚠️ **Verify `LDGCRM_Partner_Account_Owner__c` holds ACTIVE users only** — it now feeds
       Application's `OwnerId`, so a stale inactive owner propagates downstream.
+- [ ] **Market Segment loaded and resolvable.** It is now deleted by the reset and reloaded as step 1:
+      ```
+      sf data query -q "SELECT COUNT() FROM LDGCRM_Market_Segment__c WHERE LDGCRM_External_ID__c != null" --target-org <alias>
+      ```
+      Expect **5**. A count of 0 means every downstream record will carry a blank Market Segment and
+      **nothing will error** — the reconciliation resolves a segment through its external ID, not its
+      Name. Pre-flight reports this as "N present, M resolvable"; only M matters.
 - [ ] Spot-check the Market Segment before-save Flow fired (matches the parent Account's segment).
 
 ### 4c. Contact — ⚠️ the one load that disables another app's trigger
