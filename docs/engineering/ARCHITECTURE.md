@@ -466,7 +466,7 @@ Airtable pull of 2026-08-12.
 | `Build-OpportunityContactRoleLoad.ps1` | Prep — OpportunityContactRole. **The one object that cannot be upserted** | Built and **loaded 2026-08-13: 515 rows**. The previously-documented `externalId=true` fix is **impossible** — Salesforce forbids External ID fields on this object entirely — so it uses an INSERT + read-then-diff for idempotency instead. Extended the `ContactRole` StandardValueSet with 2 new Role values. 83 rows skipped pending an unresolved Opportunity/Contact. |
 | `Build-MeetingLoad.ps1` | Prep — Activity/Event | **Not built, and the approach changed 2026-08-13.** Airtable holds a date but no time, and synthesizing one fabricates scheduling history. Instead: stand up **Einstein Activity Capture**, let real calendar events sync, and fuzzy-match Airtable's meetings onto them (date + organizer + attendee overlap + subject), enriching the real event rather than inventing one. Depends on org configuration outside this repo and an unresolved spike — see `BACKLOG.md` §2. |
 | `Invoke-SalesforceLoad.ps1` | Load — generic `sf data upsert bulk`/`sf data update bulk` wrapper, any object | Built. Classifies each row failure against that object's `-ExpectedFailurePatterns` and exits **2** for an expected partial. **`-StepResultPath` (added 2026-08-13)** additionally writes that classification, the counts and the job id as JSON, because it runs as a child process and an exit code carries three states — which is why the orchestrator's summary could say "PARTIAL" but never how many or why. Written in a `finally`, so a step that throws still reports. |
-| `Invoke-FullMigrationLoad.ps1` | Load — the orchestrator. Runs every transform and load in dependency order as one operation | Built. Pre-flight → restore point → sequence → post-load validation → **run report**. `-PlanOnly` runs every transform and loads nothing (read-only, doubles as the readiness check); `-StartAtStep`/`-OnlySteps` resume. Stops at the first real failure, because everything downstream would silently withhold rows. |
+| `Invoke-FullMigrationLoad.ps1` | Load — the orchestrator. Runs every transform and load in dependency order as one operation | Built. Pre-flight → restore point → sequence → post-load validation → **run report**. `-PlanOnly` runs every transform and loads nothing (read-only, doubles as the readiness check); `-StartAtStep`/`-OnlySteps` resume. Stops at the first real failure, because everything downstream would silently withhold rows. **Pre-flight asserts the nine LDGCRM Flows are ACTIVE (added 2026-08-14) and blocks if not** — see below. `-ActivateFlows` switches on whatever is off (sandbox only, rejected for `Prod`). |
 | `Common.LoadReport.ps1` | Load — builds the per-run report (`SUMMARY.txt` + `load-summary.csv`/`errors.csv`/`findings.csv`) | Built 2026-08-13. See "Reading a run" below. |
 | `Build-NotesLoad.ps1` | Notes — prep `ContentNote`/`ContentDocumentLink` for freeform columns, last chunk | Built 2026-08-13. ~537 notes ready; ~59 placeholder values (`None`/`N/A`) skipped, ~200 waiting on a parent the Account data-quality issue withheld. Diffs against what is already attached, which is what makes a re-run safe. |
 | `Invoke-NotesLoad.ps1` | Notes — load. **The one chunk with its own loader**, not `Invoke-SalesforceLoad.ps1` | Built 2026-08-13. Attaching a note is three steps against two objects (insert `ContentNote` → read back each `ContentDocumentId` → insert `ContentDocumentLink`), and `ContentNote` has no external ID, so created note Ids are written to disk before anything else is attempted. Has an access preflight for the org's unmanaged `ContentDocumentLinkTrigger`, whose kill switch is inert. |
@@ -653,6 +653,82 @@ failure too, before the non-zero exit.
 Conversely `Write-LoadRunReport` is called inside a `try`, and a failure there degrades to a thinner
 report and a warning. Reporting must never be able to change the outcome of a load, and post-load
 validation — not this — remains the thing that decides whether a run passed.
+
+## ⚠️ Pre-flight: the nine Flows must be ACTIVE (added 2026-08-14)
+
+`Invoke-PreflightChecks` (in `Invoke-FullMigrationLoad.ps1`) asserts that all nine LDGCRM Flows exist
+and are active in the target org, and **blocks the run** if not. It is the last check added and the
+most consequential.
+
+### The run that caused it
+
+QA was loaded on 2026-08-14: **8,740 records, zero unexpected failures**, with every LDGCRM Flow in
+that org inactive. Nothing failed. Nothing was withheld. Every object count matched Dev, so the
+Dev-vs-QA comparison in `RELOAD-QA-CHECKLIST.md` passed as well.
+
+What was actually wrong: three before-save Flows derive `LDGCRM_Market_Segment__c` from the parent
+Account, so it was blank on all 92 Partner Accounts, all 842 Opportunities and all 1,026
+Applications — 100% of the migrated records on those objects, with the parent chain fully resolvable
+in every case.
+
+**Flow activation changes field contents, not row counts.** That is what made it invisible: there is
+no count anywhere in this pipeline that would have moved. The tell was that Account — the one object
+in the chain whose Market Segment the pipeline writes *directly*, in `Build-AccountReconciliation.ps1`
+— was 587/587 populated, while all three flow-driven objects were 0%. The field was correct exactly
+where a script wrote it and empty exactly where a Flow was supposed to.
+
+### The three checks
+
+| Check | Blocks on |
+| --- | --- |
+| Expected flows present and active | any of the nine absent, or present and switched off |
+| **Dev-only flows absent** | `LDGCRM_Screen_Flow_Developer_Data_Delete_Flow` found in QA/Full/Prod |
+| Active version behind latest **in the same org** | a newer version deployed but never switched on |
+
+The second is deliberately an *inversion* — that screen flow bulk-deletes migrated records, and its
+absence outside Dev is the expected state, so finding it is a failure rather than a suppressed note.
+Before this check, the only thing keeping it out of a non-Dev org was someone hand-picking change set
+contents.
+
+### ⚠️ Flow version numbers are PER-ORG and are not comparable across orgs
+
+A Flow's `VersionNumber` is a local counter: every save in the source org increments that org's
+sequence, and every change set deployment increments the target's independently. Dev on v4 while QA
+is on v2 is the ordinary result of four saves there and two deployments here — **not** evidence that
+QA is behind. An earlier version of this check asserted otherwise and was wrong (corrected by the
+project owner, 2026-08-14).
+
+The only meaningful comparison is **within one org**: active version vs latest version. That is what
+the stale check uses, and it is the one form of drift visible from inside a single org. Whether the
+active version carries the *intended logic* is a change-set question the bundle cannot answer — it
+has no access to `sfdx/`.
+
+### What it may and may not fix
+
+`-ActivateFlows` switches on whatever is off. This is allowed because it flips an **org setting**
+(`FlowDefinition.Metadata.activeVersionNumber`) pointing at a version already in the org — it moves
+no XML and creates no component, so it stays on the right side of the change-set rule. Per the
+project owner (2026-08-14): *"There is a difference between changing settings in the org via CLI and
+adding/updating core object definitions. We want change sets to migrate all xml, but allow for our
+pre-flight script to prep and validate the environment for a successful load."*
+
+It is **sandbox only** — rejected for `-Environment Prod`, the same structural block
+`-BootstrapAccounts` uses. Pre-flight still reports on Prod, because that report is read-only and is
+exactly what you want before a production load.
+
+Two properties that differ from the other switch this pipeline flips:
+
+- **Nothing is restored.** `Invoke-SalesforceLoad.ps1`'s `TriggerControls__c` bypass captures, flips
+  and restores in a `finally`. This does not, on purpose: a Flow that had to be on for the load to be
+  correct must stay on, or the org resumes producing wrong data for every record created in the UI.
+- **It cannot create a Flow.** ABSENT, or present with no versions, needs a change set. The pipeline
+  says so precisely and stops.
+
+Implemented by `Get-LdgcrmFlowState` / `Set-LdgcrmFlowActiveVersion`, which PATCH the Tooling API over
+`sf api request rest` — `Metadata` is a compound field, so `sf data update record --values` cannot
+express it. A successful PATCH returns **204 No Content**, so an empty response is the success case
+here, the opposite of every other call in this repo. The write is followed by a verifying re-query,
+the same principle as the `TriggerControls__c` restore.
 
 ## Running what's built so far
 

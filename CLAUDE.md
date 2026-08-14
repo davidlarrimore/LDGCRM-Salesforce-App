@@ -80,6 +80,17 @@ population), Contact 1,871 vs 1,870 (**the org duplicate rule fires on 10 rows h
 the only behavioural difference found between the orgs), and 2 extra junction rows following from
 that extra Contact. **Counts in this file are Dev's unless it says otherwise.**
 
+**⚠️ THAT QA LOAD WAS NOT ACTUALLY CLEAN, and the counts above are exactly why it looked like it
+was.** Discovered 2026-08-14: **all nine LDGCRM Flows were inactive in QA for the whole run.** Every
+figure in the paragraph above is still accurate — that is the point. Rows loaded, nothing failed,
+nothing was withheld, and the object counts matched Dev, because flow activation changes field
+*contents*, not row counts. Market Segment came out blank on all 92 Partner Accounts, all 842
+Opportunities and all 1,026 Applications. **Do not cite that run as a successful rehearsal.** The
+flows were activated on 2026-08-14 (9 of 9 now active), but activating them does **not** backfill the
+existing records — all three Market Segment flows fire on create or on parent change, and the
+pipeline upserts, so a re-run is an update that will not re-trigger them. **QA needs a factory reset
+and a full reload before it is a valid rehearsal again.**
+
 ## ⚠️ Metadata promotion is by CHANGE SET only
 
 **Do not promote metadata between orgs with `sf project deploy`.** Outbound/inbound change sets are
@@ -214,6 +225,21 @@ objects carrying custom fields: Account, Contact, Opportunity, `OpportunityConta
   `WhatId` field — there's no separate custom Account lookup. A meeting tied to a specific Opportunity
   gets `WhatId` = that Opportunity (its Account is reachable via `Opportunity.AccountId`); a meeting
   tied only to an Account (no Opportunity) gets `WhatId` = that Account directly.
+
+**⚠️ These Flows must be ACTIVE in the target org, and being inactive is INVISIBLE to every count
+this pipeline produces.** QA was loaded 2026-08-14 with 8,740 records and 0 unexpected failures while
+all nine were switched off — nothing failed, nothing was withheld, every object count matched Dev,
+and Market Segment was blank on 100% of Partner Accounts, Opportunities and Applications. Flow
+activation changes field *contents*, not row counts. `Invoke-FullMigrationLoad.ps1`'s pre-flight now
+asserts all nine are active and **blocks the run**; `-ActivateFlows` switches on whatever is off
+(sandbox only — rejected for `Prod`). It cannot *create* a Flow: absent means change set. See
+`docs/engineering/ARCHITECTURE.md`, "Pre-flight: the nine Flows must be ACTIVE".
+
+**A Flow's version number is a PER-ORG counter and means nothing across orgs** — every save in the
+source org increments that org's sequence, every change set deployment increments the target's
+independently, so Dev on v4 while QA is on v2 is normal and is *not* drift. Only active-vs-latest
+**within one org** is a meaningful comparison (a version deployed but never switched on). Also note
+flows can arrive via change set **inactive** — all nine landed in QA as Draft.
 
 Nine record-triggered **Flows** (`force-app/main/default/flows/`) implement the automation layer:
 duplicate-record checks on the two junction objects, Partner Account re-parent cascades, and

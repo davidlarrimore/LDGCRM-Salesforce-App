@@ -183,6 +183,25 @@ records but sacrifices the non-revert property on re-runs. That is a real tradeo
 - [ ] **Confirm the target environment**, and let the script's own banner prove it. Every script
       prints a `TARGET:` banner and validates the alias against the registry before doing anything;
       production prints in red with an explicit warning.
+- [ ] ⚠️ **Confirm all nine LDGCRM Flows are ACTIVE in the target org.** The orchestrator now checks
+      this and blocks the run — look for `LDGCRM Flows  9 of 9 active and current` in the pre-flight
+      output. **Do not wave this through.** QA was loaded on 2026-08-14 with 8,740 records and zero
+      unexpected failures while all nine were inactive: nothing failed, nothing was withheld, and
+      every object count matched Dev. Market Segment was blank on all 92 Partner Accounts, all 842
+      Opportunities and all 1,026 Applications, because the three before-save Flows that derive it
+      never ran. Flow activation changes field *contents*, not row counts, so the Dev-vs-QA count
+      comparison in this checklist passed too.
+
+      If any are off, either switch them on in Setup or re-run with `-ActivateFlows` (sandbox only —
+      rejected for `-Environment Prod`). If any are **absent**, that needs a change set; the pipeline
+      does not deploy metadata.
+
+      **A newly refreshed or newly provisioned sandbox is the likely case for this**, so treat it as
+      mandatory rather than a formality. Flows arriving via change set are not necessarily active on
+      arrival — all nine landed in QA as Draft.
+- [ ] **Confirm `LDGCRM_Screen_Flow_Developer_Data_Delete_Flow` is NOT in the target org.** It
+      bulk-deletes migrated records and is Dev-only. Pre-flight fails if it is found in QA/Full/Prod.
+      If it fires, find out how it got there — do not just deactivate it.
 - [ ] **Confirm Rahul is not running a Data Loader GUI load.** Standing rule — two load processes
       against the same org can race or double-load.
 - [ ] **Confirm the authenticated user is the intended fallback owner** (see D3). This is silent —

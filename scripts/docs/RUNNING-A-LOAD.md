@@ -68,6 +68,57 @@ occasionally exactly what you want.
 
 Treat a `-PlanOnly` run as the readiness check. If it is clean, the load usually is too.
 
+### Pre-flight, and the nine Flows
+
+Before any step runs, the orchestrator checks the things that go wrong **silently** — a stale
+Airtable export, Market Segments with no external ID, an unresolvable fallback owner, a missing
+Contact trigger switch, and **whether the app's nine Flows are switched on in the target org**.
+
+That last one is the reason pre-flight is worth reading rather than skipping. On 2026-08-14 a QA load
+reported **8,740 records and zero unexpected failures** while every LDGCRM Flow in that org was
+inactive. Nothing failed. Nothing was withheld. The object counts matched Dev exactly. What was
+actually wrong: three before-save Flows derive `LDGCRM_Market_Segment__c` from the parent Account, so
+Market Segment came out blank on all 92 Partner Accounts, all 842 Opportunities and all 1,026
+Applications. **Flow activation changes field contents, not row counts** — so no count, anywhere,
+would have caught it.
+
+Pre-flight prints one line per category:
+
+```
+  LDGCRM Flows           9 of 9 active and current
+```
+
+Anything less than 9 of 9 **blocks the run**. If the flows are present in the org but switched off,
+you can turn them on as part of the load:
+
+```powershell
+# Check what is off, change nothing
+.\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment QA -PlanOnly
+
+# Switch on whatever is off, then load
+.\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment QA -ActivateFlows -Confirmation "LOAD"
+```
+
+`-ActivateFlows` is **sandbox only** — it is rejected for `-Environment Prod`, the same structural
+block `-BootstrapAccounts` uses. Activating a Flow in production is a change-controlled action for a
+human in Setup. Pre-flight still *reports* on Prod; it just will not change anything there.
+
+Three things to know before using it:
+
+- **It is permanent.** Unlike the Contact trigger bypass, nothing is restored afterwards. That is
+  deliberate: a Flow that had to be on for the load to be correct must stay on, or the org goes back
+  to producing wrong data for every record anyone creates in the UI.
+- **It cannot create a Flow.** If pre-flight says a Flow is ABSENT, or present with no versions, that
+  needs a **change set** — the pipeline does not deploy metadata. Hand the list to whoever builds it.
+- **Turning the Flows on does not fix records that are already loaded.** All three Market Segment
+  Flows fire on create (or when the parent lookup changes), and the pipeline upserts — so re-running
+  a load is an *update* and will not re-trigger them. Records loaded while the Flows were off need a
+  factory reset and a full reload. See [Preparing a sandbox from scratch](#preparing-a-sandbox-from-scratch).
+
+There is one inverted check worth knowing about: `LDGCRM_Screen_Flow_Developer_Data_Delete_Flow`
+bulk-deletes migrated records and is **Dev-only**. Pre-flight fails if it is found in QA, Full or
+Prod. If that fires, find out how it got there — do not just deactivate it.
+
 ### The steps, in order
 
 | # | Step | Object | Why here |

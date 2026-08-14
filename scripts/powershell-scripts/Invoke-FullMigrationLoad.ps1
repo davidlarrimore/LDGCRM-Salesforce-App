@@ -84,7 +84,25 @@ param(
     # Keep going after a failed step. OFF by default: everything downstream of a
     # failure withholds rows that depend on it, so continuing usually produces a
     # quietly incomplete migration rather than an obvious error.
-    [switch]$ContinueOnError
+    [switch]$ContinueOnError,
+
+    <#
+        Switch on any of the nine LDGCRM Flows that pre-flight finds inactive,
+        then carry on. Without it an inactive flow simply BLOCKS the run.
+
+        This flips an org SETTING (FlowDefinition's active version pointer) at a
+        flow version already present in the org. It deploys nothing and creates
+        nothing - see Set-LdgcrmFlowActiveVersion for why that keeps it on the
+        right side of the change-set rule.
+
+        Sandbox only, like -BootstrapAccounts: activating a Flow in production is
+        a change-controlled action for a human in Setup, not something a load
+        pipeline does unattended. Rejected below for -Environment Prod.
+
+        NOT RESTORED AFTERWARDS, unlike the TriggerControls__c bypass. A flow
+        that had to be on for the load to be correct must stay on.
+    #>
+    [switch]$ActivateFlows
 )
 
 $ErrorActionPreference = "Stop"
@@ -207,22 +225,214 @@ $Steps = @(
     }
 )
 
+<#
+    THE NINE FLOWS THAT MUST BE ACTIVE FOR A LOAD TO BE CORRECT.
+
+    Hard-coded here, next to $Steps, for the same reason $Steps is: it is
+    per-run policy that wants reviewing in one place. The obvious alternative -
+    reading sfdx/force-app/main/default/flows/ - is not available to the bundle,
+    which ships to Operations as a bare /scripts folder with no sfdx/ above it.
+    Same pattern as $DefaultTables in Get-AirtableExport.ps1.
+
+    Note LGDCRM_ on three of them. The transposed prefix is a real API-name typo
+    in the org, not a mistake in this list.
+#>
+$ExpectedActiveFlows = @(
+    "LDGCRM_ApplicationContact_BeforeSave_NewRecordDuplicateCheck"
+    "LDGCRM_Application_Before_Save_Assign_Market_Segment"
+    "LDGCRM_Opportunity_Before_Save_Assign_Account_and_Market_Segment"
+    "LDGCRM_Opportunity_Impediment_Before_Save_New_Record_Duplicate_Check"
+    "LDGCRM_Partner_Account_After_Save_Update_Re_Parent_Cascade"
+    "LDGCRM_Partner_Account_Before_Save_Create_Update_Market_Segment"
+    "LGDCRM_Opportunity_After_Save_Update_Opportunity_Impediments"
+    "LGDCRM_Opportunity_Before_Save_Update_Current_Status_Summary_DateTime"
+    "LGDCRM_Opportunity_Impediment_Before_Save_Update_Blocked_Revenue"
+)
+
+<#
+    THE INVERSE CHECK: these must NOT exist outside Dev.
+
+    LDGCRM_Screen_Flow_Developer_Data_Delete_Flow bulk-deletes Account, Partner
+    Account, Application, Application Contact, Market Segment, Opportunity and
+    Opportunity Impediment records. It is a developer convenience that stays
+    Active in Dev, and was removed from sfdx/manifest/package.xml and force-app
+    on 2026-08-14 so it cannot be swept into a change set regenerated from the
+    manifest.
+
+    Asserting its ABSENCE rather than ignoring it is the point: finding it in
+    QA/Full/Prod means something carried it there and wants investigating.
+#>
+$DevOnlyFlows = @(
+    "LDGCRM_Screen_Flow_Developer_Data_Delete_Flow"
+)
+
 function Get-StepProperty {
     param($Step, [string]$Key, $Default = "")
     if ($Step.Contains($Key) -and $Step[$Key]) { return $Step[$Key] }
     return $Default
 }
 
+function Invoke-LdgcrmToolingQuery {
+    <#
+        SOQL against the Tooling API. Invoke-SalesforceQuery
+        (Common.DataMigration.ps1) does not pass --use-tooling-api, and
+        FlowDefinition/Flow exist only there.
+
+        CALLER CONTRACT: wrap the call in @(), same as Invoke-SalesforceQuery.
+    #>
+    param([string]$Soql, [string]$Org, [string]$Version)
+
+    # NEVER redirect stderr here (no 2>&1). PS 5.1 turns the CLI's
+    # "update available" banner into a NativeCommandError that kills the script
+    # and blames this line. See CLAUDE.md's PowerShell traps.
+    $Raw = & sf data query --target-org $Org --api-version $Version --query $Soql --use-tooling-api --json
+    if ($LASTEXITCODE -ne 0) { throw "Tooling query failed (exit $LASTEXITCODE): $Soql" }
+
+    $Parsed = $Raw | ConvertFrom-Json
+    if ($Parsed.status -ne 0) {
+        $Message = $Parsed.message
+        if ([string]::IsNullOrWhiteSpace($Message)) { $Message = "Unknown Salesforce CLI error." }
+        throw $Message
+    }
+    if ($null -eq $Parsed.result.records) { return @() }
+
+    # Same silent-truncation guard as Invoke-SalesforceQuery. Here a truncated
+    # page would report a flow as ABSENT when it merely fell off the end.
+    $Returned = @($Parsed.result.records).Count
+    $Total = [int]$Parsed.result.totalSize
+    if ($Returned -lt $Total) { throw "Tooling query returned $Returned of $Total records (truncated). SOQL: $Soql" }
+
+    # ASSIGN, THEN RETURN - piping ConvertFrom-Json straight out of a function
+    # collapses a JSON array into one pipeline item in PS 5.1, so the caller's
+    # @() measures Count = 1. This broke the Notes load on 2026-08-13.
+    $Records = $Parsed.result.records
+    return $Records
+}
+
+function Get-LdgcrmFlowState {
+    <#
+        One row per LDGCRM/LGDCRM FlowDefinition in the org, carrying active and
+        latest version NUMBERS. FlowDefinition stores version Ids, which are
+        useless in a report.
+
+        ON VERSION NUMBERS: a flow's VersionNumber is a PER-ORG counter. Every
+        save in the source org increments that org's sequence; every change set
+        deployment increments the target's independently. Dev on v4 while QA is
+        on v2 is the ordinary result of four saves there and two deployments
+        here - it does NOT mean QA is behind, and the numbers are not comparable
+        across orgs. Only ActiveVersion vs LatestVersion WITHIN one org means
+        anything, and that is exactly what the stale check below uses.
+
+        CALLER CONTRACT: wrap the call in @().
+    #>
+    param([string]$Org, [string]$Version)
+
+    $Definitions = @(Invoke-LdgcrmToolingQuery -Org $Org -Version $Version -Soql (
+        "SELECT Id, DeveloperName, ActiveVersionId, LatestVersionId FROM FlowDefinition " +
+        "WHERE DeveloperName LIKE 'LDGCRM%' OR DeveloperName LIKE 'LGDCRM%'"))
+
+    $Versions = @(Invoke-LdgcrmToolingQuery -Org $Org -Version $Version -Soql (
+        "SELECT Id, VersionNumber FROM Flow " +
+        "WHERE Definition.DeveloperName LIKE 'LDGCRM%' OR Definition.DeveloperName LIKE 'LGDCRM%'"))
+
+    $NumberById = @{}
+    foreach ($V in $Versions) { $NumberById[$V.Id] = [int]$V.VersionNumber }
+
+    $Rows = New-Object System.Collections.Generic.List[object]
+    foreach ($D in $Definitions) {
+        $ActiveNumber = $null
+        $LatestNumber = $null
+        if ($D.ActiveVersionId -and $NumberById.ContainsKey($D.ActiveVersionId)) { $ActiveNumber = $NumberById[$D.ActiveVersionId] }
+        if ($D.LatestVersionId -and $NumberById.ContainsKey($D.LatestVersionId)) { $LatestNumber = $NumberById[$D.LatestVersionId] }
+
+        $Rows.Add([PSCustomObject]@{
+            DefinitionId  = $D.Id
+            DeveloperName = $D.DeveloperName
+            IsActive      = [bool]$D.ActiveVersionId
+            ActiveVersion = $ActiveNumber
+            LatestVersion = $LatestNumber
+        })
+    }
+
+    # Plain array + caller wraps in @() -> return bare. A `return ,$Rows` here
+    # would nest it one level down. See the Common.ps1 convention note.
+    return $Rows.ToArray()
+}
+
+function Set-LdgcrmFlowActiveVersion {
+    <#
+        Activates one flow by PATCHing FlowDefinition.Metadata.activeVersionNumber
+        over the Tooling REST API. Returns "" on success, an error string on
+        failure.
+
+        THIS IS A SETTING, NOT A METADATA DEPLOY. It points an org at a flow
+        version ALREADY IN that org. It moves no XML between orgs and creates no
+        component, which is what keeps it on the right side of CLAUDE.md's
+        "METADATA IS NOT THE OPERATIONS TEAM'S JOB" rule (project owner,
+        2026-08-14: "There is a difference between changing settings in the org
+        via CLI and adding/updating core object definitions").
+
+        WHY REST AND NOT `sf data update record`: Metadata is a compound field
+        and --values cannot express a nested object.
+
+        WHY `sf api request rest` DESPITE ITS BETA WARNING: it is already the
+        transport for the Notes load (Invoke-NotesLoad.ps1), so this adds no new
+        dependency. Its warnings share a stream with the response body, hence
+        the JSON-line scan below.
+
+        A SUCCESSFUL PATCH RETURNS 204 NO CONTENT - an empty response is the
+        success case, the opposite of every other call in this repo. Only a JSON
+        body carrying an errorCode means failure.
+    #>
+    param([string]$DefinitionId, [int]$VersionNumber, [string]$Org, [string]$Version, [string]$BodyDirectory)
+
+    $Body = [PSCustomObject]@{ Metadata = [PSCustomObject]@{ activeVersionNumber = $VersionNumber } } | ConvertTo-Json -Depth 5
+
+    # UTF-8 NO BOM. A BOM in front of the first brace makes the body invalid
+    # JSON, the same way it breaks a Bulk API CSV (see Export-DataLoaderCsv).
+    $BodyFile = Join-Path $BodyDirectory "activate-$DefinitionId.json"
+    [System.IO.File]::WriteAllText($BodyFile, $Body, (New-Object System.Text.UTF8Encoding $false))
+
+    $Path = "/services/data/v$Version/tooling/sobjects/FlowDefinition/$DefinitionId"
+    $Output = & sf api request rest $Path --method PATCH --body "@$BodyFile" --target-org $Org
+
+    $Lines = @($Output | ForEach-Object { "$_" })
+    $JsonStart = -1
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $Trimmed = $Lines[$i].TrimStart()
+        if ($Trimmed.StartsWith("[") -or $Trimmed.StartsWith("{")) { $JsonStart = $i; break }
+    }
+
+    if ($JsonStart -ge 0) {
+        $Payload = ($Lines[$JsonStart..($Lines.Count - 1)] -join "`n")
+        $Parsed = $null
+        try { $Parsed = $Payload | ConvertFrom-Json } catch { $Parsed = $null }
+        foreach ($Item in @($Parsed)) {
+            if ($Item -and $Item.errorCode) { return "$($Item.errorCode): $($Item.message)" }
+        }
+    }
+
+    if ($LASTEXITCODE -ne 0) { return "Salesforce CLI exited $LASTEXITCODE. Raw output: $($Lines -join ' ')" }
+    return ""
+}
+
 function Invoke-PreflightChecks {
     <#
         Everything that should stop a run BEFORE the first row is written.
 
-        Each check is cheap and read-only. They exist because every one of them
-        has actually gone wrong at least once in this migration, and all of them
-        fail SILENTLY at load time rather than loudly: a stale Airtable export
-        migrates yesterday's data, a missing Market Segment leaves the
-        before-save Flows with nothing to assign, an unresolvable fallback owner
-        aborts halfway through the sequence rather than at the start.
+        Each check exists because it has actually gone wrong at least once in
+        this migration, and every one of them fails SILENTLY at load time rather
+        than loudly: a stale Airtable export migrates yesterday's data, a missing
+        Market Segment leaves the before-save Flows with nothing to assign,
+        deactivated Flows leave every derived field empty on a load that reports
+        complete success, an unresolvable fallback owner aborts halfway through
+        the sequence rather than at the start.
+
+        All checks are read-only EXCEPT flow activation, which happens only when
+        the caller passes -ActivateFlows. That is the one thing pre-flight is
+        allowed to fix rather than just report - it is an org setting, not
+        metadata. Everything else it can only diagnose; a missing flow or field
+        needs a change set and someone else's hands.
 
         Returns a hashtable of findings; the caller decides whether to stop.
     #>
@@ -311,6 +521,135 @@ function Invoke-PreflightChecks {
     #    been missed once.
     Write-Host "  Note related lists     not checkable via API - confirm RelatedContentNoteList" -ForegroundColor DarkGray
     Write-Host "                         is on the Partner Account and Application layouts" -ForegroundColor DarkGray
+
+    <#
+        6. THE NINE FLOWS ARE ACTIVE. The most consequential check here, and the
+        last one added (2026-08-14).
+
+        QA was loaded with 8,740 records and "0 unexpected failures" while every
+        LDGCRM Flow in the org was switched off. Nothing failed. Nothing was
+        withheld. Object counts matched Dev exactly, so even the Dev-vs-QA
+        comparison passed - flow activation changes field CONTENTS, not row
+        counts. The visible damage was Market Segment blank on all 92 Partner
+        Accounts, all 842 Opportunities and all 1,026 Applications, because the
+        three before-save Flows that derive it never ran.
+
+        That is the failure this guards: not a load that breaks, but a load that
+        SUCCEEDS against an org whose automation is off.
+
+        Blocking, not a warning. A warning here is indistinguishable from the
+        run that caused this check to exist.
+    #>
+    $FlowState = @(Get-LdgcrmFlowState -Org $Org -Version $Version)
+    $StateByName = @{}
+    foreach ($F in $FlowState) { $StateByName[$F.DeveloperName] = $F }
+
+    $FlowsMissing  = New-Object System.Collections.Generic.List[object]
+    $FlowsInactive = New-Object System.Collections.Generic.List[object]
+    $FlowsStale    = New-Object System.Collections.Generic.List[object]
+    $FlowsOk       = New-Object System.Collections.Generic.List[object]
+
+    foreach ($Name in $ExpectedActiveFlows) {
+        if (-not $StateByName.ContainsKey($Name)) { $FlowsMissing.Add([PSCustomObject]@{ DeveloperName = $Name }); continue }
+        $F = $StateByName[$Name]
+        if (-not $F.IsActive) { $FlowsInactive.Add($F); continue }
+
+        # STALE = a newer version sits in THIS org, deployed but never switched
+        # on. Comparing one org's active against its own latest is the only
+        # version comparison that means anything (see Get-LdgcrmFlowState).
+        if ($null -ne $F.LatestVersion -and $null -ne $F.ActiveVersion -and $F.LatestVersion -gt $F.ActiveVersion) {
+            $FlowsStale.Add($F); continue
+        }
+        $FlowsOk.Add($F)
+    }
+
+    $FlowsTrespassing = New-Object System.Collections.Generic.List[object]
+    if ($Env -ne "Dev") {
+        foreach ($Name in $DevOnlyFlows) {
+            if ($StateByName.ContainsKey($Name)) { $FlowsTrespassing.Add($StateByName[$Name]) }
+        }
+    }
+
+    Write-Host ("  LDGCRM Flows           {0} of {1} active and current" -f $FlowsOk.Count, $ExpectedActiveFlows.Count)
+
+    # --- prep, where the operator asked for it ------------------------------
+    $Activatable = New-Object System.Collections.Generic.List[object]
+    foreach ($F in $FlowsInactive) { if ($null -ne $F.LatestVersion) { $Activatable.Add($F) } }
+    foreach ($F in $FlowsStale)    { $Activatable.Add($F) }
+
+    if ($ActivateFlows -and $Activatable.Count -gt 0) {
+        Write-Host ""
+        Write-Host "  -ActivateFlows: switching on $($Activatable.Count) flow(s) in $Org." -ForegroundColor Yellow
+        Write-Host "  THIS IS PERMANENT. Unlike the TriggerControls__c bypass nothing is restored" -ForegroundColor Yellow
+        Write-Host "  afterwards - a flow switched on for the load must stay on, or the org goes" -ForegroundColor Yellow
+        Write-Host "  back to producing wrong data for every record created in the UI." -ForegroundColor Yellow
+        Write-Host ""
+
+        foreach ($F in $Activatable) {
+            Write-Host ("    {0} -> v{1} ..." -f $F.DeveloperName, $F.LatestVersion) -NoNewline
+
+            # NOT $Error - that is a PowerShell automatic variable holding the
+            # session's error history; assigning to it breaks error reporting
+            # for the rest of the run.
+            $ActivationError = Set-LdgcrmFlowActiveVersion `
+                -DefinitionId $F.DefinitionId -VersionNumber ([int]$F.LatestVersion) `
+                -Org $Org -Version $Version -BodyDirectory (Get-LogDirectory -Category "data-migration")
+
+            if ($ActivationError) {
+                Write-Host " FAILED" -ForegroundColor Red
+                $Findings.Blocking += "Could not activate $($F.DeveloperName): $ActivationError"
+            }
+            else { Write-Host " done" -ForegroundColor Green }
+        }
+
+        # VERIFYING RE-QUERY, the same principle as the TriggerControls__c
+        # restore in Invoke-SalesforceLoad.ps1: a PATCH returning 204 is not
+        # proof the org agrees. Re-read rather than trust the write.
+        Write-Host ""
+        Write-Host "  re-reading flow state to verify..." -ForegroundColor DarkGray
+
+        $FlowState = @(Get-LdgcrmFlowState -Org $Org -Version $Version)
+        $StateByName = @{}
+        foreach ($F in $FlowState) { $StateByName[$F.DeveloperName] = $F }
+
+        $FlowsMissing  = New-Object System.Collections.Generic.List[object]
+        $FlowsInactive = New-Object System.Collections.Generic.List[object]
+        $FlowsStale    = New-Object System.Collections.Generic.List[object]
+        $FlowsOk       = New-Object System.Collections.Generic.List[object]
+
+        foreach ($Name in $ExpectedActiveFlows) {
+            if (-not $StateByName.ContainsKey($Name)) { $FlowsMissing.Add([PSCustomObject]@{ DeveloperName = $Name }); continue }
+            $F = $StateByName[$Name]
+            if (-not $F.IsActive) { $FlowsInactive.Add($F); continue }
+            if ($null -ne $F.LatestVersion -and $null -ne $F.ActiveVersion -and $F.LatestVersion -gt $F.ActiveVersion) { $FlowsStale.Add($F); continue }
+            $FlowsOk.Add($F)
+        }
+
+        Write-Host ("  LDGCRM Flows           {0} of {1} active and current after activation" -f $FlowsOk.Count, $ExpectedActiveFlows.Count)
+    }
+
+    # --- findings -----------------------------------------------------------
+    foreach ($F in $FlowsMissing) {
+        $Findings.Blocking += ("Flow $($F.DeveloperName) does not exist in this org. The pipeline cannot deploy " +
+                               "metadata - this needs a CHANGE SET. See CLAUDE.md, 'Metadata promotion is by CHANGE SET only'.")
+    }
+    foreach ($F in $FlowsInactive) {
+        if ($null -eq $F.LatestVersion) {
+            $Findings.Blocking += "Flow $($F.DeveloperName) is present but has no versions. Needs a CHANGE SET."
+        }
+        else {
+            $Findings.Blocking += ("Flow $($F.DeveloperName) is switched off (v$($F.LatestVersion) is in the org). " +
+                                   "Re-run with -ActivateFlows, or switch it on in Setup.")
+        }
+    }
+    foreach ($F in $FlowsStale) {
+        $Findings.Blocking += ("Flow $($F.DeveloperName) runs v$($F.ActiveVersion) but v$($F.LatestVersion) is in this org " +
+                               "and was never activated. Re-run with -ActivateFlows.")
+    }
+    foreach ($F in $FlowsTrespassing) {
+        $Findings.Blocking += ("Flow $($F.DeveloperName) must not exist in $Env - it bulk-deletes migrated records and is " +
+                               "Dev-only. Investigate how it reached this org; do not simply deactivate it.")
+    }
 
     return $Findings
 }
@@ -712,6 +1051,16 @@ elseif ($Environment -eq "Prod") {
 # rows, the restore point and the report. See Common.ps1's "one directory per
 # run" block.
 $RunDirectory = Get-LogDirectory -Category "data-migration"
+
+# Sandbox only, same structural block as -BootstrapAccounts below. Activating a
+# Flow in production is a change-controlled action for a human in Setup; a load
+# pipeline running unattended is the wrong actor for it. Pre-flight still
+# REPORTS inactive flows in Prod - that report is exactly what you want before a
+# production load, and it is read-only.
+if ($ActivateFlows -and $Environment -eq "Prod") {
+    throw ("SAFETY STOP: -ActivateFlows is not available for -Environment Prod. Re-run without it to get " +
+           "the pre-flight report, and hand any inactive flows to whoever owns production configuration.")
+}
 
 $Findings = Invoke-PreflightChecks -Org $OrgAlias -Version "67.0" -Env $Environment
 

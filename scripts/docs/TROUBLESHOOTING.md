@@ -394,6 +394,53 @@ Specific things that have produced plausible-but-wrong numbers:
   orchestrator now refuses to count or load a file its transform didn't just write.
 - **Counting against zero instead of a baseline.** Some things (junk Accounts, pre-existing test
   records) never return to zero. Measure deltas.
+- **The org's Flows were switched off.** Counts are *right* and field contents are empty — see the
+  next section, which is the worst version of this because every count agrees.
+
+---
+
+## Market Segment is blank on everything, and the load reported success
+
+Or any other field a Flow populates. The load is not the problem: **the Flows in that org are off.**
+
+Check it:
+
+```powershell
+sf data query --target-org <alias> --use-tooling-api `
+  -q "SELECT DeveloperName, ActiveVersionId FROM FlowDefinition WHERE DeveloperName LIKE 'LDGCRM%' OR DeveloperName LIKE 'LGDCRM%'"
+```
+
+A blank `ActiveVersionId` means that Flow is inactive. There should be **nine**, all active.
+
+This happened in QA on 2026-08-14 and is the reason pre-flight now checks it. That load reported
+8,740 records and zero unexpected failures with all nine Flows inactive — nothing failed, nothing was
+withheld, and the object counts matched Dev exactly. Three before-save Flows derive
+`LDGCRM_Market_Segment__c` from the parent Account, so it came out blank on all 92 Partner Accounts,
+all 842 Opportunities and all 1,026 Applications. **Flow activation changes field contents, not row
+counts**, so no count check could have caught it.
+
+**Fix:** re-run the load with `-ActivateFlows` (sandbox only), or switch them on in Setup. See
+[RUNNING-A-LOAD.md](RUNNING-A-LOAD.md#pre-flight-and-the-nine-flows).
+
+**Then reload the data.** Turning the Flows on does *not* backfill records that are already there:
+all three Market Segment Flows fire on create or when the parent lookup changes, and the pipeline
+upserts, so a re-run is an update and will not re-trigger them. The records have to be recreated —
+factory reset, then a full load.
+
+**Do not "fix" this by having the transforms write the field.** The Flow is the system of record, so
+a record a human creates in the UI must get the same value. A load script setting it directly makes
+migrated data look right while the org stays broken for everyone else.
+
+### Version numbers are per-org — do not read them as drift
+
+A Flow's version number is a local counter. Every save in the source org increments *that* org's
+sequence; every change set deployment increments the target's independently. Dev running v4 while QA
+runs v2 is the ordinary result of four saves there and two deployments here — it does **not** mean QA
+is two versions behind, and the two numbers are not comparable at all.
+
+The only version comparison that means anything is **within one org**: active version vs latest
+version. If those differ, a newer version was deployed and never switched on, which pre-flight
+reports as stale and `-ActivateFlows` fixes.
 
 ---
 
