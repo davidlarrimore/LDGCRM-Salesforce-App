@@ -71,3 +71,10 @@ docs/*.pdf
 # they are PII and must never be committed. Same reasoning as logs/ and data/.
 750*-success-records.csv
 750*-failed-records.csv
+
+# Hand-maintained decision worksheets under docs/data-quality/. These are working
+# files with "please fill in" columns, not generated artifacts, and they go stale
+# the moment the Airtable data moves - the same reason superseded status reports
+# are not kept here. Ignored so a broad `git add docs` cannot sweep them in.
+# Remove this rule if one of them is ever meant to be tracked.
+docs/data-quality/*.csv
