@@ -129,8 +129,21 @@ $FocusLevelPattern = '^(Highest|High|Backlog|Developing)'
 # An Airtable value that is NOT in this map is DROPPED and reported, never
 # passed through. The field is restricted, so an unknown value fails the WHOLE
 # row - and this map going stale is the likeliest cause: Airtable was on seven
-# distinct values on 2026-08-13 and five on 2026-08-14 (the two HISP ones went
-# away) with no code change on either side. Read the value-review CSV.
+# distinct values on 2026-08-13 and five on 2026-08-14 (the two HISP ones were
+# DELETED from the field) with no code change on either side. Read the
+# value-review CSV.
+#
+# ⚠️ TO RE-CHECK THIS MAP, READ THE AIRTABLE SCHEMA, NOT THE EXPORT.
+# Counting distinct values in the export only finds choices somebody has already
+# used. A choice that is DEFINED but not yet selected is invisible that way, and
+# the first record to use it gets silently dropped. The field's own definition is
+# authoritative (needs the PAT's schema.bases:read scope):
+#
+#   GET https://api.airtable.com/v0/meta/bases/{baseId}/tables
+#   -> .tables[name='Opportunities'].fields[name='Priority Type'].options.choices
+#
+# Verified that way 2026-08-14: exactly these five choices are defined, and the
+# field is a singleSelect, so a row can never carry two.
 $PriorityTypeMap = @{
     "Strategic"             = "Strategic"
     "High Volume"           = "High Volume"

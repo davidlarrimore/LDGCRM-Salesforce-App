@@ -1072,7 +1072,28 @@ what the org accepts before loading.
 **A new Airtable value is dropped and reported, never passed through.** The field is restricted, so
 one unknown value fails the whole row. `$PriorityTypeMap` going stale is the likeliest cause of that:
 Airtable held **seven** distinct values on 2026-08-13 and **five** on 2026-08-14 — the two `HISP` ones
-vanished with no change on either side. Read `Opportunity-value-review-*.csv` after every run.
+were deleted from the field with no change on either side. Read `Opportunity-value-review-*.csv` after
+every run.
+
+> ### ⚠️ Re-check a picklist map against the Airtable SCHEMA, not the export
+>
+> **Counting distinct values in the export only finds choices somebody has already used.** A choice
+> that is *defined but not yet selected* is invisible that way, and the first record to use it gets
+> silently dropped — which for a restricted Salesforce picklist is the difference between a dropped
+> tag and a failed row.
+>
+> The field's own definition is authoritative. It needs the PAT's `schema.bases:read` scope, which is
+> separate from `data.records:read`:
+>
+> ```
+> GET https://api.airtable.com/v0/meta/bases/{baseId}/tables
+>   → .tables[name='Opportunities'].fields[name='Priority Type'].options.choices
+> ```
+>
+> Checked that way on 2026-08-14: exactly five choices are defined, and the field is a `singleSelect`,
+> so a row can never carry two. The data-level count happened to agree here — but only because the
+> `HISP` values had been deleted outright rather than merely abandoned. **It agreed by luck, not by
+> method.** The same reasoning applies to every `$…Map` in these transforms.
 
 ### `LDGCRM_Partner_Account__c`: sparse, but structurally fine — and a lesson in not trusting a rollup
 
