@@ -231,16 +231,24 @@ step this repo may do by CLI deploy; everything above it is change-set work.
 
 ---
 
-## CR-3 — A blank Launch Level reports 100% launch-checklist completion — 🟡 MITIGATED FOR MIGRATED RECORDS
+## CR-3 — A blank Launch Level reports 100% launch-checklist completion — ✅ CLOSED, ACCEPTED AS-IS
 
-> **Status update 2026-08-13, later the same day.** The migration now **defaults a blank Launch Level
-> to `1 - Very Low Impact`** (project owner's decision), so no migrated Application can fall through
-> the `CASE` any more. Verified after reloading all 1,026: **records reporting 100% went 607 → 0**,
-> and the maximum is now a real **90%**.
+> **Closed 2026-08-14 by the project owner: accepted, not fixed.** The reasoning — it does not break
+> anything, and once the app is live the field is ignored. No change set needed; the formula stays as
+> it is.
 >
-> **This does not close the item.** The formula is unchanged, so *any* Application created or edited
-> later with a blank Launch Level still reports 100% complete. The data-side default protects the
-> records this migration owns; it does not protect the org. The `else` value still needs fixing.
+> **What protects the data is the migration-side default, not the formula.** The transform writes
+> `1 - Very Low Impact` when Airtable has no Launch Level, so no migrated Application falls through
+> the `CASE`. Verified in both orgs on 2026-08-14: **1 Application with a blank Launch Level in each,
+> and 0 of them migrated** — the record reporting 100% is pre-existing test data.
+>
+> ### ⚠️ The dependency this creates, which must not be lost
+>
+> `Build-ApplicationLoad.ps1`'s Launch Level default is now **load-bearing for reporting**, not a
+> convenience. Removing it as redundant tidy-up would silently return **607 of 1,026 Applications to
+> reporting 100% launch-complete** — that is what the figure was before the default existed.
+>
+> If that default is ever revisited, this item comes back with it.
 
 **Found 2026-08-13 while working CR-2. This one is a live reporting defect, independent of the
 migration.**

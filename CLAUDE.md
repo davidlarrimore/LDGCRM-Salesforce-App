@@ -416,7 +416,7 @@ stale cached answer; the Tooling API's `FieldDefinition` gave the truthful one.
 **Salesforce config changes the pipeline cannot make live in
 `docs/engineering/SALESFORCE-CHANGE-REQUESTS.md`** — the config-owner counterpart to the Airtable
 data-quality doc. **CR-1 and CR-2 both resolved 2026-08-14** — the Level 1 checklist item now scores `LDGCRM_P3_Team_UUID__c` (denominator unchanged at 9) and `LDGCRM_PP_Issuer_Strings__c` has been deleted; Salesforce cascaded the layout/permission-set/report-type cleanup. One remains:
-a live reporting defect found on 2026-08-13 (CR-3) — **a blank `Launch Level` falls through the `CASE` in
+CR-3 was **accepted as-is on 2026-08-14** (project owner: it breaks nothing and the field is ignored once live) — **a blank `Launch Level` falls through the `CASE` in
 `LDGCRM_Launch_Checklist_Completion__c` to its else value of `1`, so 607 of 1,026 migrated
 Applications report 100% launch-complete purely because that field is empty.**
 

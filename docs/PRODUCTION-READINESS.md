@@ -18,9 +18,9 @@ dev machine).
 
 **Every object except Meetings is built, and now proven in TWO orgs** — Dev (8,734 records, twice,
 identically) and **QA (8,740 records, first attempt, 2026-08-14)** — both with zero unexpected
-failures. What stands between that and production is no longer transform work or an untested
-pipeline: it is **one Salesforce formula fix, a sandbox that does not exist yet, and a production
-authorization nobody has requested.**
+failures. **Every Salesforce config change is now closed too.** What stands between that and
+production is no longer engineering work of any kind: it is **a sandbox that does not exist yet, a
+production authorization nobody has requested, and a decision about Meetings.**
 
 **Reproducibility is evidence, not a claim.** Dev reloaded twice from empty against a freshly pulled
 Airtable export and produced identical results both times. QA then loaded first time in an org that
@@ -37,7 +37,7 @@ closed until it has been demonstrated, not merely built.
 | --- | --- | --- | --- |
 | 1 | The pipeline loads every in-scope object | 🟢 **Done** — 8,734 records, reproduced identically across two independent reloads | Engineering |
 | 2 | Meetings decided — build, defer, or drop | 🔴 **Blocked on a spike**, not on code | Project owner + SF admin |
-| 3 | Salesforce config changes landed | 🟡 **1 open** (CR-3) — CR-1 and CR-2 done 2026-08-14 | Salesforce config owner |
+| 3 | Salesforce config changes landed | 🟢 **Done 2026-08-14** — CR-1 and CR-2 fixed, CR-3 accepted as-is | Salesforce config owner |
 | 4 | A full rehearsal in **QA**, end to end | 🟢 **Done 2026-08-14** — 8,740 records, 0 unexpected failures | Engineering |
 | 5 | Airtable data quality at an accepted level | 🟡 **Improving** — 9 items closed 2026-08-13 | Airtable data owners |
 | 6 | The **Full** sandbox exists and Operations rehearse in it | 🔴 **Not provisioned** | GSA IT / Operations |
@@ -81,7 +81,7 @@ Full analysis in [engineering/BACKLOG.md](engineering/BACKLOG.md) §2.
 
 ---
 
-## 3. Salesforce config changes — 🟡 2 done, 1 open
+## 3. Salesforce config changes — 🟢 ALL CLOSED 2026-08-14
 
 **Metadata moves by CHANGE SET only.** A CLI deploy from this repo is sanctioned for exactly one
 purpose — deleting corrupted metadata — so none of these can be unblocked by engineering. Full
@@ -92,7 +92,7 @@ specifications, including the exact formula edits, are in
 | --- | --- | --- | --- |
 | ~~**CR-1**~~ | ~~Set `Unique = false` on the two Partner Portal Team fields~~ | ✅ **Done 2026-08-14** — also widened Text(50) → Text(255), which cleared the six over-long team names. Verified: **681 Applications now carry a portal team**, 0 failures | No longer blocking |
 | ~~**CR-2**~~ | ~~Retire `LDGCRM_PP_Issuer_Strings__c`~~ | ✅ **Done 2026-08-14** — checklist item re-pointed at `LDGCRM_P3_Team_UUID__c` (denominator stays 9, second formula untouched, ceiling 78 → 89), then the field deleted by CLI. Salesforce cascaded the layout / permission-set / report-type cleanup | No longer blocking |
-| **CR-3** | A blank `Launch Level` falls through the `CASE` in `LDGCRM_Launch_Checklist_Completion__c` to its else value of `1` | Reported 607 of 1,026 migrated Applications as 100% launch-complete purely because the field was empty. **Mitigated for migrated records**; the formula defect itself is still live for anything else | No, but it is a **live reporting defect** |
+| ~~**CR-3**~~ | ~~Blank `Launch Level` reports 100% complete~~ | ✅ **Accepted as-is 2026-08-14** (project owner) — does not break anything, and the field is ignored once the app is live. ⚠️ The migration-side default that keeps this correct is now **load-bearing**: removing `Build-ApplicationLoad.ps1`'s Launch Level default returns 607 Applications to reporting 100% | No |
 
 **One coupling to watch:** all three `LDGCRM_` permission sets grant field-level security on
 `priority_type__c`, which **does not exist in QA at all**. That reference will fail a change set into
