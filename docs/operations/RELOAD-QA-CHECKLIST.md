@@ -650,17 +650,16 @@ Market Segment (already loaded - do not touch)
       ```
       Expect **0**. A non-zero count means the default regressed and those records are reporting
       themselves fully launch-complete.
-- [ ] ℹ️ **Partner Portal Team Name / Team UUID will be ABSENT from the CSV, and that is expected.**
-      The transform reads both fields' definitions from the org it is pointed at and **withholds the
-      two columns while `Unique` is switched on**, because one portal team legitimately owns many
-      Applications — 442 of the 696 resolvable Applications would fail with `DUPLICATE_VALUE`. The run
-      prints a red `PARTNER PORTAL TEAM COLUMNS WITHHELD` block naming what the change set needs.
-      - The columns are **omitted, not blanked** — an empty column on an upsert would clear whatever
-        is already in the org.
-      - **Once a change set sets `Unique = false` on both fields, re-run — no code change.** Expect
-        the block to be replaced by `Partner Portal Team resolved`, ~422 of 689 loaded Applications
-        carrying a team (696 resolve, but only those whose Application is loadable get written), and
-        **2 with a UUID but a blank name** (team name over the 50-char field limit).
+- [ ] ✅ **Partner Portal Team Name / Team UUID are now written.** Expect the run to print
+      `Partner-portal team columns will be written (both fields are non-unique)` and
+      `Partner Portal Team resolved`. **Expect ~681 Applications carrying a team.**
+      - The transform still reads both fields' definitions live and **withholds the columns if either
+        is ever set back to `Unique = true`** — one portal team legitimately owns many Applications
+        (`DOI - FWS - ECOS` owns 54), so writing them against a unique field fails the whole row.
+      - If you see a red `PARTNER PORTAL TEAM COLUMNS WITHHELD` block, `Unique` has been
+        re-introduced on one of the fields. That is a regression, not an expected state.
+      - **The team is OPTIONAL** (business rule 2026-08-14). Applications with no team are fine, and
+        the 9 whose issuer strings name two different teams stay blank deliberately.
       - This is a Salesforce-config item, not an Airtable one — see
         [the data-quality doc](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md#applications-the-partner-portal-team-fields-cant-be-loaded-yet--a-salesforce-setting-blocks-them---open).
 - [ ] Review `logs/data-migration/Application-portal-team-review-*.csv` — **27 rows, two kinds**, told
@@ -820,20 +819,16 @@ too if you loaded object-by-object rather than through the orchestrator.
       (the rest wait on their Application). These are junction rows that exist *only* because Issuer
       Strings names an admin — the Contacts table never links those people to those Applications. The
       build step prints the count; if it says 0, the second source is not running.
-- [ ] **3. Partner Portal Team Name / UUID.** Behaviour depends on whether the change set has landed:
-      - **Change set NOT yet applied (current state):** both columns are **absent from the CSV** and
-        both fields will be **empty on every Application**. Expected. The orchestrator reports this as
-        a `KNOWN INCOMPLETE` notice rather than a failure. ⚠️ **Do not sign off treating this as
-        done** — it means two fields carry no data at all.
-      - **Change set applied (`Unique = false` on both):** re-run `Build-ApplicationLoad.ps1`, confirm
-        the columns appear, then verify they landed:
-        ```
-        sf data query -q "SELECT COUNT() FROM LDGCRM_application__c WHERE LDGCRM_P3_Team_UUID__c != null" --target-org <alias>
-        ```
-        Expect ~**422** of 689 loaded Applications (696 resolve, but only those whose Application is
-        loadable get written), and **2** with a UUID but a blank Team Name (name over 50 chars).
-      - ⚠️ If the columns are present but the load **fails with `DUPLICATE_VALUE`**, the change set
-        did not actually clear `Unique` — one portal team owns many Applications by design.
+- [ ] **3. Partner Portal Team Name / UUID.** Verify they landed:
+      ```
+      sf data query -q "SELECT COUNT() FROM LDGCRM_application__c WHERE LDGCRM_P3_Team_UUID__c != null" --target-org <alias>
+      ```
+      Expect **681**. Also expect **0** holding the literal `#N/A` — it is transformed to blank:
+      ```
+      sf data query -q "SELECT COUNT() FROM LDGCRM_application__c WHERE LDGCRM_P3_Team_UUID__c = '#N/A' OR LDGCRM_P3_Partner_Portal_Team_Name__c = '#N/A'" --target-org <alias>
+      ```
+      - ⚠️ If the load **fails with `DUPLICATE_VALUE`**, `Unique` has been re-introduced on one of the
+        fields — one portal team owns many Applications by design.
 - [ ] **4. Review the two Issuer Strings review CSVs** and confirm the counts still match what the
       data-quality doc tells the Airtable owners — if they have diverged, the doc is now lying to
       them and needs updating in the same change:
@@ -889,7 +884,7 @@ was found this way, never in a success count.
 | Records owned by inactive users | 0 | | |
 | **Partner Portal Admin flags** | **1,061** (0 = source broke, not "no admins") | | |
 | **Associations added by Issuer Strings** | **86 built / 82 loaded** | | |
-| **Partner Portal Team UUID populated** | **0 until the change set lands**, then ~422 | | |
+| **Partner Portal Team UUID populated** | **681** (0 = `Unique` regressed, or the transform withheld the columns) | | |
 | Admin emails matching no Contact | 0 | | |
 
 ---
@@ -950,13 +945,9 @@ Expected, documented, not to be logged as failures:
   everything else by definition, so it is a step at the end of this reload rather than a known gap.
   537 notes ready; 200 wait on parents the Account data-quality issue withheld.
 - **Contact ownership meaningfulness** — see D2.
-- **Partner Portal Team Name / Team UUID on Application** — **will be empty on every record**, and
-  that is expected until a change set sets `Unique = false` on both fields. The transform withholds
-  the columns rather than failing 442 of 696 Applications with `DUPLICATE_VALUE`; the orchestrator
-  reports it as a `KNOWN INCOMPLETE` notice. **This is the one gap here that a re-run alone fixes** —
-  once the change set lands, re-run `Build-ApplicationLoad.ps1` and load again, no code change.
-- **9 Applications with no portal team at all** — their issuer strings name two different teams, so
-  both fields are deliberately left blank pending an Airtable fix. Not a load failure.
+- **9 Applications with no portal team** — their issuer strings name two different teams, so both
+  fields are deliberately left blank. **Accepted outcome**: the portal team is optional (business
+  rule 2026-08-14). Not a load failure and not an Airtable ask.
 - **Partner Portal Admins recorded in two places that disagree** — 117 pairs asserted only by
   `Contacts.Roles`, 86 only by Issuer Strings. Both are honoured (union), so nothing is lost, but the
   underlying duplication is an Airtable question rather than something this reload closes.

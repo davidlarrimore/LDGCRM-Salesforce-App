@@ -127,14 +127,18 @@ derives it from the email address where it can.</p>
 <p>A derived name is a reasonable guess, not a fact. Nobody looking at Salesforce can tell which
 names were authored and which were inferred.</p>
 
-<h3>3. Three Salesforce settings</h3>
+<h3>3. Salesforce settings — one of three now done</h3>
 
 <table>
-  <tr><th>Change</th><th>Effect while outstanding</th></tr>
-  <tr><td>Allow the partner-portal team fields to repeat across Applications</td><td>Team name and ID are empty on all 1,026 Applications</td></tr>
-  <tr><td>Retire the deprecated issuer-strings field</td><td>Needs a decision on two dependent formulas</td></tr>
-  <tr><td>Fix the launch-checklist formula's handling of a blank Launch Level</td><td>Applications with no Launch Level report 100% complete</td></tr>
+  <tr><th>Change</th><th>Status</th></tr>
+  <tr><td>Allow the partner-portal team fields to repeat across Applications</td><td class="ok">Done — 681 Applications now carry their team</td></tr>
+  <tr><td>Retire the deprecated issuer-strings field</td><td>Outstanding — needs a decision on two dependent formulas</td></tr>
+  <tr><td>Fix the launch-checklist formula's handling of a blank Launch Level</td><td>Outstanding — Applications with no Launch Level report 100% complete</td></tr>
 </table>
+
+<p>The partner-portal team fields were unblocked on 14 August. They had been held back because
+Salesforce was configured to allow each team name to appear on only one Application, while in
+practice one team runs many — <code>DOI - FWS - ECOS</code> runs 54.</p>
 
 <h2>Not yet migrating</h2>
 

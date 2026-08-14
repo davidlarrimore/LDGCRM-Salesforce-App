@@ -56,7 +56,7 @@ taken from an earlier export; these are the current ones.
 | --- | --- | --- |
 | Accounts not matching a Salesforce Account | **155** | ~275 across 5 objects |
 | Contacts with no name | **1,054** of 1,535 | 0 — they load with a derived name |
-| Issuer Strings `#N/A` cells | **273** (136 name + 137 UUID) | 0 |
+| Issuer Strings `#N/A` cells | **273** (136 name + 137 UUID) | 0 — ✅ closed, optional field |
 | Applications with no Launch Level | **621** | 0 — but see CR-3 |
 | Contacts with neither name nor email | **31** | 31 |
 | `Technical Emails` subscription | **711** | 0 — value dropped |
@@ -328,31 +328,40 @@ carry a Ramp Up Approach now use a real one (`Gradual`/`Immediate`/`Spikes` with
 **0 unusable**. The remaining 311 Applications simply have the field empty, which is fine; it's
 optional.
 
-### Issuer Strings: 273 Team Name / Team UUID cells contain the literal text `#N/A` — 🔴 OPEN
+### Issuer Strings: `#N/A` in Team Name / Team UUID — ✅ CLOSED, no Airtable action needed
 
-**New 2026-08-13**, from the first review of the **Issuer Strings** table (now part of the migration —
-see the note at the bottom of this document, which used to say this table wasn't needed).
+**Closed 2026-08-14 by a business-rule decision:** #N/A is transformed to blank on the way into
+Salesforce. Bad data does not need to reach the CRM, and clearing it in Airtable is not a
+prerequisite for anything.
 
-136 `Team Name` cells and 137 `Team UUID` cells hold the four-character text **`#N/A`**
-rather than being empty. Of 901 issuer strings: 691 carry a real team name, 136 carry `#N/A`,
-74 are blank.
+136 `Team Name` cells and 137 `Team UUID` cells hold the literal text `#N/A` — a spreadsheet
+artifact. Of 901 issuer strings: 691 carry a real team name, 136 carry `#N/A`, 74 are blank.
 
-This is a spreadsheet artifact — the kind of value Excel writes when a lookup fails — that got saved
-as ordinary text when the column was populated.
+**Verified in Salesforce 2026-08-14: 0 Applications hold `#N/A`** in either field.
 
-The migration treats `#N/A` as blank, so nothing incorrect reaches Salesforce and **nothing is
-blocked**. Raising it because it's invisible in Airtable's own views (a cell with `#N/A` in it looks
-filled in) and because it makes the table read as 92% complete when the real figure is **77%**.
+Still worth tidying in Airtable whenever convenient — a cell containing `#N/A` looks filled in, so
+the table reads as 92% complete when the real figure is 77% — but it blocks nothing and is no longer
+an ask.
 
-**What we need:** clear those cells so they're genuinely empty, and ideally find out what the failed
-lookup was meant to produce — a team that's missing here is a team that can't migrate. Low urgency,
-but the sooner it's fixed the less it spreads.
+*(No action required. Left here so the item is not re-raised.)*
 
-### Issuer Strings: how the migration currently reads this table
+### Issuer Strings: how the migration reads this table
 
-**Read this before the two cleanup lists below** — it explains why some rows are asks and some are
-just notes. These are the rules as they stand on 2026-08-13; if any of them is the wrong call, say so
-and we'll change the rule rather than the data.
+> ## ✅ These fields are optional — nothing here is an ask any more
+>
+> **Business rule, 2026-08-14:** issuer strings, partner-portal **Team Name** and **Team UUID** are
+> **not required**. A missing value is a perfectly acceptable outcome, and `#N/A` is transformed to
+> blank on the way in.
+>
+> Every Issuer Strings item below is therefore **closed**. They are kept as a record of what the
+> table looks like and why the migration treats it the way it does — not as work anyone owes.
+>
+> **Current state in Salesforce (2026-08-14): 681 Applications carry a portal team.** The rest are
+> blank, which is fine.
+
+**Read this before the lists below** — it explains how the table is interpreted. These are the rules
+as they stand; if any of them is the wrong call, say so and we'll change the rule rather than the
+data.
 
 **The starting point: the partner-portal team belongs to the *Application*** (confirmed by the project
 owner). Airtable stores `Team Name` and `Team UUID` on each **issuer string** instead, so the same
@@ -386,7 +395,7 @@ Two consequences worth being explicit about, because they're easy to misread:
 - **Fixing any of this is a re-run, not a code change.** Every transform re-reads Airtable from
   scratch, so corrected rows are picked up automatically.
 
-### Issuer Strings: 9 Applications where the team copies disagree — 🔴 OPEN — **needs a decision**
+### Issuer Strings: 9 Applications where the team copies disagree — ✅ CLOSED, optional field
 
 **New 2026-08-13.** These hit rule 6 above: one Application's issuer strings name two different teams.
 Because the copies are supposed to be identical, this is drifted data rather than an Application with
@@ -438,7 +447,7 @@ Application say the same thing.**
 Application's issuer strings match it. Where issuer strings actually belong to a *different*
 Application, moving them there fixes it just as well.
 
-### Issuer Strings: 18 Applications have the team on only some rows — 🔴 OPEN — **tidy-up, not blocking**
+### Issuer Strings: 18 Applications have the team on only some rows — ✅ CLOSED, optional field
 
 **New 2026-08-13.** These hit rule 5: some of the Application's issuer strings carry the team, the
 rest are blank or `#N/A`. **The team is unambiguous, so all 18 migrate correctly and nothing is
@@ -485,7 +494,7 @@ on the Applications table directly — rather than copying it onto each issuer s
 27 of these impossible by construction. Not needed for the migration, which handles the current shape
 fine; worth knowing if the Airtable base is ever restructured.
 
-### Issuer Strings: 7 rows aren't linked to any Application, and 2 have no issuer string — 🔴 OPEN
+### Issuer Strings: 7 rows aren't linked to any Application, and 2 have no issuer string — ✅ CLOSED, optional field
 
 **New 2026-08-13.** Small, but concrete enough to act on.
 
@@ -554,7 +563,7 @@ lost. That's checked on every run and will be reported if it ever stops being tr
 Full per-flag detail, including which source asserted each one, is in
 `logs/data-migration/ApplicationContact-admin-source-*.csv`.
 
-### Issuer Strings: 6 partner-portal team names are too long for Salesforce — 🔴 OPEN
+### Issuer Strings: 6 partner-portal team names are too long for Salesforce — ✅ RESOLVED 2026-08-14
 
 **New 2026-08-13.** The Salesforce field holds 50 characters. **6 distinct team names are longer**
 (up to 75), affecting **8 Applications** — one team covers three of them. Per rule 8, **the team name
@@ -578,7 +587,7 @@ the Salesforce config owner widens the field. It's a plain text field and extend
 straightforward, unlike the Application Name limit above, which is a platform cap we can't change.
 Widening is probably the better answer — these names look deliberate rather than sloppy.
 
-### Applications: the Partner Portal Team fields can't be loaded yet — a Salesforce setting blocks them — 🔴 OPEN
+### Applications: the Partner Portal Team fields can't be loaded yet — ✅ RESOLVED 2026-08-14
 
 **New 2026-08-13. Not an Airtable problem — no action needed from the Airtable data owners.** Recorded
 here so the status of this data is visible in one place alongside everything else.

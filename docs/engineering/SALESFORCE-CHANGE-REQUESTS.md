@@ -19,15 +19,26 @@ each carries 🔴 Open / 🟡 Partially resolved / ✅ Resolved.
 
 ---
 
-## CR-1 — `Unique` must be turned off on the two Partner Portal Team fields — 🔴 OPEN
+## CR-1 — `Unique` must be turned off on the two Partner Portal Team fields — ✅ RESOLVED
 
-**Blocks:** the partner-portal team migrating onto **696 Applications**.
-**Object:** `LDGCRM_application__c`
+**Resolved 2026-08-14.** Both fields are now `Unique = false`, and both were widened from Text(50)
+to Text(255) at the same time — which also cleared the separate problem of six team names being too
+long for the field.
 
-| Field | Type | Current | Needs to be |
-| --- | --- | --- | --- |
-| `LDGCRM_P3_Partner_Portal_Team_Name__c` | Text(50) | **Unique = true** | Unique = **false** |
-| `LDGCRM_P3_Team_UUID__c` | Text(50) | **Unique = true** | Unique = **false** |
+**Verified the same day** by re-running the Application step: the transform took its unblocked path
+("Partner-portal team columns will be written (both fields are non-unique)"), 1,026 Applications
+loaded with 0 failures, and **681 now carry a partner-portal team name and UUID**. `DOI - FWS - ECOS`
+holds 54 of them — the exact collision `Unique = true` would have rejected.
+
+| Field | Was | Now |
+| --- | --- | --- |
+| `LDGCRM_P3_Partner_Portal_Team_Name__c` | Text(50), Unique = true | **Text(255), Unique = false** |
+| `LDGCRM_P3_Team_UUID__c` | Text(50), Unique = true | **Text(255), Unique = false** |
+
+The 9 Applications whose issuer strings name two different teams remain blank. **That is an accepted
+outcome, not a defect** — the partner-portal team is optional (business rule, 2026-08-14).
+
+<details><summary>Original analysis, kept for the record</summary>
 
 **Why the current setting is wrong.** `Unique` enforces "this value may appear on at most one
 record" — i.e. *each team belongs to exactly one Application*. The data says the opposite: **one
@@ -57,8 +68,10 @@ normally with the team left empty. It prints a red `PARTNER PORTAL TEAM COLUMNS 
 **After the change:** re-run `Build-ApplicationLoad.ps1` and load. The columns appear automatically —
 no code change. Expect ~422 of the loaded Applications to carry a team.
 
-**Neither field is an External ID and nothing matches records on them**, so nothing depends on the
+**Neither field is an External ID and nothing matches records on them**, so nothing depended on the
 setting.
+
+</details>
 
 ---
 

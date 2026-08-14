@@ -388,12 +388,14 @@ Of 887 Applications: 678 agree everywhere, **18 carry it on only some issuer str
 so they migrate correctly — reported as tidy-up), **9 carry two different teams** (left blank +
 reported, never tie-broken), 182 have none. `#N/A` is a literal string in that table (273 cells) and
 must be filtered.
-**Both fields are `unique=true`, which is wrong for this data** — a portal team owns many
-Applications (one owns 54), so 442 of 696 would fail `DUPLICATE_VALUE`. **CHANGE SET NEEDED: set
-`Unique = false` on both** (neither is an External ID; nothing keys on them). Until then
-`Build-ApplicationLoad.ps1` reads the live field definitions and **omits the two columns** — omitted,
-not blanked, because an empty column in an upsert *clears* the org's value. A plain re-run picks them
-up once the change set lands. Also pending: 6 team names exceed the 50-char field (8 Applications).
+**RESOLVED 2026-08-14: both fields are now `unique=false` and Text(255)** (was `unique=true`,
+Text(50)). `Build-ApplicationLoad.ps1` reads the live field definitions and **omits the two columns
+while either is unique** — omitted, not blanked, because an empty column in an upsert *clears* the
+org's value — so the fix needed no code change, just a re-run. Verified: **681 Applications carry a
+portal team**, 0 failures. The widening to 255 also cleared the 6 over-long team names.
+**`#N/A` is transformed to blank** (`Get-CleanIssuerStringValue`), and **issuer strings / team name /
+team UUID are OPTIONAL by business rule (2026-08-14)** — a missing value is an accepted outcome, not
+a data-quality ask. The 9 Applications whose issuer strings name two teams stay blank deliberately.
 **`LDGCRM_PP_Issuer_Strings__c` is DEPRECATED and being retired** (user-confirmed 2026-08-13) — never
 migrated, and removing it is not a plain delete: `LDGCRM_Level_1_Complete_Pct__c` counts it as 1 of 9
 checklist items, and `LDGCRM_Launch_Checklist_Completion__c` hard-codes that 9 as a weight, so
@@ -401,7 +403,7 @@ dropping one item silently moves a second metric.
 
 **Salesforce config changes the pipeline cannot make live in
 `docs/engineering/SALESFORCE-CHANGE-REQUESTS.md`** — the config-owner counterpart to the Airtable
-data-quality doc. Three open: the `Unique` flags above (CR-1), retiring
+data-quality doc. **CR-1 (the `Unique` flags above) was resolved 2026-08-14.** Two remain: retiring
 `LDGCRM_PP_Issuer_Strings__c` with its two dependent formulas (CR-2), and a live reporting defect
 found on 2026-08-13 (CR-3) — **a blank `Launch Level` falls through the `CASE` in
 `LDGCRM_Launch_Checklist_Completion__c` to its else value of `1`, so 607 of 1,026 migrated

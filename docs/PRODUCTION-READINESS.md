@@ -37,7 +37,7 @@ closed until it has been demonstrated, not merely built.
 | --- | --- | --- | --- |
 | 1 | The pipeline loads every in-scope object | 🟢 **Done** — 8,734 records, reproduced identically across two independent reloads | Engineering |
 | 2 | Meetings decided — build, defer, or drop | 🔴 **Blocked on a spike**, not on code | Project owner + SF admin |
-| 3 | Salesforce config changes landed | 🔴 **3 open** (CR-1, CR-2, CR-3) | Salesforce config owner |
+| 3 | Salesforce config changes landed | 🟡 **2 open** (CR-2, CR-3) — CR-1 done 2026-08-14 | Salesforce config owner |
 | 4 | A full rehearsal in **QA**, end to end | 🔴 **Not started** — QA has never been loaded | Engineering |
 | 5 | Airtable data quality at an accepted level | 🟡 **Improving** — 9 items closed 2026-08-13 | Airtable data owners |
 | 6 | The **Full** sandbox exists and Operations rehearse in it | 🔴 **Not provisioned** | GSA IT / Operations |
@@ -90,7 +90,7 @@ specifications, including the exact formula edits, are in
 
 | | What | Why it matters | Blocking? |
 | --- | --- | --- | --- |
-| **CR-1** | Set `Unique = false` on `LDGCRM_P3_Partner_Portal_Team_Name__c` and `LDGCRM_P3_Team_UUID__c` | A portal team legitimately owns many Applications (one owns 54), so `unique=true` would fail 442 of 696 rows. The transform currently **omits both columns entirely** rather than fail most of the load — so the field is empty org-wide | **Yes** — 696 Applications carry no team until it lands |
+| ~~**CR-1**~~ | ~~Set `Unique = false` on the two Partner Portal Team fields~~ | ✅ **Done 2026-08-14** — also widened Text(50) → Text(255), which cleared the six over-long team names. Verified: **681 Applications now carry a portal team**, 0 failures | No longer blocking |
 | **CR-2** | Retire `LDGCRM_PP_Issuer_Strings__c`, fixing its two dependent formulas first | It is deprecated, but `LDGCRM_Level_1_Complete_Pct__c` counts it as 1 of 9 checklist items and `LDGCRM_Launch_Checklist_Completion__c` hard-codes that 9 — deleting it silently moves a second metric | No, but **needs a /8-vs-/9 decision** before it can be specified |
 | **CR-3** | A blank `Launch Level` falls through the `CASE` in `LDGCRM_Launch_Checklist_Completion__c` to its else value of `1` | Reported 607 of 1,026 migrated Applications as 100% launch-complete purely because the field was empty. **Mitigated for migrated records**; the formula defect itself is still live for anything else | No, but it is a **live reporting defect** |
 
@@ -141,10 +141,14 @@ The largest remaining items, measured 2026-08-14 against a fresh export:
 | --- | --- | --- |
 | Airtable Account rows matching no Salesforce Account | **155** rows | 🟡 172 → 155. **The biggest single blocker** — holds back ~275 records across 5 objects |
 | Contacts with no name | **1,054** of 1,535 | 🔴 Open. 592 get a real name derived from their email; 314 get only the local part; 45 don't load at all |
-| Issuer Strings `#N/A` team cells | **273** (136 name + 137 UUID) | 🔴 Open |
 | Applications with no Launch Level | **621** rows | 🟡 Worked around — see CR-3 |
 | The same person under two different email addresses | 10 people | 🔴 Open — **deliberately not auto-merged**; two contacts is the honest outcome |
 | Contacts with an email address in the `Name` field | 3 | 🔴 Open — loads verbatim as the contact's name |
+| Issuer Strings / portal team fields | — | ✅ **Closed 2026-08-14** — optional by business rule; `#N/A` transformed to blank |
+
+**The list shortened on 2026-08-14 by decision rather than by data work.** Issuer strings and the
+partner-portal Team Name/UUID were confirmed **optional**, which closed six items at once. Data
+quality is now dominated by two things: **Account matching** and **contact names**.
 
 **How to read a load's contribution to this gate:** the **ROWS WITHHELD** section of any run's
 `SUMMARY.txt`, which counts them by reason and compares against the previous run.
