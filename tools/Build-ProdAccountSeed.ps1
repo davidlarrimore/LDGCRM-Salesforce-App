@@ -95,7 +95,7 @@ $ErrorActionPreference = "Stop"
 
 $OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
-$Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-ProdAccountSeed"
+$Timestamp = Start-ToolLog -ScriptName "Build-ProdAccountSeed"
 
 function Get-NormalizedName {
     param([string]$Name)
@@ -234,5 +234,5 @@ if ($InsertRows.Count -gt 0) {
 
 }
 finally {
-    Stop-ScriptLog
+    Stop-ToolLog
 }

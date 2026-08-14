@@ -8,15 +8,25 @@
 # sandbox, so they are excluded by default - only source-controlled
 # scripts and documentation should be committed from those trees.
 
-# NOTE (2026-08-14): logs/, data/ and .env moved INSIDE scripts/ when the
-# pipeline was made self-contained for the Operations hand-off, and the rules
+# NOTE (2026-08-14): the PIPELINE's logs/, data/ and .env moved INSIDE scripts/
+# when it was made self-contained for the Operations hand-off, and the rules
 # covering them now live in scripts/.gitignore. They are deliberately NOT
 # duplicated here: that file has to keep working after scripts/ is dropped into
 # the Operations repository, where this file will not exist, so it is the
 # authority and a second copy here would only drift out of step with it.
 #
-# What remains below is repo-root-only: build output, and the CLI's habit of
-# writing bulk results into whatever directory it was invoked from.
+# What remains below is repo-root-only: engineering tool output, build output,
+# and the CLI's habit of writing bulk results into whatever directory it was
+# invoked from.
+
+# Run output from tools/ - the ENGINEERING-ONLY scripts (metadata sync, data
+# dictionary, report PDF). Kept out of scripts/logs/ deliberately: metadata
+# tooling is a development aid, is not the Operations team's responsibility,
+# and neither it nor its output belongs in the folder handed to them.
+/logs/**
+!/logs/**/
+!/logs/**/.gitkeep
+!/logs/**/README.md
 
 # Salesforce CLI cache, in case `sf` is ever run from the repo root
 # instead of sfdx/ (which has its own .gitignore for this already)

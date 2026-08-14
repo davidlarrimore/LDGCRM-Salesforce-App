@@ -34,8 +34,8 @@ $CustomObjectLabels = @(
     "Application"
 )
 
-$Timestamp = Start-ScriptLog -Category "metadata" -ScriptName "Get-LDGCRMDataDictionary"
-$OutputFile = Join-Path (Get-LogDirectory -Category "metadata") "SalesforceObjectsAndFields-$Timestamp.csv"
+$Timestamp = Start-ToolLog -ScriptName "Get-LDGCRMDataDictionary"
+$OutputFile = Join-Path (Get-LdgcrmRunDirectory) "SalesforceObjectsAndFields-$Timestamp.csv"
 
 try {
     Write-Host "Finding custom objects..." -ForegroundColor Cyan
@@ -47,11 +47,15 @@ WHERE QualifiedApiName LIKE 'LDGCRM_%'
 ORDER BY Label
 "@
 
+    # NO 2>$null - see the note in Sync-Metadata.ps1 and CLAUDE.md's PowerShell
+    # 5.1 traps. Redirecting a native command's stderr turns the sf CLI's
+    # harmless "update available" banner into a terminating NativeCommandError.
+    # The JSON is on stdout and is captured either way.
     $EntityResponse = sf data query `
         --target-org $TargetOrg `
         --use-tooling-api `
         --query $EntityQuery `
-        --json 2>$null
+        --json
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Unable to retrieve the custom-object list from Salesforce."
@@ -86,7 +90,7 @@ ORDER BY Label
         $DescribeResponse = sf sobject describe `
             --sobject $ObjectApiName `
             --target-org $TargetOrg `
-            --json 2>$null
+            --json
 
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "Could not describe object: $ObjectApiName"
@@ -139,5 +143,5 @@ ORDER BY Label
     Write-Host "Fields exported: $($Results.Count)"
 }
 finally {
-    Stop-ScriptLog
+    Stop-ToolLog
 }

@@ -81,7 +81,15 @@ function Update-ManifestDiscovery {
 
         Write-Host "Checking $TypeName..." -ForegroundColor Cyan
 
-        $ListResult = sf org list metadata --metadata-type $TypeName --target-org $OrgAlias --json 2>$null
+        # NO 2>$null. It was there until 2026-08-14 and made this script fail
+        # intermittently: PS 5.1 wraps each stderr line from a native command in
+        # an ErrorRecord, so the sf CLI's harmless "update available" banner
+        # became a NativeCommandError and $ErrorActionPreference = "Stop" killed
+        # the run - blaming this line rather than the redirect. It only bit when
+        # the CLI decided to print the banner, which is why the script "worked"
+        # most of the time. See CLAUDE.md's PowerShell 5.1 traps.
+        # sf's JSON goes to stdout and is captured regardless.
+        $ListResult = sf org list metadata --metadata-type $TypeName --target-org $OrgAlias --json
         if ($LASTEXITCODE -ne 0 -or -not $ListResult) {
             Write-Warning "Could not list metadata for type '$TypeName' - skipping."
             continue
@@ -143,7 +151,7 @@ function Update-ManifestDiscovery {
     return $AutoAdded.Count
 }
 
-Start-ScriptLog -Category "metadata" -ScriptName "Sync-Metadata" | Out-Null
+Start-ToolLog -ScriptName "Sync-Metadata" | Out-Null
 
 try {
     $ProjectDir = Join-Path (Get-RepoRoot) "sfdx"
@@ -204,5 +212,5 @@ try {
     Write-Host "  git status sfdx/force-app"
 }
 finally {
-    Stop-ScriptLog
+    Stop-ToolLog
 }

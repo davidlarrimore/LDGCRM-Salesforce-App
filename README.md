@@ -146,7 +146,7 @@ Working on the app's metadata rather than the data migration.
 # Discovers new LDGCRM_ components and adds them to the manifest first.
 powershell tools/metadata/Sync-Metadata.ps1 -Environment Dev
 
-# Export a full object/field data dictionary CSV to scripts/logs/metadata/
+# Export a full object/field data dictionary CSV to logs/tools/
 powershell tools/metadata/Get-LDGCRMDataDictionary.ps1 -Environment Dev
 ```
 

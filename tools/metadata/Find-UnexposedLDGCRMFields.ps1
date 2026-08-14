@@ -38,8 +38,8 @@ $ObjectsDir = Join-Path $DefaultDir "objects"
 $LayoutsDir = Join-Path $DefaultDir "layouts"
 $FlexiPagesDir = Join-Path $DefaultDir "flexipages"
 
-$Timestamp = Start-ScriptLog -Category "metadata" -ScriptName "Find-UnexposedLDGCRMFields"
-$OutputFile = Join-Path (Get-LogDirectory -Category "metadata") "UnexposedLDGCRMFields-$Timestamp.csv"
+$Timestamp = Start-ToolLog -ScriptName "Find-UnexposedLDGCRMFields"
+$OutputFile = Join-Path (Get-LdgcrmRunDirectory) "UnexposedLDGCRMFields-$Timestamp.csv"
 
 function Get-FieldNamesFromXml {
     param(
@@ -200,5 +200,5 @@ try {
     Write-Host $OutputFile -ForegroundColor Green
 }
 finally {
-    Stop-ScriptLog
+    Stop-ToolLog
 }

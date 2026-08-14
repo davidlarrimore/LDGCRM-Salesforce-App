@@ -117,11 +117,36 @@ commands). This file focuses on conventions and architecture for working in the 
 - `tools/` — **engineering-only**, added 2026-08-14. Scripts that read `sfdx/` or `docs/` and
   therefore cannot live in the bundle: `metadata/` (Sync-Metadata, Get-LDGCRMDataDictionary,
   Find-UnexposedLDGCRMFields), `Export-ReportPdf.ps1`, the superseded `Build-ProdAccountSeed.ps1`,
-  and `Export-OpsBundle.ps1`. They dot-source `tools/Common.Tools.ps1` (which defines `Get-RepoRoot`)
-  *and* the bundle's `Common.ps1` for logging/confirmation helpers.
+  `Export-OpsBundle.ps1` and `Test-BundleStructure.ps1`. They dot-source `tools/Common.Tools.ps1`
+  (which defines `Get-RepoRoot` and `Start-ToolLog`) *and* the bundle's `Common.ps1` for the
+  confirmation gate and Salesforce helpers.
+- `logs/` — **gitignored**. Run output from `tools/` only, in `logs/tools/<Script>-<ts>/`.
+  Separate from the pipeline's `scripts/logs/` on purpose — see the next section.
 - `dist/` — **gitignored**. Where `Export-OpsBundle.ps1` writes the hand-off zip.
 - `scripts/logs/`, `scripts/data/` — **gitignored** (except `.gitkeep`/`README.md`), by
   `scripts/.gitignore`, not the root one.
+
+## ⚠️ METADATA IS NOT THE OPERATIONS TEAM'S JOB — nor is its output
+
+Standing rule, user-stated 2026-08-14. **The metadata scripts exist to build the app and diagnose
+problems. They are a development aid.** Operations never retrieves or deploys metadata, and this
+project is **not responsible for pushing or pulling it** on anyone's behalf — metadata moves between
+orgs by change set only.
+
+So **none of it ships**: not the scripts (`tools/metadata/`), not their logs (`logs/tools/`, outside
+the bundle), not their CSV output. The bundle's `Get-LogDirectory` no longer even accepts a
+`metadata` category — it is `cleanup|data-migration` only, and `scripts/logs/metadata/` was removed.
+Shipping the tooling would invite exactly what the change-set policy forbids; shipping the *output*
+would imply the pipeline owns a metadata state it does not.
+
+**What IS in scope for the bundle** — the distinction that matters, because it is easy to over-read
+the rule and strip out things the pipeline legitimately needs:
+
+| | |
+| --- | --- |
+| ✅ **READ the org to check what a load needs exists** | a field, a picklist value, a record-type assignment, whether an external ID is still `unique`. The pipeline already does this — `Build-ApplicationLoad.ps1` reads live field definitions before deciding whether to send two columns. **A consolidated pre-flight check belongs in the bundle**, and is wanted. |
+| ✅ **TOGGLE a documented switch a load needs, then put it back** | `Invoke-SalesforceLoad.ps1`'s `TriggerControls__c` bypass is the model: capture, flip, restore in a `finally`, verify the restore. |
+| ❌ **DEPLOY or RETRIEVE metadata, either direction, for any reason** | If a load is blocked by missing metadata, the pipeline's job is to say so precisely and stop. Someone else builds the change set. |
 
 ## ⚠️ `scripts/` is a SELF-CONTAINED BUNDLE — never resolve a path above its root
 
@@ -586,8 +611,10 @@ next to the script or inventing new log locations:
 - **`Get-LdgcrmRoot`** — the **bundle** root (`scripts/`), resolved from the script's own location.
   Replaced `Get-RepoRoot` on 2026-08-14; see "`scripts/` is a SELF-CONTAINED BUNDLE" above. Anything
   in `tools/` uses `Get-RepoRoot` from `tools/Common.Tools.ps1` instead.
-- `Get-LogDirectory -Category <metadata|cleanup|data-migration>` — ensures/returns the matching
-  `logs/<category>/` folder.
+- `Get-LogDirectory -Category <cleanup|data-migration>` — ensures/returns the matching
+  `logs/<category>/` folder. **`metadata` was removed as a category on 2026-08-14** — it was only
+  ever used by the engineering-only metadata tooling, which now logs to `logs/tools/` outside the
+  bundle via `Start-ToolLog`.
 - `Start-ScriptLog -Category ... -ScriptName ...` — opens a transcript in that folder and returns a
   shared timestamp for the run's other output files (CSVs, summaries). Pair with `Stop-ScriptLog` in
   a `finally` block so the transcript closes even on early `exit`.

@@ -469,3 +469,63 @@ one-time data dump. The report now carries a pipeline-progress section covering 
 load → verify for each object. Keep it updated as chunks are built, and keep reporting what is
 *automated* separately from what is *loaded*, since a chunk can be fully built yet mostly blocked by
 source data (Application is exactly that: built and proven, 65% loaded).
+
+---
+
+## 7. Consolidated org pre-flight check — sanctioned 2026-08-14, not built
+
+**Status:** agreed in principle by the project owner, unbuilt. It belongs in the **bundle**
+(`scripts/powershell-scripts/`), not in `tools/`.
+
+### The boundary this sits inside
+
+Standing rule from the same conversation: **metadata is not the Operations team's job, and this
+project is not responsible for pushing or pulling it.** Metadata moves between orgs by change set
+only, and the metadata tooling (`tools/metadata/`) is a development aid that does not ship.
+
+What the pipeline *may* do — and the project owner explicitly said we "should feel comfortable"
+doing — is:
+
+- **read the org to confirm things that should exist do exist**, and
+- **turn things on / activate things** the load needs, restoring them afterwards.
+
+What it must never do is deploy or retrieve metadata in either direction. When something is missing,
+the correct behaviour is to say so precisely and stop.
+
+### Why it is worth building
+
+The checks already exist, but scattered and implicit, so a missing prerequisite surfaces as a
+mid-load failure rather than a refusal to start:
+
+- `Build-ApplicationLoad.ps1` reads live field definitions to decide whether to send the two portal
+  team columns (they were `unique=true` and would have failed most of the load).
+- `Build-MarketSegmentLoad.ps1` exists because a required object was silently unloaded — the
+  pre-flight hard-failed on a count of zero while nothing created the records.
+- `Invoke-SalesforceLoad.ps1` verifies the `TriggerControls__c` switch exists before flipping it.
+- Record-type picklist narrowing is **not** visible to `sf sobject describe` and has failed a whole
+  test batch once already.
+- `priority_type__c` exists in Dev and **not in QA** — an org-to-org difference nothing checks for.
+
+A single step, run before anything is submitted, that reports every prerequisite as present/absent
+and refuses to continue on absent, would convert several classes of mid-load failure into a clear
+list handed to whoever builds the change set.
+
+### Shape (proposed, not agreed)
+
+- `Test-OrgReadiness.ps1` in the bundle, read-only, no confirmation gate needed.
+- A declarative table of expectations per object: field API name, type, whether it must be writable,
+  required picklist values **per record type**, and any custom setting the load toggles.
+- Reuses `Assert-LdgcrmOrgTarget` for the banner and identity check.
+- Output in the run directory as a findings CSV, in the same shape the load report already reads,
+  so a failure lands in `SUMMARY.txt` rather than a separate place to remember to look.
+- Wired as step 0 of `Invoke-FullMigrationLoad.ps1`, skippable with an explicit flag for a resumed
+  run.
+
+### Open questions
+
+- Does it hard-fail, or warn and continue with the affected columns omitted? `Build-ApplicationLoad`
+  already does the latter for one specific case, deliberately, because omitting a column is safer
+  than blanking the org's value. A blanket hard-fail would remove that.
+- Where does the expectation table live — hand-maintained in the script, or generated from
+  `sfdx/force-app/` (which the bundle cannot read)? Hand-maintained is the only option that survives
+  the hand-off.

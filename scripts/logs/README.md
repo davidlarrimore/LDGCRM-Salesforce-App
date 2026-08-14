@@ -8,9 +8,18 @@ Structure mirrors `scripts/`:
 
 | Folder | Produced by |
 | --- | --- |
-| `data-migration/` | `data-migration/*.ps1` — pulls, transforms, loads, rollbacks |
-| `cleanup/` | `cleanup/*.ps1` — factory resets |
-| `metadata/` | `metadata/*.ps1` — data dictionary, metadata sync |
+| `data-migration/` | Pulls, transforms, loads, rollbacks |
+| `cleanup/` | Factory resets |
+
+Both come from `powershell-scripts/`. The category names describe **what a run
+did**, not which folder its script lives in — every script is in one folder now.
+
+> **There is no `metadata/` category** (removed 2026-08-14). Metadata tooling —
+> data dictionary, retrieve/sync — is a **development aid** that is not part of
+> this bundle and is not the Operations team's responsibility. Metadata moves
+> between orgs by **change set only**; nothing here pushes or pulls it. Those
+> scripts and their output live in the engineering repository instead, and
+> `Get-LogDirectory` accepts `cleanup` and `data-migration` only.
 
 ## One directory per run
 
@@ -175,14 +184,14 @@ folder is the restore point, and an undo must not write into the evidence it is 
 
 ### Setup and inspection runs
 
-```
-metadata/
-  Get-LDGCRMDataDictionary-<timestamp>/
-    Get-LDGCRMDataDictionary.log
-    ldgcrm-data-dictionary-<ts>.csv         every object/field, flattened
-  Sync-Metadata-<timestamp>/
-    UnexposedLDGCRMFields-<ts>.csv          fields present but not on a layout
-```
+Nothing writes here. The org-inspection tooling (data dictionary, metadata sync,
+unexposed-field report) is engineering-only and logs outside this folder
+entirely — see the note at the top.
+
+What this bundle *does* do against the org before a load is **read to check**,
+not retrieve: `Invoke-FullMigrationLoad.ps1` runs preflight counts, and several
+transforms read live field definitions before deciding what to send. Those land
+in the load's own run directory, above.
 
 ---
 
