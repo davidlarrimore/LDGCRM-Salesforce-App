@@ -265,7 +265,7 @@ sf data query -q "SELECT COUNT() FROM Account WHERE RecordType.DeveloperName = '
 ```
 
 Compare against the figure from before the load — `Invoke-FullMigrationLoad.ps1` records it in
-`full-load-<ts>/fcic-junk-baseline.txt`.
+`<run>/fcic-junk-baseline.txt`.
 
 **Afterwards, always confirm the switch went back on.** Leaving it off silently breaks another
 team's app:

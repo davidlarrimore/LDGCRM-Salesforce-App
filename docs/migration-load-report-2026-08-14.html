@@ -127,13 +127,13 @@ derives it from the email address where it can.</p>
 <p>A derived name is a reasonable guess, not a fact. Nobody looking at Salesforce can tell which
 names were authored and which were inferred.</p>
 
-<h3>3. Salesforce settings — one of three now done</h3>
+<h3>3. Salesforce settings — all three now closed</h3>
 
 <table>
   <tr><th>Change</th><th>Status</th></tr>
   <tr><td>Allow the partner-portal team fields to repeat across Applications</td><td class="ok">Done — 681 Applications now carry their team</td></tr>
-  <tr><td>Retire the deprecated issuer-strings field</td><td>Outstanding — needs a decision on two dependent formulas</td></tr>
-  <tr><td>Fix the launch-checklist formula's handling of a blank Launch Level</td><td>Outstanding — Applications with no Launch Level report 100% complete</td></tr>
+  <tr><td>Retire the deprecated issuer-strings field</td><td class="ok">Done — field removed; the launch checklist now measures the partner-portal team instead</td></tr>
+  <tr><td>Blank Launch Level reporting 100% complete</td><td class="ok">Accepted as-is — the field is ignored once the app is live</td></tr>
 </table>
 
 <p>The partner-portal team fields were unblocked on 14 August. They had been held back because
@@ -153,8 +153,15 @@ which depends on a Salesforce configuration decision rather than on migration wo
 Airtable. Both runs produced identical results — the same 8,734 records, the same 13 rejections, the
 same 357 held back. The process is repeatable and takes about 19 minutes as a single command.</p>
 
-<p>The remaining work before production is a rehearsal in a second sandbox, the three Salesforce
-settings above, and a decision on Meetings.</p>
+<p><strong>It has since been repeated in a second Salesforce environment.</strong> The QA sandbox,
+which had never held any of this data, was loaded on 14 August using the same two commands:
+<strong>8,740 records, no unexpected failures</strong>. Every object matched the first environment
+except three small differences we can account for. That matters more than any single count — it
+shows the process does not depend on one environment having been prepared by hand.</p>
+
+<p>The remaining work before production is not migration work. It is a final environment that has
+not been created yet, permission to run against production, and a decision on Meetings.</p>
+
 
 <footer>
   Login.gov Airtable → Salesforce CRM migration · Dev sandbox <code>peodv8dvn</code> · run

@@ -382,7 +382,12 @@ Meetings + Partner Accounts) and `tony.parrilla@gsa.gov` (15 + 50 + Partner Acco
 
 ---
 
-## Notes (deferred — final chunk, not built)
+## Notes (BUILT and loaded — final chunk)
+
+> **Status: built and loaded.** `Build-NotesLoad.ps1` + `Invoke-NotesLoad.ps1`. **716 notes created
+> and attached in both Dev and QA**, 0 failures. Loads over REST, not Bulk — `ContentNote.Content` is
+> a binary field that Bulk 2.0 CSV refuses. The text below describes the design; it was written before
+> the chunk was built and the reasoning still holds.
 
 Freeform/journal-style Airtable columns that don't belong in a dedicated Salesforce field aren't
 dropped — they become **`ContentNote`** records (confirmed via the Account layout's
@@ -625,7 +630,7 @@ not something the script auto-resolves.
 | --- | --- | --- |
 | `id` (= `Accounts Record ID`) | `LDGCRM_External_ID__c` | Direct passthrough, only on matched rows. |
 | `Name` | *(not written)* | Used only as the matching key in step 2 above — this script never overwrites `Account.Name`. |
-| `Market Segment` (plain text, e.g. `"Infrastructure"`) | `LDGCRM_Market_Segment__c` (lookup, CSV column `LDGCRM_Market_Segment__r.LDGCRM_External_ID__c` — see General Principle above) | Value-mapped, **not** direct passthrough (fixed 2026-08-12 — see gotcha below): `"Defense & National Security"` → `"Defense"`, `"Finance (Regulation & Compliance)"` → `"Finance & Regulation"`, `"State & Local (SLTT)"` → `"State & Local"`; `"Benefits"`/`"Infrastructure"` already match and pass through unchanged. Works because `LDGCRM_Market_Segment__c.LDGCRM_External_ID__c` stores the segment **name**, not its Airtable `rec...` ID (the one deliberate exception to the external-ID-passthrough convention — see `CLAUDE.md`). All 6 Market Segments are already loaded, so every mapped value resolves. |
+| `Market Segment` (plain text, e.g. `"Infrastructure"`) | `LDGCRM_Market_Segment__c` (lookup, CSV column `LDGCRM_Market_Segment__r.LDGCRM_External_ID__c` — see General Principle above) | Value-mapped, **not** direct passthrough (fixed 2026-08-12 — see gotcha below): `"Defense & National Security"` → `"Defense"`, `"Finance (Regulation & Compliance)"` → `"Finance & Regulation"`, `"State & Local (SLTT)"` → `"State & Local"`; `"Benefits"`/`"Infrastructure"` already match and pass through unchanged. Works because `LDGCRM_Market_Segment__c.LDGCRM_External_ID__c` stores the segment **name**, not its Airtable `rec...` ID (the one deliberate exception to the external-ID-passthrough convention — see `CLAUDE.md`). The 5 real Market Segments are loaded by `Build-MarketSegmentLoad.ps1` as step 1 of the pipeline (added 2026-08-14), so every mapped value resolves. **They must be RESOLVABLE, not merely present** — the match is on the external ID, so segments carrying no external ID resolve nothing and leave Market Segment blank org-wide with no error. |
 | `States + DC/PR` (boolean checkbox) | `Type` (standard picklist field) | `"State"` if checked, `"Federal"` if unchecked/absent. **Not a literal boolean-to-text cast** — confirmed by querying gsa-peo's existing `Type` distribution (`GROUP BY Type, RecordType.Name`): 54 Accounts already `Type="State"`, 530 already `Type="Federal"` (the plain string, not the `Type` picklist's nominal `"Federal Agency"` value — see General Principle #2 above), closely matching the ~52 Airtable rows with the checkbox set. Does not touch `RecordType` — every Account, State or Federal `Type`, uses the `Federal` record type. |
 
 ### Known data-quality gotchas
@@ -2201,20 +2206,24 @@ Two shape facts worth keeping:
   disagree ("The name can be modified"); in this data they never do, so that rule is a guard, not a
   live code path.
 
-#### ⚠️ `unique=true` on both fields blocks the load, and it cannot be fixed from this repo
+#### ✅ `unique=true` blocked the load until 2026-08-14 — resolved, and the guard remains
 
-Both fields are `unique=true` in the org (confirmed live via describe, not just from the retrieved
-metadata). That models **one portal team owning at most one Application**, and the source data flatly
-contradicts it: a team owns many by design. Across the 696 resolvable Applications, **104 Team UUIDs
-are shared by 2+ Applications, covering 442 of them** — `DOI - FWS - ECOS` alone owns 54,
-`DOI - IBC - Quicktime` 39, `Education ICAM Team` 20. Writing these columns as-is fails the majority
-of the load with `DUPLICATE_VALUE`.
+**Both fields are now `unique=false` and `Text(255)`** (they were `unique=true`, `Text(50)`). The
+widening also cleared the six team names that were too long for the old field. **681 Applications
+carry a portal team in Dev and in QA**, loaded with 0 failures.
 
-**Flipping `unique` is a metadata change, so it goes in a CHANGE SET** — a CLI deploy is sanctioned
-only for *deleting* incorrect metadata (see CLAUDE.md). The script therefore **adapts to the org
-rather than failing the whole Application load over two columns nothing else depends on**: it reads
-both fields' definitions at run time via `Get-SalesforceFieldMetadata` and, while either is unique,
-**omits the two columns from the CSV entirely** and prints what the change set needs.
+The problem it fixed: `unique=true` models **one portal team owning at most one Application**, and
+the source data flatly contradicts it — a team owns many by design. Across the 696 resolvable
+Applications, **104 Team UUIDs were shared by 2+ Applications, covering 442 of them** —
+`DOI - FWS - ECOS` alone owns 54, `DOI - IBC - Quicktime` 39, `Education ICAM Team` 20. Writing those
+columns against a unique field failed the majority of the load with `DUPLICATE_VALUE`.
+
+**The runtime guard is still in the script and should stay.** It reads both fields' definitions at
+run time via `Get-SalesforceFieldMetadata` and, while either is unique, **omits the two columns from
+the CSV entirely** rather than failing the whole Application load over two columns nothing else
+depends on. That is what let the pipeline keep running while the change set was pending, and it is
+what will catch `Unique` being re-introduced in any org — the run prints a red
+`PARTNER PORTAL TEAM COLUMNS WITHHELD` block if it ever fires again.
 
 Omitted, not blanked — deliberately. An empty column in an upsert file **clears** whatever is already
 in the org, so writing empty strings would actively destroy data the Partner Portal may have put

@@ -81,7 +81,7 @@ powershell scripts/data-migration/Invoke-MigrationRollback.ps1 `
 
 `-RunDirectory` is what scopes the rollback — it undoes **that run**, not "the migration" in general.
 Each `Invoke-FullMigrationLoad.ps1` run prints its directory at the end; they live in
-`logs/data-migration/full-load-<timestamp>/`.
+`logs/data-migration/Invoke-FullMigrationLoad-<timestamp>/`.
 
 **Always `-PlanOnly` first.** It is free and it is how you find out that the plan is not what you
 expected. On 2026-08-13 the dry run caught a real bug in the rollback script itself — it was reading

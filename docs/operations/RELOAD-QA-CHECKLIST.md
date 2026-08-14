@@ -590,7 +590,7 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
       batch on 2026-08-13; they hold no external ID, so no factory reset removes them and the count
       never returns to zero. Testing for zero would report a bypass failure on every run for ever.
       `Invoke-FullMigrationLoad.ps1` records the pre-run figure in
-      `full-load-<ts>/fcic-junk-baseline.txt` and compares against it. By hand:
+      `<run>/fcic-junk-baseline.txt` and compares against it. By hand:
       ```
       sf data query -q "SELECT COUNT() FROM Account WHERE RecordType.DeveloperName = 'FCIC_Individual'" --target-org <alias>
       ```

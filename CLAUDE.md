@@ -46,6 +46,13 @@ so `-Environment QA` works. It can trail Dev by a change set — **never assume 
 applies to QA**; verify against the org you are actually loading. Confirmed example: `priority_type__c`
 exists in Dev and **does not exist in QA at all**.
 
+**QA was fully loaded on 2026-08-14: 8,740 records, 0 unexpected failures**, using the same two
+commands as Dev (factory reset, then `Invoke-FullMigrationLoad.ps1 -BootstrapAccounts`). Every object
+matched Dev except three explainable differences: Account 587 vs 584 (different pre-existing
+population), Contact 1,871 vs 1,870 (**the org duplicate rule fires on 10 rows here, 11 in Dev** —
+the only behavioural difference found between the orgs), and 2 extra junction rows following from
+that extra Contact. **Counts in this file are Dev's unless it says otherwise.**
+
 ## ⚠️ Metadata promotion is by CHANGE SET only
 
 **Do not promote metadata between orgs with `sf project deploy`.** Outbound/inbound change sets are
@@ -247,7 +254,7 @@ value map, etc.) — this section is the short cross-object summary.
 | Opportunity Contacts | `OpportunityContactRole` | `Opportunity Record ID` + Contact `rec...` ID; `Contact Type` → `Role`, `Primary` → `IsPrimary` (blocked on the `externalId` fix above) |
 | Impediments | `LDGCRM_Impediment__c` | — ; `Category` needs an explicit value map, not passthrough — see below |
 | Impediments × Opportunities (`Opportunities blocked` / `Opportunities requested` columns) | `LDGCRM_Opportunity_Impediment__c` | one junction row per Opportunity in each list; `Opportunities blocked` → `LDGCRM_Severity__c = "Blocker"`, `Opportunities requested` → `"Impediment"` |
-| Market Segments | `LDGCRM_Market_Segment__c` | *(already migrated — see above)* |
+| Market Segments | `LDGCRM_Market_Segment__c` | *(loaded by the pipeline as step 1 — `Build-MarketSegmentLoad.ps1`, added 2026-08-14)* |
 | Meetings | Activity, as an **Event** (`LDGCRM_Meeting_Type__c` from `Meeting Type`) | `Opportunity Record ID` if present, else `Accounts Record ID`, → `WhatId` |
 | Issuer Strings | *(no object of its own)* — collapses up onto `LDGCRM_application__c` | `Applications` → the Application whose `LDGCRM_P3_Partner_Portal_Team_Name__c` / `LDGCRM_P3_Team_UUID__c` it supplies. **Airtable records the team per issuer string, Salesforce per Application**, so the value only migrates where all of an Application's issuer strings agree — see below |
 

@@ -384,7 +384,7 @@ But the pipeline also **updates records it does not own**:
 Deleting a migrated record does not restore an updated one. Once those fields are overwritten the
 previous values are gone unless something wrote them down first — and until 2026-08-13 nothing did.
 `Invoke-FullMigrationLoad.ps1` now captures a **pre-image of every Account** plus baseline counts into
-`logs/data-migration/full-load-<ts>/` before it writes anything. That file is the only thing that
+`logs/data-migration/Invoke-FullMigrationLoad-<ts>/` before it writes anything. That file is the only thing that
 makes an Account rollback possible at all.
 
 ### Why the factory reset is not the answer for production
@@ -396,7 +396,7 @@ reset is deliberately blocked from production anyway.
 
 ### What a rollback script should do
 
-1. Take a **run directory** (`full-load-<ts>/`), not a set of objects — so it undoes exactly one run.
+1. Take a **run directory** (`Invoke-FullMigrationLoad-<ts>/`), not a set of objects — so it undoes exactly one run.
 2. **Delete only what that run created** — external IDs tagged in the org *now* and *absent* from the
    pre-run baseline. Records that already existed are updated back, never deleted.
    **Built against the org rather than the load CSVs, which was a change from this design.** The load
@@ -419,10 +419,10 @@ think. `-IgnoreDrift` overrides it, deliberately awkwardly.
 ```powershell
 # Always dry-run first - writes the full plan, changes nothing
 powershell scripts/data-migration/Invoke-MigrationRollback.ps1 `
-    -Environment Dev -RunDirectory logs/data-migration/full-load-<ts> -PlanOnly
+    -Environment Dev -RunDirectory logs/data-migration/Invoke-FullMigrationLoad-<ts> -PlanOnly
 
 powershell scripts/data-migration/Invoke-MigrationRollback.ps1 `
-    -Environment Dev -RunDirectory logs/data-migration/full-load-<ts> -Confirmation "ROLLBACK"
+    -Environment Dev -RunDirectory logs/data-migration/Invoke-FullMigrationLoad-<ts> -Confirmation "ROLLBACK"
 ```
 
 ### What it will never be able to do — state this before anyone relies on it

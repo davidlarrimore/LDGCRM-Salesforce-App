@@ -419,6 +419,7 @@ Airtable pull of 2026-08-12.
 | --- | --- | --- |
 | `Get-AirtableExport.ps1` | Pull | Built. **Ten tables as of 2026-08-13** — `Issuer Strings` was added by PR #1 and is the only source of the partner-portal Team Name / Team UUID and of the Partner Portal Admin email. An export missing it makes `Build-ApplicationLoad.ps1` fail outright and silently halves the admin flags on the junction. |
 | `Common.DataMigration.ps1` | shared helpers (Airtable JSON loading, Data Loader CSV writing, read-only SOQL, owner email → User resolution) | Built |
+| `Build-MarketSegmentLoad.ps1` | Prep — Market Segment. **STEP 1 of the load** | Built 2026-08-14. 7 Airtable rows → 5 loaded, 2 skipped for having no Name. Added because Market Segment was the one object the pipeline **required but refused to load** — pre-flight hard-failed on a count of zero while no transform created the records. That produced a live defect in QA, which held all five segments with the right names and **no external IDs**: the Account reconciliation resolves a segment through `LDGCRM_Market_Segment__r.LDGCRM_External_ID__c`, so it would have matched nothing and left Market Segment blank across the whole migration, silently. ⚠️ **The external ID is the segment NAME**, not the Airtable `rec...` ID — the one deliberate exception to the repo convention; the transform hard-fails if two rows share a name. |
 | `Build-AccountReconciliation.ps1` | Prep — Account (update, not upsert) | Built |
 | `Build-ImpedimentLoad.ps1` | Prep — Impediment (independent parent, straight upsert) | Built |
 | `Build-PartnerAccountLoad.ps1` | Prep — Partner Account (Master-Detail to Account, requires Account loaded first) | Built |
@@ -446,7 +447,7 @@ Account step means running `Invoke-AccountBootstrap.ps1` first — reconciliatio
 against otherwise:
 
 ```
-Market Segment (already migrated)
+Market Segment (STEP 1 - Build-MarketSegmentLoad.ps1)
   -> Account (reconciliation/backfill, not create - see Build-AccountReconciliation.ps1)
   -> LDGCRM_Partner_Account__c
   -> Contact

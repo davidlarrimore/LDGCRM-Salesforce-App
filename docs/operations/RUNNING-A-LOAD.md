@@ -72,17 +72,18 @@ Treat a `-PlanOnly` run as the readiness check. If it is clean, the load usually
 
 | # | Step | Object | Why here |
 | --- | --- | --- | --- |
-| 1 | `Impediment` | `LDGCRM_Impediment__c` | No lookups — can go first |
-| 2 | `Account` | Account | **UPDATE, not upsert** — Accounts pre-exist and are matched, never created |
-| 3 | `PartnerAccount` | `LDGCRM_Partner_Account__c` | Master-Detail child of Account |
-| 4 | `Contact` | Contact | Disables another app's trigger — see below |
-| 5 | `Opportunity` | Opportunity | Must precede Application |
-| 6 | `Application` | `LDGCRM_application__c` | Needs Partner Account *and* Opportunity |
-| 7 | `PopulateBrokerParent` | `LDGCRM_application__c` | **Second pass, creates nothing** — fills `LDGCRM_Broker_App_Parent__c` on Applications step 6 already made |
-| 8 | `OpportunityImpediment` | `LDGCRM_Opportunity_Impediment__c` | Two Master-Details, both must exist |
-| 9 | `ApplicationContact` | `LDGCRM_Application_Contact__c` | Junction — needs both sides |
-| 10 | `OpportunityContactRole` | `OpportunityContactRole` | **Insert + read-then-diff**, never upsert |
-| 11 | `Notes` | `ContentNote` | **Last** — a note attaches to a record that must already exist |
+| 1 | `MarketSegment` | `LDGCRM_Market_Segment__c` | **First** — everything downstream derives its Market Segment from these |
+| 2 | `Impediment` | `LDGCRM_Impediment__c` | No lookups — can go first |
+| 3 | `Account` | Account | **UPDATE, not upsert** — Accounts pre-exist and are matched, never created |
+| 4 | `PartnerAccount` | `LDGCRM_Partner_Account__c` | Master-Detail child of Account |
+| 5 | `Contact` | Contact | Disables another app's trigger — see below |
+| 6 | `Opportunity` | Opportunity | Must precede Application |
+| 7 | `Application` | `LDGCRM_application__c` | Needs Partner Account *and* Opportunity |
+| 8 | `PopulateBrokerParent` | `LDGCRM_application__c` | **Second pass, creates nothing** — fills `LDGCRM_Broker_App_Parent__c` on Applications step 6 already made |
+| 9 | `OpportunityImpediment` | `LDGCRM_Opportunity_Impediment__c` | Two Master-Details, both must exist |
+| 10 | `ApplicationContact` | `LDGCRM_Application_Contact__c` | Junction — needs both sides |
+| 11 | `OpportunityContactRole` | `OpportunityContactRole` | **Insert + read-then-diff**, never upsert |
+| 12 | `Notes` | `ContentNote` | **Last** — a note attaches to a record that must already exist |
 
 Three of those deserve a sentence, because they are the ones that surprise people:
 
