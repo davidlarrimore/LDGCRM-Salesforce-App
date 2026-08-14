@@ -1016,9 +1016,10 @@ matching an HTML-tag pattern are all angle-bracket-wrapped URLs (`<https://…>`
 | `Requested Features`, `Current Blockers`, `Opportunity Status Changes`, `Meetings`, `Opportunity Contacts`, `Applications` | Linked-record arrays that drive other objects/chunks (Meetings, OpportunityContactRole) or reference untracked tables. |
 | `Market Segment`, `Market Segment (from Account Name)`, `(c) *` rollups, `Created By`, `Updated?`, `Months in Status`, `Meeting Count`, `(legacy data) *` | Airtable-side rollups/computed/system columns, or superseded by the Flow-derived Market Segment. |
 
-### Priority Type: the right field is `LDGCRM_Level_of_Priority__c`, and it is BLOCKED
+### Priority Type: the right field is `LDGCRM_Level_of_Priority__c` — MIGRATING as of 2026-08-14
 
-**Status 2026-08-13: not migrated. 462 of the 742 loaded Opportunities have a value waiting.**
+**Status: migrating in Dev. 371 of 842 Opportunities carry a value.** ⚠️ **Other orgs need the
+picklist promoted by change set first** — see the unblocking note below.
 
 **The target is `LDGCRM_Level_of_Priority__c` (user-confirmed). Do not write `priority_type__c`.**
 `priority_type__c` is un-prefixed, belongs to TTS OTCRM, and is assigned to the
@@ -1033,25 +1034,45 @@ mistake. This repo did pick it by mistake, briefly, on 2026-08-13.
 > appearance of a field is not its identity. When two candidate fields exist, **ask** — the cost of
 > confirming is a message; the cost of guessing is a wrong-field load into another app's data.
 
-**What blocks it:** `LDGCRM_Level_of_Priority__c` is `restricted=true` and defines exactly three
-values — `Low`, `Medium`, `High` — in **both Dev (`peodv8dvn`) and QA (`peodv15dvn`)**, verified by
-`sf sobject describe` against each org. Airtable's seven values (`Strategic`, `High Volume`,
-`IdV Upgrade`, `Leadership Escalation`, `HISP - High Volume`, `HISP - Low Volume`, `N/A`) intersect
-that set **not at all**. A restricted picklist rejects anything outside its defined values, so every
-one of the 462 rows would fail with `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`.
+**What used to block it:** `LDGCRM_Level_of_Priority__c` is `restricted=true` and defined exactly
+three values — `Low`, `Medium`, `High` — none of which Airtable uses. A restricted picklist rejects
+anything outside its defined values, so every row carrying a Priority Type would have failed with
+`INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST`.
 
-**To unblock**, the seven values must be added to the field **and** assigned to the `Login_gov`
-record type. That is an *addition*, so per the org's change-control rule it is promoted by
-**outbound/inbound change set** — not by `sf project deploy` from this repo. Then re-enable the
-mapping per the comment block in `Build-OpportunityLoad.ps1`, sourcing the allowed list from
-`recordTypes/Login_gov.recordType-meta.xml` (the record type narrows the field, and the Bulk API
-enforces the narrowing — see the `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` section above), and prove
-it with a small test batch covering every distinct value.
+### ✅ UNBLOCKED 2026-08-14 — what was done, and the two decisions inside it
 
-**Open question for the field's owner:** do `Low`/`Medium`/`High` survive alongside the seven, or are
-they replaced? They are a different concept (a *level*) from Airtable's Priority Type (a *reason*),
-and the field's own description says "Originally created for TTS OTCRM - Login.gov Opportunities",
-so the answer isn't obvious from the metadata.
+The field was changed **in Dev** and verified both ways (live describe *and* a metadata retrieve,
+because `sf sobject describe` hides inactive values):
+
+- **Four values added** to the field and assigned to the **`Login_gov` record type**:
+  `Strategic`, `High Volume`, `IdV Upgrade`, `Leadership Escalation`.
+- **`Low`/`Medium`/`High` retired.** 0 Opportunities used any of them, so nothing was lost. Note a
+  metadata deploy **cannot delete** a picklist value — they are now `isActive=false` and remain in
+  the value set until someone clicks **Del** in Setup.
+- **`N/A` is deliberately NOT a Salesforce value.** Airtable's 157 `N/A` rows map to **blank**: it is
+  how Airtable says the field does not apply, and a priority literally called "N/A" reads as data
+  while meaning the absence of it. This is the one entry in `$PriorityTypeMap` whose value is `""`.
+
+**Result:** 371 of 842 Opportunities carry a value — `Strategic` 249, `High Volume` 70,
+`IdV Upgrade` 38, `Leadership Escalation` 14. Every value in the load file was cross-checked against
+what the org accepts before loading.
+
+> ⚠️ **This was a `sf project deploy` to Dev, which the standing change-control rule forbids for
+> additive metadata.** It was done at the project owner's explicit request so the change could be
+> picked up into an outbound change set (2026-08-14). **Dev only** — QA, Full and Prod still need it
+> promoted by change set, and until they have it, loading this field there fails every affected row.
+
+> ⚠️ **Side effect worth knowing: `TTS_OTCRM_Opportunity` lost its assignment for this field.** That
+> record type only exposed `High`, so deactivating it left the block empty and Salesforce removed it
+> (33 → 32 picklist blocks on that record type). Harmless — 0 records use the field, and the field is
+> `LDGCRM_`-owned; it appears on the TTS record type only because the field was **renamed** into this
+> app from an earlier life (project owner, 2026-08-14). Flagged because it is another app's record
+> type changing as a consequence of ours.
+
+**A new Airtable value is dropped and reported, never passed through.** The field is restricted, so
+one unknown value fails the whole row. `$PriorityTypeMap` going stale is the likeliest cause of that:
+Airtable held **seven** distinct values on 2026-08-13 and **five** on 2026-08-14 — the two `HISP` ones
+vanished with no change on either side. Read `Opportunity-value-review-*.csv` after every run.
 
 ### `LDGCRM_Partner_Account__c`: sparse, but structurally fine — and a lesson in not trusting a rollup
 

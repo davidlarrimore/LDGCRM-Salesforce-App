@@ -26,16 +26,15 @@ optionality, contact merging and Partner Portal Admin sourcing — **please don'
 
 ## At a glance
 
-**Six items remain. Two are yours; four are Salesforce-side.**
+**Five items remain. Three are yours; two are Salesforce-side.**
 
 | # | Item | Rows | What it costs | Whose call |
 | --- | --- | --- | --- | --- |
 | 1 | [Accounts with no Salesforce match](#1-accounts-with-no-salesforce-match--154-rows) | **154** | ~193 records across 5 objects | **Salesforce**, with 2 small Airtable fixes |
 | 2 | [Owners with no active Salesforce login](#2-owners-with-no-active-salesforce-login--247-people) | **247 people** | ownership is inherited, not authored | **Salesforce / business** |
-| 3 | [Priority Type has nowhere to land](#3-priority-type-has-nowhere-to-land--545-opportunities) | **545 values** | field stays empty | **Salesforce** |
-| 4 | [Help-desk names became people](#4-seven-help-desk-names-became-people--7-contacts) | **7** | 7 contacts look like staff | **Airtable** |
-| 5 | [Emails in the Name field](#5-three-contacts-are-named-after-an-email-address--3-rows) | **3** | 3 contacts named after an address | **Airtable** |
-| 6 | [Small tidy-ups](#6-small-tidy-ups) | various | nothing | **Airtable** |
+| 3 | [Help-desk names became people](#3-seven-help-desk-names-became-people--7-contacts) | **7** | 7 contacts look like staff | **Airtable** |
+| 4 | [Emails in the Name field](#4-three-contacts-are-named-after-an-email-address--3-rows) | **3** | 3 contacts named after an address | **Airtable** |
+| 5 | [Small tidy-ups](#5-small-tidy-ups) | various | nothing | **Airtable** |
 
 ---
 
@@ -130,37 +129,7 @@ Lists: `Opportunity-unresolved-owner-*.csv`, `PartnerAccount-unmapped-owner-*.cs
 
 ---
 
-## 3. Priority Type has nowhere to land — 545 Opportunities
-
-**Not an Airtable problem — no action needed from the Airtable data owners.** Your values are fine
-and are staying as they are.
-
-The target field, **`LDGCRM_Level_of_Priority__c`**, still defines only `Low`, `Medium`, `High`.
-Re-verified in Dev on 2026-08-14 **two ways**, because `sf sobject describe` can hide picklist values:
-the live describe and the field's metadata file agree on three values.
-
-The field is `restricted = true`, so writing an undefined value **fails the entire row** — all 545.
-The migration therefore deliberately does not write it.
-
-**545 Opportunities carry a value:** `Strategic` (263), `N/A` (157), `High Volume` (72),
-`IdV Upgrade` (38), `Leadership Escalation` (15). *(Down from seven distinct values — the two `HISP`
-ones are gone.)*
-
-**What we need:**
-1. The five values added to `LDGCRM_Level_of_Priority__c`, **and**
-2. assigned to the **`Login_gov` record type** — a value the record type omits is rejected at load
-   even when the field defines it, and this has already cost one failed batch here.
-3. A decision on whether `Low`/`Medium`/`High` stay alongside them. They describe a different thing
-   (how important an opportunity is) than Priority Type does (why it's a priority).
-
-Once both are in place the data migrates on the next run with a one-line change.
-
-⚠️ **Do not map this to `priority_type__c`.** That field has a matching label but belongs to a
-different application (TTS OTCRM) sharing this org.
-
----
-
-## 4. Seven help-desk names became "people" — 7 contacts
+## 3. Seven help-desk names became "people" — 7 contacts
 
 Where the `Name` field holds a **help-desk or team name rather than a person**, the migration takes it
 at its word and splits it into a first and last name — it has no way to tell `Help Desk` from a real
@@ -186,7 +155,7 @@ is meant to trust what you wrote.
 
 ---
 
-## 5. Three contacts are named after an email address — 3 rows
+## 4. Three contacts are named after an email address — 3 rows
 
 `shyla.morisetty@dot.gov`, `christopher.villas@cisa.dhs.gov`, `icam-portfolio@gsa.gov` are in the
 **`Name`** field. The migration cannot tell these from a real name, so Salesforce ends up with a
@@ -196,7 +165,7 @@ contact *called* an email address.
 
 ---
 
-## 6. Small tidy-ups
+## 5. Small tidy-ups
 
 None of these block anything or need a decision.
 

@@ -19,6 +19,51 @@ each carries 🔴 Open / 🟡 Partially resolved / ✅ Resolved.
 
 ---
 
+## CR-4 — `LDGCRM_Level_of_Priority__c` picklist values — ✅ DONE IN DEV, 🔴 NEEDS PROMOTING
+
+**This is the one to put in the next change set.** Made in Dev on 2026-08-14 at the project owner's
+explicit request, so it can be picked up into an outbound change set. **QA, Full and Prod do not have
+it**, and until they do, loading Opportunity there fails every row carrying a Priority Type — the
+field is `restricted = true`.
+
+### What to include in the change set
+
+| Component | Type | Why |
+| --- | --- | --- |
+| `Opportunity.LDGCRM_Level_of_Priority__c` | Custom Field | carries the four new values |
+| `Opportunity` → `Login_gov` | Record Type | **assigns** them — a value the record type omits is rejected even when the field defines it |
+
+### What changed
+
+**Added** (and assigned to `Login_gov`): `Strategic`, `High Volume`, `IdV Upgrade`,
+`Leadership Escalation`.
+
+**Retired**: `Low`, `Medium`, `High` — 0 Opportunities used any of them, verified before the change.
+
+⚠️ **They are deactivated, not deleted.** A metadata deploy cannot delete a picklist value; all three
+remain in the value set as `isActive = false`. **Only a Setup "Del" removes them** — worth doing while
+usage is still zero, and note `sf sobject describe` will *not* show them, so the value-set page in
+Setup is the only place they are visible.
+
+**`N/A` was deliberately NOT added.** Airtable has it on 157 rows, but it means the field does not
+apply; the transform maps it to blank. A priority literally called "N/A" reads as data while meaning
+its absence.
+
+### Two things to know before promoting
+
+- ⚠️ **`TTS_OTCRM_Opportunity` lost its assignment for this field** as a side effect — it only exposed
+  `High`, so deactivating that left the block empty and Salesforce removed it (33 → 32 picklist blocks
+  on that record type). Harmless here (0 records, and the field is `LDGCRM_`-owned — it appears on
+  that record type only because the field was **renamed** into this app from an earlier life), but
+  **check whether your change set carries that record type**, since promoting it would make the same
+  change in the target org.
+- ✅ **The transform is already updated and proven against the load file** — 371 of 842 Opportunities
+  carry a value (`Strategic` 249, `High Volume` 70, `IdV Upgrade` 38, `Leadership Escalation` 14), and
+  every one was cross-checked against what the org accepts. Nothing further is needed on the pipeline
+  side once the metadata lands.
+
+---
+
 ## CR-1 — `Unique` must be turned off on the two Partner Portal Team fields — ✅ RESOLVED
 
 **Resolved 2026-08-14.** Both fields are now `Unique = false`, and both were widened from Text(50)

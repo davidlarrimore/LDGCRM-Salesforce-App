@@ -13,19 +13,24 @@
         <valueSetDefinition>
             <sorted>false</sorted>
             <value>
-                <fullName>Low</fullName>
+                <fullName>Strategic</fullName>
                 <default>false</default>
-                <label>Low</label>
+                <label>Strategic</label>
             </value>
             <value>
-                <fullName>Medium</fullName>
+                <fullName>High Volume</fullName>
                 <default>false</default>
-                <label>Medium</label>
+                <label>High Volume</label>
             </value>
             <value>
-                <fullName>High</fullName>
+                <fullName>IdV Upgrade</fullName>
                 <default>false</default>
-                <label>High</label>
+                <label>IdV Upgrade</label>
+            </value>
+            <value>
+                <fullName>Leadership Escalation</fullName>
+                <default>false</default>
+                <label>Leadership Escalation</label>
             </value>
         </valueSetDefinition>
     </valueSet>

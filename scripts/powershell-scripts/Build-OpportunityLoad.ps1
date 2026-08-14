@@ -108,40 +108,36 @@ $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-Oppor
 # token, same shape as Application's Ramp Up Approach rule.
 $FocusLevelPattern = '^(Highest|High|Backlog|Developing)'
 
-# Airtable's "Priority Type" column is NOT migrated yet - BLOCKED, not excluded.
+# Airtable's "Priority Type" -> LDGCRM_Level_of_Priority__c.
+# UNBLOCKED 2026-08-14: the field previously defined only Low / Medium / High
+# and is restricted=true, so every in-scope row would have failed. The four
+# values below were added to the field AND assigned to the Login_gov record
+# type, and Low / Medium / High were retired (deactivated - a metadata deploy
+# cannot delete a picklist value, and 0 Opportunities used any of them).
 #
-# TARGET FIELD: LDGCRM_Level_of_Priority__c  (user-confirmed 2026-08-13).
-# Do NOT write priority_type__c. That field is un-prefixed, belongs to TTS
-# OTCRM, and is shared with the TTS_OTCRM_Opportunity record type - it is not
-# this app's field even though its label ("Priority Type") matches the Airtable
-# column name exactly. Matching labels are not evidence of ownership here.
+# DO NOT WRITE priority_type__c. That field is un-prefixed, belongs to TTS
+# OTCRM, and its label ("Priority Type") matches the Airtable column name
+# exactly - which makes it the better label match and the wrong answer. Matching
+# labels are not evidence of ownership here.
 #
-# WHY IT'S BLOCKED: LDGCRM_Level_of_Priority__c is restricted=true and
-# currently defines only Low / Medium / High. Re-verified in Dev on 2026-08-14
-# BOTH ways, because this repo's own rule is that `sf sobject describe` hides
-# inactive picklist values: the live describe and
-# objects/Opportunity/fields/LDGCRM_Level_of_Priority__c.field-meta.xml agree on
-# three values. A restricted picklist rejects anything outside its defined set,
-# so every in-scope row would fail.
+# "N/A" IS DELIBERATELY MAPPED TO BLANK, not added as a picklist value
+# (decided 2026-08-14). It is how Airtable says the field does not apply, and a
+# priority literally called "N/A" reads as data while meaning the absence of it -
+# nobody filters a report for it. 157 rows load with the field empty, which is
+# what "not applicable" means. This is the only entry here whose value is "".
 #
-# Airtable is now down to FIVE distinct values, not the seven recorded on
-# 2026-08-13 - the two HISP ones are gone: Strategic (263), N/A (157),
-# High Volume (72), IdV Upgrade (38), Leadership Escalation (15). 545 rows carry
-# one. Confirm the current set before asking for a change set rather than
-# copying this list, which goes stale on any Airtable edit.
-#
-# TO ENABLE, once the seven values exist on the field AND are assigned to the
-# Login_gov record type (an ADDITION - it must be promoted by change set, not
-# deployed from here):
-#   1. re-add the guarded passthrough, sourcing the allowed list from
-#      objects/Opportunity/recordTypes/Login_gov.recordType-meta.xml, NOT from
-#      the field metadata - the record type narrows it further and the Bulk API
-#      enforces that narrowing (see docs/engineering/TRANSFORMATION-RULES.md);
-#   2. add LDGCRM_Level_of_Priority__c to $OutputRow;
-#   3. prove it with a small test batch covering every distinct value before
-#      any full load.
-# 462 of the 742 currently loaded Opportunities have a value waiting in
-# Airtable, so this is worth unblocking.
+# An Airtable value that is NOT in this map is DROPPED and reported, never
+# passed through. The field is restricted, so an unknown value fails the WHOLE
+# row - and this map going stale is the likeliest cause: Airtable was on seven
+# distinct values on 2026-08-13 and five on 2026-08-14 (the two HISP ones went
+# away) with no code change on either side. Read the value-review CSV.
+$PriorityTypeMap = @{
+    "Strategic"             = "Strategic"
+    "High Volume"           = "High Volume"
+    "IdV Upgrade"           = "IdV Upgrade"
+    "Leadership Escalation" = "Leadership Escalation"
+    "N/A"                   = ""
+}
 
 # Airtable literally stores "Gov?t Employees" with an ASCII question mark on
 # 25 rows - confirmed NOT an export artifact (82 curly apostrophes survive
@@ -706,6 +702,31 @@ foreach ($Row in $AirtableOpportunities) {
 
     $OwnerSourceByRecId[$RecId] = $OwnerSource
 
+    # --- Priority Type -> LDGCRM_Level_of_Priority__c (restricted picklist) ---
+    # Unmapped values are dropped and reported rather than passed through: the
+    # field is restricted, so one unknown value fails the entire row.
+    $LevelOfPriority = ""
+    $RawPriority = @($Row.fields.'Priority Type') | Select-Object -First 1
+
+    if (-not [string]::IsNullOrWhiteSpace($RawPriority)) {
+        $PriorityKey = "$RawPriority".Trim()
+        if ($PriorityTypeMap.ContainsKey($PriorityKey)) {
+            $LevelOfPriority = $PriorityTypeMap[$PriorityKey]
+        }
+        else {
+            # Property set MUST match the other $ValueReviewRows entries -
+            # Export-Csv takes its header from the first object only, so a row
+            # with different properties silently loses columns for every row.
+            $ValueReviewRows.Add([PSCustomObject]@{
+                AirtableRecordId = $RecId
+                Field            = "Priority Type"
+                OriginalValue    = $RawPriority
+                AppliedValue     = ""
+                Reason           = "No matching value in LDGCRM_Level_of_Priority__c's restricted picklist - dropped rather than failing the whole row. Add it to `$PriorityTypeMap once the Salesforce value exists on the field AND on the Login_gov record type."
+            })
+        }
+    }
+
     $OutputRow = [ordered]@{
         LDGCRM_External_ID__c                      = $RecId
         OwnerId                                     = $OwnerId
@@ -715,6 +736,7 @@ foreach ($Row in $AirtableOpportunities) {
         CloseDate                                   = $CloseDate
         "Account.LDGCRM_External_ID__c"             = $AccountId
         "LDGCRM_Partner_Account__r.LDGCRM_External_ID__c" = $PartnerAccountId
+        LDGCRM_Level_of_Priority__c                 = $LevelOfPriority
         LDGCRM_Opportunity_Type__c                  = $Row.fields.'Opportunity Type'
         LDGCRM_Focus_Level__c                       = $FocusLevel
         LDGCRM_Likely_Service_Level_Needed__c       = $Row.fields.'Likely Service Level Needed'

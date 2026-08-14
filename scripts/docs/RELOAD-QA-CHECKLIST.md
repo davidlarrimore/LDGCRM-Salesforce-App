@@ -705,14 +705,28 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 - [ ] ℹ️ Airtable's `Ping / Forgerock` lands as **`Ping/Foregerock`** — the Salesforce value misspells
       ForgeRock. Expected (6 rows), mapped deliberately. Once the Salesforce value is corrected to
       `Ping/Forgerock`, update `$IdentityPlatformMap` in the same change or those 6 rows start failing.
-- [ ] ℹ️ **Level of Priority will be EMPTY on every Opportunity. That is expected, not a bug.**
-      Airtable's `Priority Type` (**462 of the 742** have a value) maps to
-      `LDGCRM_Level_of_Priority__c`, which is `restricted=true` and currently defines only
-      `Low`/`Medium`/`High` — none of Airtable's seven values. The transform deliberately does not
-      write it; loading it would fail every one of those rows. Unblocking it needs the seven values
-      added to the field **and** assigned to the `Login_gov` record type, promoted by change set.
-      **Do not "fix" this by writing `priority_type__c`** — that field belongs to TTS OTCRM despite
-      its matching "Priority Type" label. See `TRANSFORMATION-RULES.md`, the Priority Type section.
+- [ ] ✅ **Level of Priority NOW LOADS (unblocked 2026-08-14).** It was empty on every Opportunity
+      until the field's values were fixed. Expect **371 of the 842** to carry one:
+      `Strategic` 249, `High Volume` 70, `IdV Upgrade` 38, `Leadership Escalation` 14.
+      ```
+      sf data query -q "SELECT LDGCRM_Level_of_Priority__c, COUNT(Id) FROM Opportunity WHERE LDGCRM_External_ID__c != null GROUP BY LDGCRM_Level_of_Priority__c" --target-org <alias> --result-format csv
+      ```
+      - ⚠️ **This needs the metadata in the target org first.** `LDGCRM_Level_of_Priority__c` is
+        `restricted=true`, so a value it does not define **fails the whole row**. Dev was fixed on
+        2026-08-14; **QA/Full/Prod need it by change set** — the four values on the field *and*
+        assigned to the `Login_gov` record type. A value the record type omits is rejected even when
+        the field defines it.
+      - ℹ️ **Airtable's `N/A` maps to BLANK deliberately** (157 rows). It means the field does not
+        apply; a priority literally called "N/A" would read as data while meaning its absence.
+        Blank rows in this field are therefore expected, not a gap.
+      - ℹ️ `Low`/`Medium`/`High` were **retired** (deactivated) on 2026-08-14 — 0 records used them.
+        A metadata deploy cannot delete a picklist value, so they remain in the value set as
+        `isActive=false` until someone clicks **Del** in Setup.
+      - ⚠️ **A new Airtable value is DROPPED and reported, not passed through** — read
+        `Opportunity-value-review-*.csv`. Airtable went from seven distinct values to five in one day
+        with no code change, so `$PriorityTypeMap` going stale is the likeliest failure here.
+      - **Do not "fix" a blank by writing `priority_type__c`** — that field belongs to TTS OTCRM
+        despite its matching "Priority Type" label. See `TRANSFORMATION-RULES.md`.
 
 ### 4e. `LDGCRM_application__c`
 
