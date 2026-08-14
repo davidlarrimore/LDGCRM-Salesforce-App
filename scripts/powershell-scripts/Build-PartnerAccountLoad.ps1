@@ -139,7 +139,7 @@ if (@($OwnerLookup.Ambiguous).Count -gt 0) {
 }
 
 # ============================================================
-# OWNER CHAIN - steps 2 and 3
+# OWNER CHAIN - step 2
 #
 # Business rule confirmed 2026-08-14: where Airtable's owner has no active
 # Salesforce User, inherit the parent ACCOUNT's owner; only if that fails too
@@ -161,23 +161,6 @@ Write-Host "Resolving the fallback owner ($FallbackOwnerEmail)..." -ForegroundCo
 $FallbackOwnerId = Resolve-FallbackOwnerId -Email $FallbackOwnerEmail -OrgAlias $OrgAlias -ApiVersion $ApiVersion
 Write-Host "Fallback owner resolves to $FallbackOwnerId."
 
-Write-Host "Reading Account owners for the inheritance step..." -ForegroundColor Cyan
-$AccountOwnerRows = @(Invoke-SalesforceQuery `
-    -Soql ("SELECT LDGCRM_External_ID__c, OwnerId, Owner.IsActive, Owner.UserType " +
-           "FROM Account WHERE LDGCRM_External_ID__c != null") `
-    -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
-
-# Only owners that can actually hold a record. An ACTIVE user is not enough -
-# a non-Standard UserType is rejected as an owner, which is the same trap
-# Build-ApplicationLoad.ps1 documents against this very field.
-$AccountOwnerByExternalId = @{}
-foreach ($Acct in $AccountOwnerRows) {
-    if ($Acct.LDGCRM_External_ID__c -and $Acct.OwnerId -and
-        $Acct.Owner.IsActive -and $Acct.Owner.UserType -eq "Standard") {
-        $AccountOwnerByExternalId[$Acct.LDGCRM_External_ID__c] = $Acct.OwnerId
-    }
-}
-Write-Host "$($AccountOwnerByExternalId.Count) Accounts have an owner eligible to inherit."
 
 # ============================================================
 # TRANSFORM
@@ -186,7 +169,7 @@ Write-Host "$($AccountOwnerByExternalId.Count) Accounts have an owner eligible t
 $UpsertRows = [System.Collections.Generic.List[object]]::new()
 $SkippedRows = [System.Collections.Generic.List[object]]::new()
 $UnmappedOwnerRows = [System.Collections.Generic.List[object]]::new()
-$OwnerStepCounts = @{ AirtableOwner = 0; AccountOwner = 0; Fallback = 0 }
+$OwnerStepCounts = @{ AirtableOwner = 0; Fallback = 0 }
 
 foreach ($Row in $AirtablePartnerAccounts) {
     $RecId = $Row.id
@@ -216,7 +199,7 @@ foreach ($Row in $AirtablePartnerAccounts) {
         continue
     }
 
-    # --- OWNER CHAIN: Airtable owner -> parent Account's owner -> fallback ---
+    # --- OWNER CHAIN: Airtable owner -> fallback ---
     $OwnerEmail = $Row.fields.'Account Owner'.email
     $OwnerId = ""
     $OwnerSource = ""
@@ -224,10 +207,6 @@ foreach ($Row in $AirtablePartnerAccounts) {
     if ($OwnerEmail -and $OwnerIdByEmail.ContainsKey($OwnerEmail)) {
         $OwnerId = $OwnerIdByEmail[$OwnerEmail]
         $OwnerSource = "AirtableOwner"
-    }
-    elseif ($AccountOwnerByExternalId.ContainsKey($AccountRecordIds[0])) {
-        $OwnerId = $AccountOwnerByExternalId[$AccountRecordIds[0]]
-        $OwnerSource = "AccountOwner"
     }
     else {
         $OwnerId = $FallbackOwnerId
@@ -299,7 +278,6 @@ Write-Host ("{0,-40} {1,8:N0}" -f "Airtable Partner Account rows", $AirtablePart
 Write-Host ("{0,-40} {1,8:N0}" -f "Ready for upsert", $UpsertRows.Count)
 Write-Host ("{0,-40} {1,8:N0}" -f "Skipped (no/ambiguous parent Account)", $SkippedRows.Count)
 Write-Host ("{0,-40} {1,8:N0}" -f "Owner from Airtable", $OwnerStepCounts.AirtableOwner)
-Write-Host ("{0,-40} {1,8:N0}" -f "Owner inherited from the Account", $OwnerStepCounts.AccountOwner)
 Write-Host ("{0,-40} {1,8:N0}" -f "Owner = fallback ($FallbackOwnerEmail)", $OwnerStepCounts.Fallback)
 Write-Host ("{0,-40} {1,8:N0}" -f "Airtable owner unusable (reported)", $UnmappedOwnerRows.Count)
 Write-Host ""

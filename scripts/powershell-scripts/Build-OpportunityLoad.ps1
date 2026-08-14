@@ -37,13 +37,13 @@
         the two revenue formulas are computed FROM the estimate fields this
         script does set, so Airtable's own revenue columns are not migrated -
         the values recompute themselves.
-      - LDGCRM_Level_of_Priority__c: the intended target for Airtable's
-        "Priority Type", but BLOCKED - the field is restricted and defines only
-        Low/Medium/High, none of which are Airtable's seven values. See the
-        detailed block below for what has to happen before it can load.
       - priority_type__c: DO NOT WRITE. Labelled "Priority Type" - identical to
         the Airtable column name - but un-prefixed and owned by TTS OTCRM. The
         label match is a trap, not evidence. See the block below.
+    LDGCRM_Level_of_Priority__c IS written as of 2026-08-14. It was blocked while
+    the field defined only Low/Medium/High against a restricted picklist; those
+    were retired and Airtable's four real values added. Airtable's "N/A" maps to
+    BLANK by decision - see $PriorityTypeMap below.
     LDGCRM_Existing_Identity_Platforms__c / LDGCRM_Alternative_Identity_Platforms__c
     ARE migrated as of 2026-08-13. They used to be blocked: the Airtable columns
     held rec... IDs pointing at a table this migration doesn't pull. Airtable has
@@ -63,12 +63,14 @@
     Department of Defense carry byte-identical 50-Opportunity lists, several
     named "(placeholder)". See docs/engineering/TRANSFORMATION-RULES.md.
 
-    OwnerId comes from Airtable's "Pod Opportunity Lead" (a collaborator object
-    carrying .email), per the ownership rule agreed 2026-08-13: use the Airtable
-    owner where they have an ACTIVE Salesforce User, otherwise fall back to the
-    loading user. The fallback is expressed by leaving OwnerId BLANK rather than
-    writing an explicit Id - see the OwnerId comment at the output row for why
-    that is deliberate and not an oversight.
+    OwnerId resolves in THREE steps (business rule 2026-08-14):
+      1. Airtable's "Pod Opportunity Lead" (a collaborator object carrying
+         .email), where it matches one ACTIVE User;
+      2. otherwise this Opportunity's PARTNER ACCOUNT owner, where it has one -
+         which is rare, since only ~80 of 842 carry a Partner Account;
+      3. otherwise the named fallback owner, written EXPLICITLY rather than left
+         blank. See the OWNER CHAIN block at the output row for why that is
+         deliberate and not an oversight.
 
     This needs no separate pass: Partner Accounts load BEFORE Opportunity (see
     the load order in docs/engineering/ARCHITECTURE.md), so the lookup resolves during this same
@@ -408,35 +410,20 @@ Write-Host "RecordTypeId: $LoginGovRecordTypeId"
 
 Write-Host "Querying $OrgAlias for Accounts carrying an external ID..." -ForegroundColor Cyan
 $LoadedAccounts = @(Invoke-SalesforceQuery `
-    -Soql ("SELECT LDGCRM_External_ID__c, OwnerId, Owner.IsActive " +
-           "FROM Account WHERE LDGCRM_External_ID__c != null") `
+    -Soql ("SELECT LDGCRM_External_ID__c FROM Account WHERE LDGCRM_External_ID__c != null") `
     -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
 
 $LoadedAccountIds = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
 
-# --- OWNER INHERITANCE: the Account's owner, as step 2 of 3 ---
-# Business rule confirmed 2026-08-14: a record whose own Airtable owner has no
-# active Salesforce User inherits the owner of its parent Account, and only
-# falls back to the named fallback owner when that fails too.
-#
-# ONLY ACTIVE owners are indexed. Salesforce rejects an inactive User as an
-# OwnerId outright, so carrying one forward would swap a clean fallback for a
-# row that fails the load - and the Account hierarchy is full of them (only 5 of
-# the production export's 14 owner names match an active User in Dev).
-$AccountOwnerByExternalId = @{}
 
 foreach ($Acct in $LoadedAccounts) {
     if (-not $Acct.LDGCRM_External_ID__c) { continue }
     $LoadedAccountIds.Add($Acct.LDGCRM_External_ID__c) | Out-Null
 
-    if ($Acct.OwnerId -and $Acct.Owner -and $Acct.Owner.IsActive -eq $true) {
-        $AccountOwnerByExternalId[$Acct.LDGCRM_External_ID__c] = $Acct.OwnerId
-    }
 }
 
 Write-Host "$($LoadedAccountIds.Count) reconciled Accounts present in $OrgAlias."
-Write-Host "$($AccountOwnerByExternalId.Count) of them have an ACTIVE owner available to inherit."
 
 # --- Opportunity -> Partner Account, derived from the Applications export ---
 # See the header for why this is derived from Applications and not from the
@@ -463,13 +450,28 @@ foreach ($App in $AirtableApplications) {
 Write-Host "$($OppToPartnerAccounts.Count) Opportunities have a Partner Account recorded via an Application."
 
 Write-Host "Querying $OrgAlias for loaded Partner Accounts..." -ForegroundColor Cyan
+# The owner columns feed step 2 of the owner chain - see the OWNER CHAIN block
+# at the output row. Same eligibility test as everywhere else: active AND a
+# UserType that can actually hold a record.
 $LoadedPartnerAccounts = @(Invoke-SalesforceQuery `
-    -Soql "SELECT LDGCRM_External_ID__c FROM LDGCRM_Partner_Account__c WHERE LDGCRM_External_ID__c != null" `
+    -Soql ("SELECT LDGCRM_External_ID__c, LDGCRM_Partner_Account_Owner__c, " +
+           "LDGCRM_Partner_Account_Owner__r.IsActive, " +
+           "LDGCRM_Partner_Account_Owner__r.UserType " +
+           "FROM LDGCRM_Partner_Account__c WHERE LDGCRM_External_ID__c != null") `
     -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
 $LoadedPartnerAccountIds = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
+$PartnerAccountOwnerById = @{}
 foreach ($Pa in $LoadedPartnerAccounts) {
-    if ($Pa.LDGCRM_External_ID__c) { $LoadedPartnerAccountIds.Add($Pa.LDGCRM_External_ID__c) | Out-Null }
+    if ($Pa.LDGCRM_External_ID__c) {
+        $LoadedPartnerAccountIds.Add($Pa.LDGCRM_External_ID__c) | Out-Null
+
+        if ($Pa.LDGCRM_Partner_Account_Owner__c -and
+            $Pa.LDGCRM_Partner_Account_Owner__r.IsActive -and
+            $Pa.LDGCRM_Partner_Account_Owner__r.UserType -eq "Standard") {
+            $PartnerAccountOwnerById[$Pa.LDGCRM_External_ID__c] = $Pa.LDGCRM_Partner_Account_Owner__c
+        }
+    }
 }
 Write-Host "$($LoadedPartnerAccountIds.Count) Partner Accounts present in $OrgAlias."
 
@@ -663,10 +665,25 @@ foreach ($Row in $AirtableOpportunities) {
         $FirstYearRamp = [math]::Round([double]$Row.fields.'Est. First Year Ramp %' * 100, 0)
     }
 
-    # --- OwnerId: three steps, in order (business rule 2026-08-14) ---
+    # --- OWNER CHAIN: three steps, in order (business rule 2026-08-14) ---
     #   1. Airtable's "Pod Opportunity Lead", if it matches one ACTIVE User.
-    #   2. Otherwise the parent ACCOUNT's owner, if that User is active.
+    #   2. Otherwise this Opportunity's PARTNER ACCOUNT owner, where it has one.
     #   3. Otherwise the named fallback owner.
+    #
+    # ⚠️ Step 2 rarely fires, and that is expected rather than a bug. Only ~80 of
+    # 842 Opportunities carry a Partner Account at all: the link is authored only
+    # via Applications, and the Partner Accounts table's "Opportunities" column
+    # that looks like a richer source is a rollup of the parent Account's
+    # Opportunities, not a real link. So most unresolved owners go straight to
+    # the fallback.
+    #
+    # An earlier draft of this rule inherited the parent ACCOUNT's owner instead.
+    # That was dropped (project owner, 2026-08-14): Airtable has no Account owner
+    # to migrate - the field lives on the Partners table, reaches only 68 of 747
+    # Account rows, and half of those name someone with no Salesforce login - so
+    # it would have meant writing OwnerId onto production Accounts this migration
+    # otherwise never touches, to move 5.5% of them. Account ownership is changed
+    # by hand, outside this pipeline.
     #
     # The fallback is written EXPLICITLY, not left blank. A blank OwnerId makes
     # Salesforce assign the record to whoever ran the load, which stopped being
@@ -688,10 +705,10 @@ foreach ($Row in $AirtableOpportunities) {
     }
 
     if (-not $LeadResolved) {
-        # Step 2. Inherit from the Account this Opportunity already resolved to.
-        if ($AccountId -and $AccountOwnerByExternalId.ContainsKey($AccountId)) {
-            $OwnerId = $AccountOwnerByExternalId[$AccountId]
-            $OwnerSource = "AccountOwner"
+        # Step 2. Inherit from this Opportunity's Partner Account, if it has one.
+        if ($PartnerAccountId -and $PartnerAccountOwnerById.ContainsKey($PartnerAccountId)) {
+            $OwnerId = $PartnerAccountOwnerById[$PartnerAccountId]
+            $OwnerSource = "PartnerAccountOwner"
         }
 
         # Reported whenever Airtable named someone we could not use, even if the
@@ -822,14 +839,14 @@ Write-Host ("{0,-50} {1,8:N0}" -f "Partner Account known but not loaded yet", $U
 # fallback Id. Once an unresolved lead can inherit the Account's owner, "not the
 # fallback Id" no longer means "came from Airtable" - it would silently fold the
 # inherited ones in with the authored ones.
-$OwnerStepCounts = @{ PodOpportunityLead = 0; AccountOwner = 0; Fallback = 0 }
+$OwnerStepCounts = @{ PodOpportunityLead = 0; PartnerAccountOwner = 0; Fallback = 0 }
 foreach ($Row in $UpsertRows) {
     $Src = $OwnerSourceByRecId[$Row.LDGCRM_External_ID__c]
     if ($Src -and $OwnerStepCounts.ContainsKey($Src)) { $OwnerStepCounts[$Src]++ }
 }
 
 Write-Host ("{0,-50} {1,8:N0}" -f "Owner set from Pod Opportunity Lead", $OwnerStepCounts.PodOpportunityLead)
-Write-Host ("{0,-50} {1,8:N0}" -f "Owner inherited from the Account", $OwnerStepCounts.AccountOwner)
+Write-Host ("{0,-50} {1,8:N0}" -f "Owner inherited from the Partner Account", $OwnerStepCounts.PartnerAccountOwner)
 Write-Host ("{0,-50} {1,8:N0}" -f "Owner = fallback ($FallbackOwnerEmail)", $OwnerStepCounts.Fallback)
 Write-Host ("{0,-50} {1,8:N0}" -f "CloseDate came from a fallback field", $CloseDateFallbackRows.Count)
 Write-Host ("{0,-50} {1,8:N0}" -f "Demographic tags dropped (unmapped)", $DroppedDemographicCount)

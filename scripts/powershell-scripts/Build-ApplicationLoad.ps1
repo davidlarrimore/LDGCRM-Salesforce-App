@@ -524,26 +524,16 @@ Write-Host "Querying $OrgAlias for Partner Accounts that actually exist..." -For
 # OP_WITH_INVALID_USER_TYPE_EXCEPTION - and it failed AGAIN after the resolver
 # was fixed, because this path never consulted the resolver at all. A value
 # that is valid in a lookup is not automatically valid as an owner.
-# LDGCRM_Account__r.OwnerId is read for step 3 of the owner chain - see the
-# OWNER CHAIN note at the output row. Partner Account is a Master-Detail child
-# of Account, so this reaches the Application's real parent agency in one hop.
 $LoadedPartnerAccounts = @(Invoke-SalesforceQuery `
     -Soql ("SELECT LDGCRM_External_ID__c, LDGCRM_Partner_Account_Owner__c, " +
            "LDGCRM_Partner_Account_Owner__r.IsActive, " +
-           "LDGCRM_Partner_Account_Owner__r.UserType, " +
-           "LDGCRM_Account__r.OwnerId, LDGCRM_Account__r.Owner.IsActive, " +
-           "LDGCRM_Account__r.Owner.UserType " +
+           "LDGCRM_Partner_Account_Owner__r.UserType " +
            "FROM LDGCRM_Partner_Account__c WHERE LDGCRM_External_ID__c != null") `
     -OrgAlias $OrgAlias)
 
 $LoadedPartnerAccountIds = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
 $PartnerAccountOwnerById = @{}
-# Step 3 of the chain: the parent Account's owner, keyed by Partner Account
-# external ID so the row can reach it without a second lookup. Same eligibility
-# test as the Partner Account owner - active AND a UserType that can own a
-# record - because an Account owner is no more exempt from that than any other.
-$AccountOwnerByPartnerAccountId = @{}
 $OwnerIneligible = 0
 foreach ($Pa in $LoadedPartnerAccounts) {
     if ($Pa.LDGCRM_External_ID__c) {
@@ -561,17 +551,10 @@ foreach ($Pa in $LoadedPartnerAccounts) {
             # silently merging them with "no owner recorded".
             $OwnerIneligible++
         }
-
-        if ($Pa.LDGCRM_Account__r -and $Pa.LDGCRM_Account__r.OwnerId -and
-            $Pa.LDGCRM_Account__r.Owner.IsActive -and
-            $Pa.LDGCRM_Account__r.Owner.UserType -eq "Standard") {
-            $AccountOwnerByPartnerAccountId[$Pa.LDGCRM_External_ID__c] = $Pa.LDGCRM_Account__r.OwnerId
-        }
     }
 }
 Write-Host "$($LoadedPartnerAccountIds.Count) Partner Accounts present in $OrgAlias."
 Write-Host "$($PartnerAccountOwnerById.Count) of them carry an owner eligible to pass down to Applications."
-Write-Host "$($AccountOwnerByPartnerAccountId.Count) can reach an eligible Account owner as a second step."
 if ($OwnerIneligible -gt 0) {
     Write-Host "$OwnerIneligible have an ACTIVE owner who cannot own records (non-Standard UserType); those Applications take the fallback owner." -ForegroundColor Yellow
 }
@@ -870,9 +853,7 @@ foreach ($Row in $AirtableApplications) {
     #   1. The Partner Account's owner, if eligible. Airtable records no owner on
     #      the Application itself, so this is as close to an authored owner as
     #      this object gets.
-    #   2. Otherwise the parent ACCOUNT's owner - Application -> Partner Account
-    #      -> Account - if eligible.
-    #   3. Otherwise the named fallback owner.
+    #   2. Otherwise the named fallback owner.
     #
     # The fallback is written EXPLICITLY, not left blank - see
     # Resolve-FallbackOwnerId for why, and for the re-run trade-off it costs.
@@ -882,10 +863,6 @@ foreach ($Row in $AirtableApplications) {
     if ($PartnerAccountOwnerById.ContainsKey($PartnerAccountId)) {
         $OwnerId = $PartnerAccountOwnerById[$PartnerAccountId]
         $OwnerSource = "PartnerAccountOwner"
-    }
-    elseif ($AccountOwnerByPartnerAccountId.ContainsKey($PartnerAccountId)) {
-        $OwnerId = $AccountOwnerByPartnerAccountId[$PartnerAccountId]
-        $OwnerSource = "AccountOwner"
     }
 
     $OwnerSourceByRecId[$RecId] = $OwnerSource
@@ -1102,14 +1079,13 @@ Write-Host ("{0,-48} {1,8:N0}" -f "Opportunity links blanked (Opportunity not lo
 # Counted by which STEP resolved the owner. Comparing against the fallback Id
 # stopped being a proxy for "inherited from the Partner Account" the moment a
 # second inheritance step existed - it would fold the two together.
-$OwnerStepCounts = @{ PartnerAccountOwner = 0; AccountOwner = 0; Fallback = 0 }
+$OwnerStepCounts = @{ PartnerAccountOwner = 0; Fallback = 0 }
 foreach ($Row in $UpsertRows) {
     $Src = $OwnerSourceByRecId[$Row.LDGCRM_External_ID__c]
     if ($Src -and $OwnerStepCounts.ContainsKey($Src)) { $OwnerStepCounts[$Src]++ }
 }
 
 Write-Host ("{0,-48} {1,8:N0}" -f "Owner inherited from Partner Account", $OwnerStepCounts.PartnerAccountOwner)
-Write-Host ("{0,-48} {1,8:N0}" -f "Owner inherited from the Account", $OwnerStepCounts.AccountOwner)
 Write-Host ("{0,-48} {1,8:N0}" -f "Owner = fallback ($FallbackOwnerEmail)", $OwnerStepCounts.Fallback)
 Write-Host ("{0,-48} {1,8:N0}" -f "Unmapped Ramp Up Approach (left blank)", $UnmappedRampUpRows.Count)
 Write-Host ("{0,-48} {1,8:N0}" -f "Launch Level DEFAULTED to 1 (Airtable blank)", $DefaultedLaunchLevelCount)
