@@ -114,6 +114,15 @@ param(
     # resolved unambiguously.
     [switch]$StrictHierarchy,
 
+    # Rebuild the Accounts this script cannot otherwise parent, by removing the
+    # unusable records and letting the normal passes recreate them from the
+    # export with the right parent. OFF BY DEFAULT and it deletes records, so
+    # read the "AMBIGUOUS-HIERARCHY REPAIR" block below before using it.
+    #
+    # The plan is ALWAYS printed, with or without this switch, so the normal way
+    # to use it is to run once without it and read what it proposes.
+    [switch]$RepairAmbiguousHierarchy,
+
     # Approve the bootstrap without a prompt: -Confirmation "BOOTSTRAP". A token
     # rather than a -Force switch - see Assert-LdgcrmTypedConfirmation.
     [string]$Confirmation = "",
@@ -461,6 +470,187 @@ Write-Host "until the pass that creates it." -ForegroundColor DarkGray
 New-Item -ItemType Directory -Path $RunDirectory -Force | Out-Null
 
 # ============================================================
+# AMBIGUOUS-HIERARCHY REPAIR
+#
+# THE PROBLEM. Several agencies each run an office with the same generic name:
+# production has four "Office of the Inspector General" (Defense, Transport,
+# OPM, Social Security) and three "Office of the Director" (NSF, OPM, CDC). This
+# script identifies Accounts by NAME, so once the org holds two records called
+# "Office of the Inspector General" it cannot tell which is the Defense one, and
+# correctly refuses to parent either. They then stay parentless for ever: they
+# carry no LDGCRM_External_ID__c, so no factory reset removes them, and every
+# later run hits the same wall. 21 Accounts were in this state on 2026-08-14.
+#
+# It also leaves the org SHORT. A superseded seed (Build-ProdAccountSeed.ps1)
+# deduped by name, so where production has four the sandbox has two - and this
+# script won't insert the missing ones either, for the same reason.
+#
+# WHY IT MATTERS BEYOND TIDINESS. Build-AccountReconciliation.ps1 now tells
+# same-named Accounts apart by their parent agency. With the parent blank it has
+# nothing to compare, so 8 Airtable rows stay unmatched that would otherwise
+# resolve.
+#
+# THE REPAIR. Remove the unusable records and let the normal passes recreate one
+# per export row with the correct parent. No identity is ever assigned by guess:
+# the records are not re-labelled, they are rebuilt from the authoritative
+# export.
+#
+# WHAT MAKES THAT SAFE, AND THE ONLY THING THAT DOES. Every record must be
+# provably inert first - no external ID, no child Accounts, no Opportunities, no
+# Contacts, no Partner Accounts, no Notes, no Activities. A single attachment on
+# any one of them takes that whole NAME out of the repair, reported, untouched.
+# These are name-and-owner skeletons this same script created; deleting one
+# destroys nothing that is not immediately rebuilt.
+#
+# Dev/QA only, by the ValidateSet on -Environment. The plan prints either way.
+# ============================================================
+
+$RepairPlan = [System.Collections.Generic.List[object]]::new()
+$RepairBlocked = [System.Collections.Generic.List[object]]::new()
+
+# Names the export says need one Account per parent, where the org cannot map
+# them: it holds several under that name, or fewer than the export defines.
+$RepairNames = @($ExportNameCounts.Keys | Where-Object {
+    $ExportNameCounts[$_] -gt 1 -and $AccountIndex.ContainsKey($_) -and
+    (
+        $AccountIndex[$_].Count -gt 1 -or
+        $AccountIndex[$_].Count -lt $ExportNameCounts[$_]
+    )
+})
+
+if ($RepairNames.Count -gt 0) {
+
+    $CandidateIds = @()
+    foreach ($Name in $RepairNames) {
+        foreach ($Rec in $AccountIndex[$Name]) { $CandidateIds += $Rec.Id }
+    }
+
+    Write-Host ""
+    Write-Host "Checking whether $($CandidateIds.Count) same-named Account(s) are safe to rebuild..." -ForegroundColor Cyan
+
+    # One batched query per relationship rather than per record. Anything that
+    # comes back means "in use", so an unrecognised shape must never read as
+    # empty - see the throw in Get-InUseIds.
+    $IdList = "'" + ($CandidateIds -join "','") + "'"
+
+    function Get-InUseIds {
+        param([string]$Soql, [string]$Field)
+
+        $Rows = @(Invoke-SalesforceQuery -Soql $Soql -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
+        $Set = @{}
+
+        foreach ($Row in $Rows) {
+            $Value = $Row.$Field
+            if (-not $Value) {
+                throw "Safety check '$Soql' returned a row with no $Field. Refusing to treat any Account as unused on an unrecognised result."
+            }
+            $Set[$Value] = $true
+        }
+
+        return $Set
+    }
+
+    $InUse = @{}
+    $Checks = @(
+        @{ Label = "child Account";  Soql = "SELECT ParentId FROM Account WHERE ParentId IN ($IdList)";                                    Field = "ParentId" },
+        @{ Label = "Opportunity";    Soql = "SELECT AccountId FROM Opportunity WHERE AccountId IN ($IdList)";                              Field = "AccountId" },
+        @{ Label = "Contact";        Soql = "SELECT AccountId FROM Contact WHERE AccountId IN ($IdList)";                                  Field = "AccountId" },
+        @{ Label = "Partner Account";Soql = "SELECT LDGCRM_Account__c FROM LDGCRM_Partner_Account__c WHERE LDGCRM_Account__c IN ($IdList)"; Field = "LDGCRM_Account__c" },
+        @{ Label = "Note or file";   Soql = "SELECT LinkedEntityId FROM ContentDocumentLink WHERE LinkedEntityId IN ($IdList)";            Field = "LinkedEntityId" },
+        @{ Label = "Task";           Soql = "SELECT WhatId FROM Task WHERE WhatId IN ($IdList)";                                           Field = "WhatId" },
+        @{ Label = "Event";          Soql = "SELECT WhatId FROM Event WHERE WhatId IN ($IdList)";                                          Field = "WhatId" }
+    )
+
+    foreach ($Check in $Checks) {
+        foreach ($Id in (Get-InUseIds -Soql $Check.Soql -Field $Check.Field).Keys) {
+            if (-not $InUse.ContainsKey($Id)) { $InUse[$Id] = [System.Collections.Generic.List[string]]::new() }
+            $InUse[$Id].Add($Check.Label)
+        }
+    }
+
+    # A populated external ID means the migration claimed it - never in scope.
+    $TaggedIds = @{}
+    foreach ($Row in @(Invoke-SalesforceQuery -Soql "SELECT Id FROM Account WHERE Id IN ($IdList) AND LDGCRM_External_ID__c != null" -OrgAlias $OrgAlias -ApiVersion $ApiVersion)) {
+        $TaggedIds[$Row.Id] = $true
+        if (-not $InUse.ContainsKey($Row.Id)) { $InUse[$Row.Id] = [System.Collections.Generic.List[string]]::new() }
+        $InUse[$Row.Id].Add("external ID set")
+    }
+
+    # A name is repaired only if EVERY record under it is inert. Repairing part
+    # of a name would delete some records and leave the ambiguity in place.
+    foreach ($Name in ($RepairNames | Sort-Object)) {
+        $Records = $AccountIndex[$Name]
+        $Blockers = @($Records | Where-Object { $InUse.ContainsKey($_.Id) })
+
+        if ($Blockers.Count -gt 0) {
+            foreach ($Rec in $Blockers) {
+                $RepairBlocked.Add([PSCustomObject]@{
+                    AccountName = $Rec.Name
+                    AccountId   = $Rec.Id
+                    InUseFor    = ($InUse[$Rec.Id] -join ", ")
+                    Reason      = "Has related records - the whole name '$($Rec.Name)' is left untouched"
+                })
+            }
+            continue
+        }
+
+        foreach ($Rec in $Records) {
+            $RepairPlan.Add([PSCustomObject]@{
+                AccountName    = $Rec.Name
+                AccountId      = $Rec.Id
+                CurrentParent  = $(if ($Rec.ParentId) { $Rec.ParentId } else { "(none)" })
+                InOrgNow       = $Records.Count
+                ExportDefines  = $ExportNameCounts[$Name]
+                Action         = "Remove, then recreate $($ExportNameCounts[$Name]) from the export with parents"
+            })
+        }
+    }
+}
+
+if ($RepairPlan.Count -gt 0 -or $RepairBlocked.Count -gt 0) {
+    Write-Host ""
+    Write-Host "------------------------------------------------------------" -ForegroundColor Yellow
+    Write-Host " AMBIGUOUS-HIERARCHY REPAIR" -ForegroundColor Yellow
+    Write-Host "------------------------------------------------------------" -ForegroundColor Yellow
+
+    if ($RepairPlan.Count -gt 0) {
+        $RepairNameCount = @($RepairPlan | ForEach-Object { $_.AccountName } | Sort-Object -Unique).Count
+        $WillRecreate = 0
+        foreach ($Name in ($RepairNames | Sort-Object)) {
+            if (@($RepairPlan | Where-Object { (Get-NormalizedName -Name $_.AccountName) -eq $Name }).Count -gt 0) {
+                $WillRecreate += $ExportNameCounts[$Name]
+            }
+        }
+
+        Write-Host ""
+        Write-Host ("{0,-48} {1,8:N0}" -f "Office names the org cannot map", $RepairNameCount)
+        Write-Host ("{0,-48} {1,8:N0}" -f "Records to remove (all verified inert)", $RepairPlan.Count)
+        Write-Host ("{0,-48} {1,8:N0}" -f "Records to recreate, each with its parent", $WillRecreate)
+        Write-Host ""
+        $RepairPlan | Format-Table AccountName, AccountId, InOrgNow, ExportDefines -AutoSize | Out-String -Width 160 | Write-Host
+    }
+
+    if ($RepairBlocked.Count -gt 0) {
+        Write-Host "NOT repaired - these have related records, so their name is left alone:" -ForegroundColor Red
+        $RepairBlocked | Format-Table AccountName, AccountId, InUseFor -AutoSize | Out-String -Width 160 | Write-Host
+    }
+
+    $RepairPlanFile = Join-Path $RunDirectory "repair-ambiguous-hierarchy-plan.csv"
+    if ($RepairPlan.Count -gt 0) { $RepairPlan | Export-Csv -LiteralPath $RepairPlanFile -NoTypeInformation -Encoding UTF8 }
+    if ($RepairBlocked.Count -gt 0) { $RepairBlocked | Export-Csv -LiteralPath (Join-Path $RunDirectory "repair-ambiguous-hierarchy-blocked.csv") -NoTypeInformation -Encoding UTF8 }
+
+    if (-not $RepairAmbiguousHierarchy) {
+        Write-Host "Plan only - nothing will be removed." -ForegroundColor Yellow
+        Write-Host "Re-run with -RepairAmbiguousHierarchy to apply it." -ForegroundColor Yellow
+        Write-Host ""
+    }
+}
+elseif ($RepairAmbiguousHierarchy) {
+    Write-Host ""
+    Write-Host "-RepairAmbiguousHierarchy: nothing to repair - no unmappable same-named Accounts." -ForegroundColor Green
+}
+
+# ============================================================
 # CONFIRMATION
 # ============================================================
 
@@ -486,6 +676,67 @@ if (-not $PlanOnly) {
         Write-Host "Bootstrap cancelled. Nothing was written." -ForegroundColor Yellow
         exit 0
     }
+}
+
+# ============================================================
+# APPLY THE HIERARCHY REPAIR
+#
+# Runs AFTER the confirmation gate and BEFORE the passes, so the passes see an
+# org with those names absent and recreate them from the export like any other
+# missing Account - no special-casing in the pass logic itself.
+# ============================================================
+
+$RepairDeleted = 0
+
+if ($RepairAmbiguousHierarchy -and $RepairPlan.Count -gt 0 -and -not $PlanOnly) {
+
+    Write-Host ""
+    Write-Host "Applying the ambiguous-hierarchy repair..." -ForegroundColor Yellow
+
+    $RepairDeleteFile = Join-Path $RunDirectory "repair-ambiguous-hierarchy-delete.csv"
+    $RepairPlan | Select-Object @{ Name = "Id"; Expression = { $_.AccountId } } |
+        Export-DataLoaderCsv -Path $RepairDeleteFile
+
+    # Ordinary delete, not a hard delete: these go to the Recycle Bin, so a
+    # mistake is recoverable for 15 days. The records are rebuilt moments later
+    # anyway, which is why nothing here needs the factory reset's harder tools.
+    $DeleteArgs = @(
+        "data", "delete", "bulk",
+        "--sobject", "Account",
+        "--file", $RepairDeleteFile,
+        "--target-org", $OrgAlias,
+        "--api-version", $ApiVersion,
+        "--wait", "$WaitMinutes"
+    )
+
+    Write-Host "  sf $($DeleteArgs -join ' ')" -ForegroundColor DarkGray
+    & sf @DeleteArgs
+    $DeleteExit = $LASTEXITCODE
+
+    # Verify against the org rather than trusting the exit code: a partial
+    # delete that still leaves two same-named records would put the passes
+    # straight back into the ambiguity this is meant to clear, and the summary
+    # would claim it was repaired.
+    $StillThere = @(Invoke-SalesforceQuery `
+        -Soql ("SELECT Id FROM Account WHERE Id IN ('" + (($RepairPlan | ForEach-Object { $_.AccountId }) -join "','") + "')") `
+        -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
+
+    $RepairDeleted = $RepairPlan.Count - $StillThere.Count
+
+    Write-Host ("  removed {0} of {1}" -f $RepairDeleted, $RepairPlan.Count)
+
+    if ($StillThere.Count -gt 0) {
+        Write-Host ""
+        Write-Host "REPAIR INCOMPLETE - $($StillThere.Count) record(s) survived the delete (sf exit $DeleteExit)." -ForegroundColor Red
+        Write-Host "Continuing would rebuild on top of them and recreate the ambiguity." -ForegroundColor Red
+        Write-Host "Nothing further has been written. Investigate, then re-run." -ForegroundColor Red
+        Stop-ScriptLog
+        exit 1
+    }
+
+    # The index is now stale in exactly the way that matters.
+    $AccountIndex = Get-OrgAccountIndex -Org $OrgAlias -Version $ApiVersion
+    Write-Host "  re-read the org index; the passes will recreate these from the export." -ForegroundColor Green
 }
 
 # ============================================================
@@ -899,6 +1150,13 @@ if (-not $PlanOnly) {
         Write-Host ("{0,-40} {1,8:N0}" -f "Accounts inserted", $TotalInserted)
     }
     Write-Host ("{0,-40} {1,8:N0}" -f "Parent links set", $TotalParented)
+
+    if ($RepairDeleted -gt 0) {
+        Write-Host ("{0,-40} {1,8:N0}" -f "Removed and rebuilt (hierarchy repair)", $RepairDeleted) -ForegroundColor Green
+    }
+    elseif ($RepairPlan.Count -gt 0) {
+        Write-Host ("{0,-40} {1,8:N0}  <- NOT applied; pass -RepairAmbiguousHierarchy" -f "Unmappable same-named Accounts", $RepairPlan.Count) -ForegroundColor Yellow
+    }
 
     if ($UnparseablePasses -gt 0) {
         Write-Host ""

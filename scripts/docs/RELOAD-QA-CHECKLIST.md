@@ -485,10 +485,49 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
       Account on the loading user. Only 5 of the export's 14 owner names match an *active* User in
       Dev (notably `SNA MSadi`, who owns 607 production Accounts, is inactive there), so a large
       share legitimately falls back to the loading user. That is expected, not a failure.
+- [ ] 🆕 **Review the AMBIGUOUS-HIERARCHY REPAIR plan the bootstrap now prints** (added 2026-08-14).
+      Several agencies run an office with the same generic name — production has four
+      `Office of the Inspector General` and three `Office of the Director`. The bootstrap identifies
+      Accounts by name, so once two exist it cannot tell them apart, refuses to parent either, and
+      will not insert the ones the org is missing. They carry no external ID, so **no factory reset
+      clears them and every later run hits the same wall.**
+
+      **The plan prints whether or not you intend to act on it. Nothing is removed without
+      `-RepairAmbiguousHierarchy`.** Measured 2026-08-14 in Dev: **6 office names, 11 records to
+      remove, 15 to recreate** (the org gains the 4 it was short).
+      ```powershell
+      # preview only - always do this first
+      .\powershell-scripts\Invoke-AccountBootstrap.ps1 -Environment Dev -PlanOnly
+      # apply it
+      .\powershell-scripts\Invoke-AccountBootstrap.ps1 -Environment Dev -RepairAmbiguousHierarchy
+      ```
+      - ⚠️ **Read the `NOT repaired` block, it is the important half.** A name is only rebuilt when
+        **every** record under it is provably inert — no external ID, child Account, Opportunity,
+        Contact, Partner Account, Note or Activity. On 2026-08-14 that check **blocked 8 records**,
+        including `AmeriCorps` (Opportunity + Contact + Partner Account) and
+        `U.S. Army Futures Command`. Those stay ambiguous, by design. **A run where nothing is
+        blocked deserves a second look, not relief.**
+      - The delete is an ordinary delete, not a hard delete — the records sit in the Recycle Bin, and
+        they are rebuilt moments later in the same run.
+      - It verifies against the org afterwards and **stops the run** if any record survived, rather
+        than rebuilding on top of the ambiguity it was meant to clear.
 - [ ] `Build-AccountReconciliation.ps1` → `Invoke-SalesforceLoad.ps1 -Operation Update` (Id-keyed,
       **not** upsert)
-- [ ] Expect ~587 matched, ~169 unmatched. The unmatched are the known Airtable duplicate-row problem
-      — fixed at source, not routed around.
+- [ ] Expect ~585 matched, ~154 unmatched, **8 ambiguous**. The unmatched are mostly agencies with no
+      Salesforce Account at all — see AIRTABLE-DATA-QUALITY-REQUESTS.md, which no longer frames this
+      as an Airtable duplicate problem.
+- [ ] 🆕 **Check the `...of which resolved by parent agency` line** (added 2026-08-14). Reconciliation
+      now tells same-named Accounts apart using Airtable's `Parent` column against Salesforce's
+      `Account.ParentId`, instead of giving up at "2 candidates share this name".
+      - **It only works if the target org's Account hierarchy is populated**, which is what the repair
+        step above is for. If the count is **0** and there are still ambiguous rows, the script says
+        so explicitly and the ambiguous CSV will show `(no parent set)` against every candidate —
+        that means the hierarchy is missing, not that the matching is broken.
+      - ⚠️ **Expect some rows to come back as `DUPLICATE AIRTABLE ROW`.** Airtable holds three rows
+        for `Office of Communications` all naming OPM as the parent, and two for
+        `Office of the Director`. They resolve to the *same* Salesforce Account, so only the first
+        claims it and the rest are reported. **This is a guard, not a failure** — without it they
+        would each overwrite the previous row's external ID and the load would report full success.
 
 ### 4b. `LDGCRM_Partner_Account__c`
 
