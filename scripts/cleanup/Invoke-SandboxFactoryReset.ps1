@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 <#
     SANDBOX FACTORY RESET
@@ -170,7 +170,10 @@ $ExternalIdField = "LDGCRM_External_ID__c"
 $WaitMinutes = 30
 
 $Timestamp = Start-ScriptLog -Category "cleanup" -ScriptName "Invoke-SandboxFactoryReset"
-$OutputDirectory = Join-Path (Get-LogDirectory -Category "cleanup") "sandbox-factory-reset-$Timestamp"
+# The run directory itself - see Common.ps1's "one directory per run". This
+# is the ONLY record of what a hard delete removed, so it must sit beside this
+# run's transcript rather than in a folder of its own.
+$OutputDirectory = Get-LogDirectory -Category "cleanup"
 
 # ============================================================
 # FUNCTIONS
@@ -846,3 +849,4 @@ Write-Host "Account bootstrap: $BootstrapStatus"
 finally {
     Stop-ScriptLog
 }
+

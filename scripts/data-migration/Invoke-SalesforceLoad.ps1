@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 <#
     Chunk 5 of the Airtable -> Salesforce data-migration pipeline (see
@@ -87,7 +87,28 @@ param(
     # Absolute floor for that ceiling, so a small batch is not failed by
     # arithmetic (2 of 94 is 2.1% and fine; 2 of 20 would be 10% and is also
     # fine). Effective allowance = max(this, fraction x rows).
-    [int]$ExpectedFailureMinCount = 20
+    [int]$ExpectedFailureMinCount = 20,
+
+    <#
+        Where to write this step's machine-readable result (JSON).
+
+        WHY THIS EXISTS. This script runs as a CHILD PROCESS of
+        Invoke-FullMigrationLoad.ps1, so everything it prints - including the
+        expected-vs-unexpected classification below, which is the single most
+        useful thing it computes - lands in its own transcript and reaches the
+        orchestrator only as an exit code: 0, 1 or 2. Three bits. The
+        orchestrator's summary could therefore say "PARTIAL (expected
+        failures)" but never how many, on what, or why, and an operator wanting
+        that had to open a second transcript per object.
+
+        This file is how the detail gets back. It is written in a `finally`, so
+        a step that throws still reports what it knew - a failed step is
+        precisely when the summary matters most.
+
+        Empty (the default) means "nobody is collecting", and nothing is
+        written: running this script by hand stays exactly as it was.
+    #>
+    [string]$StepResultPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -228,7 +249,11 @@ function Get-BulkFailureDetail {
     param(
         [Parameter(Mandatory = $true)][string]$JobId,
         [Parameter(Mandatory = $true)][string]$Org,
-        [Parameter(Mandatory = $true)][string]$OutputDirectory
+        [Parameter(Mandatory = $true)][string]$OutputDirectory,
+
+        # Prefixed onto the renamed result files so a run directory holding
+        # several objects' failures is readable at a glance.
+        [string]$Label = ""
     )
 
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
@@ -242,10 +267,76 @@ function Get-BulkFailureDetail {
         Set-Location $Previous
     }
 
-    $FailedFile = Join-Path $OutputDirectory "$JobId-failed-records.csv"
+    # The CLI names its output after the JOB, which says nothing about what is
+    # in it. Rename to <object>-<jobid>-... : the label makes the file findable,
+    # and the job id is kept because it is what `sf data bulk results` needs to
+    # fetch it again, AND because it keeps two steps that load the SAME object
+    # apart - Application and BrokerParent both write LDGCRM_application__c, so
+    # a label-only name would have the second silently overwrite the first.
+    foreach ($Kind in @("failed", "success")) {
+        $Written = Join-Path $OutputDirectory "$JobId-$Kind-records.csv"
+        if ($Label -and (Test-Path -LiteralPath $Written)) {
+            Move-Item -LiteralPath $Written -Destination (Join-Path $OutputDirectory "$Label-$JobId-$Kind-records.csv") -Force
+        }
+    }
+
+    $FailedFile = if ($Label) {
+        Join-Path $OutputDirectory "$Label-$JobId-failed-records.csv"
+    } else {
+        Join-Path $OutputDirectory "$JobId-failed-records.csv"
+    }
+
     if (-not (Test-Path -LiteralPath $FailedFile)) { return @() }
 
     return @(Import-Csv -LiteralPath $FailedFile)
+}
+
+# What -StepResultPath will contain. Populated as the run proceeds and written
+# once, in the `finally` - so an early throw still reports Outcome="error" with
+# whatever was known by then, rather than writing nothing and leaving the
+# orchestrator to infer everything from an exit code.
+$StepResult = [ordered]@{
+    Object          = $ObjectApiName
+    Operation       = $Operation
+    Org             = $OrgAlias
+    Timestamp       = $Timestamp
+    Outcome         = "error"      # ok | expected-partial | failed | error | declined
+    Submitted       = 0
+    Succeeded       = 0
+    Failed          = 0
+    ExpectedFailed  = 0
+    UnexpectedFailed = 0
+    Allowance       = 0
+    JobId           = ""
+    FailureDirectory = ""
+    # One entry per DISTINCT error message: { Message, Count, Classification }.
+    # Grouped here rather than in the orchestrator because this is where the
+    # per-object ExpectedFailurePatterns live - the classification is not
+    # reconstructable downstream without them.
+    Errors          = @()
+    ErrorMessage    = ""
+}
+
+function Save-StepResult {
+    param([string]$Path, $Result)
+
+    if (-not $Path) { return }
+
+    try {
+        $Directory = Split-Path -Parent $Path
+        if ($Directory -and -not (Test-Path -LiteralPath $Directory)) {
+            New-Item -ItemType Directory -Path $Directory -Force | Out-Null
+        }
+        # ConvertTo-Json's default -Depth is 2, which silently renders the
+        # Errors array as System.Object[] strings.
+        ($Result | ConvertTo-Json -Depth 6) |
+            Set-Content -LiteralPath $Path -Encoding UTF8
+    }
+    catch {
+        # Never let reporting break a load. The step's own transcript remains
+        # the authority; this file is a convenience for the orchestrator.
+        Write-Host "  (could not write step result to $Path : $($_.Exception.Message))" -ForegroundColor DarkGray
+    }
 }
 
 try {
@@ -264,9 +355,11 @@ if (-not (Test-Path -LiteralPath $CsvFile)) {
 }
 
 $Rows = @(Import-Csv -LiteralPath $CsvFile)
+$StepResult.Submitted = $Rows.Count
 
 if ($Rows.Count -eq 0) {
     Write-Host "CSV has no data rows. Nothing to load." -ForegroundColor Yellow
+    $StepResult.Outcome = "ok"
     exit 0
 }
 
@@ -320,6 +413,7 @@ if (-not (Assert-LdgcrmProductionConsent `
         -Environment $Environment `
         -Action "$Operation $($Rows.Count.ToString('N0')) row(s) into $ObjectApiName" `
         -ProductionConfirmation $ProductionConfirmation)) {
+    $StepResult.Outcome = "declined"
     exit 0
 }
 
@@ -329,6 +423,7 @@ if (-not (Assert-LdgcrmTypedConfirmation `
         -Action "$Operation $($Rows.Count.ToString('N0')) row(s) into $ObjectApiName in $OrgAlias")) {
     Write-Host ""
     Write-Host "Load cancelled. Nothing was written." -ForegroundColor Yellow
+    $StepResult.Outcome = "declined"
     exit 0
 }
 
@@ -452,16 +547,33 @@ Write-Host $ResultFile
 $LoadFailed = $false
 $ExpectedPartial = $false
 
+$StepResult.JobId = "$JobId"
+
+if ($LoadInvocation.ExitCode -eq 0) {
+    # Clean load. Recorded explicitly rather than left at the initial values,
+    # because "0 failures" and "we never got far enough to know" must not look
+    # the same in the report.
+    $StepResult.Outcome = "ok"
+    $StepResult.Succeeded = if ($null -ne $Processed -and $Processed -gt 0) { $Processed - [int]$Failed } else { $Rows.Count }
+    $StepResult.Failed = 0
+}
+
 if ($LoadInvocation.ExitCode -ne 0) {
     if (-not $JobId) {
         Write-Host ""
         Write-Host "The load failed and no job id was returned, so the failures cannot be" -ForegroundColor Red
         Write-Host "classified. Treating as a real failure." -ForegroundColor Red
         $LoadFailed = $true
+        $StepResult.ErrorMessage = "The load failed and no job id was returned, so the failures could not be classified."
     }
     else {
-        $FailureDirectory = Join-Path (Get-LogDirectory -Category "data-migration") "bulk-results\$ObjectApiName-$Timestamp"
-        $FailedRows = @(Get-BulkFailureDetail -JobId $JobId -Org $OrgAlias -OutputDirectory $FailureDirectory)
+        # The run's own directory - not a bulk-results\<object>-<ts>\ folder of
+        # its own. Get-LogDirectory resolves to the run directory when a run is
+        # in progress, so an orchestrated load's failure rows land beside
+        # everything else that load produced.
+        $FailureDirectory = Get-LogDirectory -Category "data-migration"
+        $FailedRows = @(Get-BulkFailureDetail -JobId $JobId -Org $OrgAlias `
+            -OutputDirectory $FailureDirectory -Label $ObjectApiName)
 
         if ($null -eq $Failed -or $Failed -eq 0) { $Failed = $FailedRows.Count }
 
@@ -475,6 +587,37 @@ if ($LoadInvocation.ExitCode -ne 0) {
         })
 
         $Allowance = [Math]::Max($ExpectedFailureMinCount, [int][Math]::Ceiling($Rows.Count * $ExpectedFailureMaxFraction))
+
+        # --- feed the run report ------------------------------------------
+        # Distinct error messages with counts, each already classified. The
+        # orchestrator cannot redo this: ExpectedFailurePatterns is per-object
+        # and is passed in, not stored anywhere the report could read later.
+        #
+        # Messages are normalised before grouping - Salesforce embeds the
+        # offending record id in several of them ("Foreign key external ID:
+        # recXYZ..."), which would otherwise turn one cause affecting 20 rows
+        # into 20 causes affecting one row each, and bury the actual signal.
+        $UnexpectedIds = [System.Collections.Generic.HashSet[string]]::new()
+        foreach ($Row in $Unexpected) { $UnexpectedIds.Add("$($Row.sf__Error)") | Out-Null }
+
+        $StepResult.Succeeded = $Rows.Count - $FailedRows.Count
+        $StepResult.Failed = $FailedRows.Count
+        $StepResult.UnexpectedFailed = $Unexpected.Count
+        $StepResult.ExpectedFailed = $FailedRows.Count - $Unexpected.Count
+        $StepResult.Allowance = $Allowance
+        $StepResult.FailureDirectory = $FailureDirectory
+        $StepResult.Errors = @(
+            $FailedRows |
+                Group-Object { ConvertTo-NormalisedErrorMessage -Message "$($_.sf__Error)" } |
+                Sort-Object Count -Descending |
+                ForEach-Object {
+                    [ordered]@{
+                        Message        = $_.Name
+                        Count          = $_.Count
+                        Classification = if ($UnexpectedIds.Contains("$($_.Group[0].sf__Error)")) { "UNEXPECTED" } else { "expected" }
+                    }
+                }
+        )
 
         Write-Host ""
         Write-Host "------------------------------------------------------------"
@@ -492,6 +635,9 @@ if ($LoadInvocation.ExitCode -ne 0) {
             Write-Host "  No expected-failure patterns are configured for $ObjectApiName," -ForegroundColor Red
             Write-Host "  so every failure counts as real." -ForegroundColor Red
             $LoadFailed = $true
+            # No patterns means the classifier above already marked every row
+            # unexpected - only the explanation needs recording.
+            $StepResult.ErrorMessage = "No expected-failure patterns are configured for $ObjectApiName, so all $($FailedRows.Count) failure(s) count as real."
         }
         elseif ($Unexpected.Count -gt 0) {
             Write-Host ""
@@ -501,12 +647,14 @@ if ($LoadInvocation.ExitCode -ne 0) {
                 Write-Host ("    {0}" -f ("$($_.sf__Error)" -replace '\s+', ' ')) -ForegroundColor Red
             }
             $LoadFailed = $true
+            $StepResult.ErrorMessage = "$($Unexpected.Count) failure(s) do not match any known cause for $ObjectApiName."
         }
         elseif ($FailedRows.Count -gt $Allowance) {
             Write-Host ""
             Write-Host "  All failures match a known cause, but $($FailedRows.Count) exceeds the allowance of $Allowance." -ForegroundColor Red
             Write-Host "  A known cause at unusual volume means something upstream changed - stopping." -ForegroundColor Red
             $LoadFailed = $true
+            $StepResult.ErrorMessage = "All failures match a known cause, but $($FailedRows.Count) exceeds the allowance of $Allowance - a known cause at unusual volume."
         }
         else {
             Write-Host ""
@@ -514,11 +662,13 @@ if ($LoadInvocation.ExitCode -ne 0) {
             Write-Host "  and the count is within the allowance. This is a correct outcome." -ForegroundColor Yellow
             Write-Host "  $($Rows.Count - $FailedRows.Count) of $($Rows.Count) row(s) loaded." -ForegroundColor Green
             $ExpectedPartial = $true
+            $StepResult.Outcome = "expected-partial"
         }
     }
 }
 
 if ($LoadFailed) {
+    $StepResult.Outcome = "failed"
     throw "Load of $ObjectApiName failed. See the classification above."
 }
 
@@ -565,6 +715,12 @@ finally {
             Write-Host "!!! sf data update record --sobject TriggerControls__c --record-id $($TriggerControl.Id) --values `"On__c=true`" --target-org $OrgAlias" -ForegroundColor Red
         }
     }
+
+    # Report what this step did, LAST but unconditionally. A step that threw is
+    # exactly the one whose detail the run summary needs, and by this point
+    # $StepResult carries whatever was established before the throw - including
+    # Outcome="error" if it never got as far as classifying anything.
+    Save-StepResult -Path $StepResultPath -Result $StepResult
 
     Stop-ScriptLog
 }

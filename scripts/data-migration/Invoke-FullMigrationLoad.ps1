@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 <#
     THE FULL MIGRATION LOAD
@@ -91,6 +91,7 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\common\Common.ps1")
 . (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
+. (Join-Path $PSScriptRoot "Common.LoadReport.ps1")
 
 $OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
@@ -333,9 +334,6 @@ function Save-RestorePoint {
     #
     # This costs no extra queries: the tagged count below was already reading
     # these rows and discarding everything but the row count.
-    $IdDirectory = Join-Path $Directory "external-ids"
-    New-Item -ItemType Directory -Path $IdDirectory -Force | Out-Null
-
     $Baseline = [System.Collections.Generic.List[object]]::new()
     foreach ($Object in $Objects) {
         $Total = @(Invoke-SalesforceQuery -Soql "SELECT Id FROM $Object" -OrgAlias $Org -ApiVersion $Version).Count
@@ -352,7 +350,7 @@ function Save-RestorePoint {
             # file has to be read as "unknown", and unknown must not authorise
             # a delete.
             $Existing | Select-Object Id, LDGCRM_External_ID__c |
-                Export-Csv -LiteralPath (Join-Path $IdDirectory "$Object.csv") -NoTypeInformation -Encoding UTF8
+                Export-Csv -LiteralPath (Join-Path $Directory "external-ids-$Object.csv") -NoTypeInformation -Encoding UTF8
         }
         catch { $Tagged = -1 }   # object has no external ID field
 
@@ -360,7 +358,7 @@ function Save-RestorePoint {
     }
 
     $Captured = @($Baseline | Where-Object { $_.ExternalIdTagged -ge 0 })
-    Write-Host ("  Pre-run external IDs   {0} object(s), {1:N0} tagged record(s) -> external-ids\" -f `
+    Write-Host ("  Pre-run external IDs   {0} object(s), {1:N0} tagged record(s) -> external-ids-*.csv" -f `
         $Captured.Count, (($Captured | Measure-Object -Property ExternalIdTagged -Sum).Sum))
 
     $BaselineFile = Join-Path $Directory "baseline-counts.csv"
@@ -546,6 +544,53 @@ function Invoke-PostLoadValidation {
     return [PSCustomObject]@{ Problems = $Problems; Notices = $Notices }
 }
 
+function New-StepRecord {
+    <#
+        One step's line in the run report: what it loaded, plus everything its
+        transform wrote to logs/ while it was running.
+
+        BUILT HERE RATHER THAN AT EACH `$Results.Add` SITE because the loop has
+        six different exits (transform failed, plan-only, no rows, expected
+        partial, load failed, loaded) and the report must be identical from all
+        of them. A step that failed is the one whose findings matter most, and
+        it is also the easiest to forget.
+
+        -Since is the moment before the transform started. Everything the step
+        wrote falls between that and now, which is how review CSVs are
+        attributed to a step without touching a single transform - see
+        Get-LoadRunFindings.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]$Step,
+        [int]$Rows = 0,
+        [Parameter(Mandatory = $true)][string]$Result,
+        [Parameter(Mandatory = $true)][datetime]$Since,
+        [string]$StepResultFile = ""
+    )
+
+    $Findings = @()
+    try { $Findings = @(Get-LoadRunFindings -Since $Since -Until (Get-Date) -StepName $Step.Name) }
+    catch {
+        # A reporting failure must never change the outcome of a load.
+        Write-Host ("  (could not collect review output for {0}: {1})" -f $Step.Name, $_.Exception.Message) -ForegroundColor DarkGray
+    }
+
+    $StepResult = $null
+    if ($StepResultFile -and (Test-Path -LiteralPath $StepResultFile)) {
+        try { $StepResult = (Get-Content -LiteralPath $StepResultFile -Raw | ConvertFrom-Json) }
+        catch { $StepResult = $null }
+    }
+
+    return [PSCustomObject]@{
+        Step       = $Step.Name
+        Object     = $Step.Object
+        Rows       = $Rows
+        Result     = $Result
+        StepResult = $StepResult
+        Findings   = $Findings
+    }
+}
+
 function Invoke-ChildScript {
     <#
         Runs a pipeline script in its own process and returns the exit code.
@@ -623,7 +668,12 @@ elseif ($Environment -eq "Prod") {
 }
 
 # --- PRE-FLIGHT -------------------------------------------------------------
-$RunDirectory = Join-Path (Get-LogDirectory -Category "data-migration") "full-load-$Timestamp"
+# The run directory Start-ScriptLog created. Every step - transform, loader,
+# notes loader - inherits it through $env:LDGCRM_RUN_DIRECTORY, so this one
+# folder ends up holding the whole load: transcripts, review CSVs, bulk failure
+# rows, the restore point and the report. See Common.ps1's "one directory per
+# run" block.
+$RunDirectory = Get-LogDirectory -Category "data-migration"
 
 $Findings = Invoke-PreflightChecks -Org $OrgAlias -Version "67.0" -Env $Environment
 
@@ -758,7 +808,8 @@ foreach ($Step in $Selected) {
     }
 
     if ($TransformCode -ne 0) {
-        $Results.Add([PSCustomObject]@{ Step = $Step.Name; Rows = $RowCount; Result = "TRANSFORM FAILED (exit $TransformCode)" })
+        $Results.Add((New-StepRecord -Step $Step -Rows $RowCount -Since $TransformStart `
+            -Result "TRANSFORM FAILED (exit $TransformCode)"))
         $Failed = $true
         if (-not $ContinueOnError) { break }
         continue
@@ -766,20 +817,26 @@ foreach ($Step in $Selected) {
 
     if ($PlanOnly) {
         $Outcome = if ($Stale) { "no rows (stale file ignored)" } else { "planned (not loaded)" }
-        $Results.Add([PSCustomObject]@{ Step = $Step.Name; Rows = $RowCount; Result = $Outcome })
+        $Results.Add((New-StepRecord -Step $Step -Rows $RowCount -Since $TransformStart -Result $Outcome))
         continue
     }
 
     if ($RowCount -eq 0) {
         $Outcome = if ($Stale) { "skipped (no rows; stale file ignored)" } else { "skipped (no rows)" }
         Write-Host "  Nothing to load - transform produced no rows." -ForegroundColor Yellow
-        $Results.Add([PSCustomObject]@{ Step = $Step.Name; Rows = 0; Result = $Outcome })
+        $Results.Add((New-StepRecord -Step $Step -Rows 0 -Since $TransformStart -Result $Outcome))
         continue
     }
 
     # --- load --------------------------------------------------------------
+    # Where the load step reports what it did, in machine-readable form. The
+    # child's exit code carries three states; this carries the counts, the
+    # per-error classification and the job id. See -StepResultPath in
+    # Invoke-SalesforceLoad.ps1.
+    $StepResultFile = Join-Path $RunDirectory "step-result-$($Step.Name).json"
+
     if ((Get-StepProperty -Step $Step -Key "Loader" -Default "Standard") -eq "Notes") {
-        $LoadArgs = @("-Environment", $Environment)
+        $LoadArgs = @("-Environment", $Environment, "-StepResultPath", $StepResultFile)
         if ($Confirmation) { $LoadArgs += @("-Confirmation", $Confirmation) }
         if ($ProductionConfirmation) { $LoadArgs += @("-ProductionConfirmation", $ProductionConfirmation) }
 
@@ -790,7 +847,8 @@ foreach ($Step in $Selected) {
             "-Environment", $Environment,
             "-ObjectApiName", $Step.Object,
             "-CsvFile", $CsvPath,
-            "-Operation", (Get-StepProperty -Step $Step -Key "Operation" -Default "Upsert")
+            "-Operation", (Get-StepProperty -Step $Step -Key "Operation" -Default "Upsert"),
+            "-StepResultPath", $StepResultFile
         )
         $TriggerOff = Get-StepProperty -Step $Step -Key "TriggerOff"
         if ($TriggerOff) { $LoadArgs += @("-DisableTriggerControl", $TriggerOff) }
@@ -811,19 +869,22 @@ foreach ($Step in $Selected) {
     # halted here and an operator had to diagnose and resume by hand; that
     # happened twice in the 2026-08-13 reload, both times on a correct load.
     if ($LoadCode -eq 2) {
-        $Results.Add([PSCustomObject]@{ Step = $Step.Name; Rows = $RowCount; Result = "PARTIAL (expected failures)" })
+        $Results.Add((New-StepRecord -Step $Step -Rows $RowCount -Since $TransformStart `
+            -Result "PARTIAL (expected failures)" -StepResultFile $StepResultFile))
         $Partial = $true
         continue
     }
 
     if ($LoadCode -ne 0) {
-        $Results.Add([PSCustomObject]@{ Step = $Step.Name; Rows = $RowCount; Result = "LOAD FAILED (exit $LoadCode)" })
+        $Results.Add((New-StepRecord -Step $Step -Rows $RowCount -Since $TransformStart `
+            -Result "LOAD FAILED (exit $LoadCode)" -StepResultFile $StepResultFile))
         $Failed = $true
         if (-not $ContinueOnError) { break }
         continue
     }
 
-    $Results.Add([PSCustomObject]@{ Step = $Step.Name; Rows = $RowCount; Result = "loaded" })
+    $Results.Add((New-StepRecord -Step $Step -Rows $RowCount -Since $TransformStart `
+        -Result "loaded" -StepResultFile $StepResultFile))
 }
 
 # --- summary ----------------------------------------------------------------
@@ -847,27 +908,22 @@ if ($Partial) {
     Write-Host "rejection matched a known cause for that object (parent Account not" -ForegroundColor Yellow
     Write-Host "reconciled, org duplicate rule). That is the documented correct outcome," -ForegroundColor Yellow
     Write-Host "not a failure - the sequence continued rather than stopping." -ForegroundColor Yellow
-    Write-Host "Per-row detail: logs/data-migration/bulk-results/<object>-<timestamp>/" -ForegroundColor DarkGray
+    Write-Host "Per-row detail: <object>-<jobid>-failed-records.csv in this run's directory." -ForegroundColor DarkGray
     Write-Host ""
 }
 
-if ($Failed) {
-    $LastStep = $Results[$Results.Count - 1].Step
-    Write-Host "The sequence STOPPED at '$LastStep'." -ForegroundColor Red
-    Write-Host "Everything after it would withhold rows that depend on that step, which is why" -ForegroundColor Yellow
-    Write-Host "it did not continue. Fix the cause, then resume with:" -ForegroundColor Yellow
-    Write-Host ("  Invoke-FullMigrationLoad.ps1 -Environment {0} -StartAtStep {1}" -f $Environment, $LastStep) -ForegroundColor DarkGray
-    exit 1
-}
+# --- post-load validation ---------------------------------------------------
+# Runs before the report so its findings can go INTO the report. Skipped on
+# -PlanOnly (nothing was written to validate) and after a failure (the org is
+# half-loaded by definition, so every check would fire and none would mean
+# anything).
+$Validation = $null
+$Problems = @()
 
-if ($PlanOnly) {
-    Write-Host "-PlanOnly: nothing was loaded. Re-run without it (and with -Confirmation `"LOAD`") to apply." -ForegroundColor Yellow
-    Write-Host "Restore point and baseline counts: $RunDirectory" -ForegroundColor DarkGray
-}
-else {
+if (-not $PlanOnly -and -not $Failed) {
     $Validation = Invoke-PostLoadValidation -Org $OrgAlias -Version "67.0" -Baseline $Baseline -Directory $RunDirectory
-    $Problems = $Validation.Problems
-    $Notices = $Validation.Notices
+    $Problems = @($Validation.Problems)
+    $Notices = @($Validation.Notices)
 
     Write-Host ""
     if ($Problems.Count -gt 0) {
@@ -887,11 +943,53 @@ else {
         Write-Host ""
         Write-Host "These do not fail the run. They are waiting on something outside this repo." -ForegroundColor DarkGray
     }
+}
+
+# --- the run report ---------------------------------------------------------
+# WRITTEN ON EVERY PATH, INCLUDING A FAILED ONE. A run that stopped at step
+# four is precisely the run whose report is worth reading: it shows what the
+# first three steps withheld, which is usually why the fourth failed. Writing
+# it only on success would remove it exactly when it is needed.
+#
+# Wrapped, because a defect in reporting must not be able to change the outcome
+# of a load. If this throws, the run keeps its own verdict and the operator
+# still has every underlying file.
+try {
+    $ReportText = Write-LoadRunReport `
+        -RunDirectory $RunDirectory `
+        -Steps $Results `
+        -Validation $Validation `
+        -Header @{
+            Environment = $Environment
+            Org         = $OrgAlias
+            Started     = $RunStart
+            Mode        = if ($PlanOnly) { "PLAN ONLY - nothing was loaded" } else { "LOAD" }
+        }
 
     Write-Host ""
-    Write-Host "Run directory (restore point, baseline and post-load counts):" -ForegroundColor Cyan
-    Write-Host "  $RunDirectory"
+    Write-Host $ReportText
+}
+catch {
     Write-Host ""
+    Write-Host "Could not write the run report: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "The run's own result stands; every underlying file is still in $RunDirectory" -ForegroundColor DarkGray
+}
+
+if ($Failed) {
+    $LastStep = $Results[$Results.Count - 1].Step
+    Write-Host ""
+    Write-Host "The sequence STOPPED at '$LastStep'." -ForegroundColor Red
+    Write-Host "Everything after it would withhold rows that depend on that step, which is why" -ForegroundColor Yellow
+    Write-Host "it did not continue. Fix the cause, then resume with:" -ForegroundColor Yellow
+    Write-Host ("  Invoke-FullMigrationLoad.ps1 -Environment {0} -StartAtStep {1}" -f $Environment, $LastStep) -ForegroundColor DarkGray
+    exit 1
+}
+
+if ($PlanOnly) {
+    Write-Host "-PlanOnly: nothing was loaded. Re-run without it (and with -Confirmation `"LOAD`") to apply." -ForegroundColor Yellow
+    Write-Host "Restore point and baseline counts: $RunDirectory" -ForegroundColor DarkGray
+}
+else {
     Write-Host "This is NOT a full verification. Walk docs/operations/RELOAD-QA-CHECKLIST.md - success" -ForegroundColor Cyan
     Write-Host "counts are not the same as correct data." -ForegroundColor Cyan
 

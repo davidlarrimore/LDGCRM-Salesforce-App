@@ -1,6 +1,17 @@
 # Documentation
 
-**Start here.** This page does one thing: sends you to the right document.
+## 🎯 Where is the project? → [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md)
+
+**The north star.** What still has to be true before the production load can run, as seven gates with
+an owner each. Open it first when picking this project up after time away — it is the only page that
+tracks the programme rather than a run, an object, or a script.
+
+Individual loads write their own report to `logs/data-migration/<run>/SUMMARY.txt`, which is
+gitignored and disposable. That tells you what happened once; this tells you where things stand.
+
+---
+
+**Then:** this page sends you to the right document for what you are doing.
 
 The docs are split by **what you are trying to do**, because the audiences barely overlap. Someone
 running a migration does not need the field-by-field mapping rules, and someone changing a transform
@@ -73,16 +84,28 @@ easier to ignore.
 
 | File | |
 | --- | --- |
-| **[migration-load-report-2026-08-13-post-reload.pdf](migration-load-report-2026-08-13-post-reload.pdf)** | **Current.** Written for the Partnerships lead, not for engineers |
-| [migration-load-report-2026-08-13.pdf](migration-load-report-2026-08-13.pdf) | Superseded — kept only as the record of what was true when it was sent |
+| **[migration-load-report-2026-08-13-post-reload.html](migration-load-report-2026-08-13-post-reload.html)** | **Current.** Written for the Partnerships lead, not for engineers |
 
-**Send the PDF, not the HTML.** Google Drive renders a standalone `.html` as raw markup. Regenerate
-with `scripts/data-migration/Export-ReportPdf.ps1`, which verifies the page count — a failed render
-still writes a valid-looking one-page file.
+**Only the HTML is tracked — it is the source. The PDF is generated and is not in a fresh clone.**
+Render it before sending:
+
+```powershell
+scripts\data-migration\Export-ReportPdf.ps1 -HtmlPath docs\migration-load-report-2026-08-13-post-reload.html
+```
+
+**Send the PDF, not the HTML.** Google Drive renders a standalone `.html` as raw markup.
+`Export-ReportPdf.ps1` verifies the page count — a failed render still writes a valid-looking
+one-page file, which is exactly the failure that makes an unverified PDF dangerous to send.
 
 These are **point-in-time snapshots, deliberately dated in the filename.** Both Airtable and the org
 stay in active use and the counts have moved several times within a single day. Never edit an old
-report to refresh it; generate a new dated one and leave the old as the record.
+report to refresh it; generate a new dated one.
+
+> **Only the current report is kept** (changed 2026-08-13). Superseded reports used to be retained as
+> the record of what was sent; they are now removed, because the numbers in them are wrong within
+> hours and a stale report in the repo is more likely to be re-sent by mistake than to be useful.
+> For programme status over time, use **[PRODUCTION-READINESS.md](PRODUCTION-READINESS.md)**, which
+> is maintained rather than snapshotted.
 
 ---
 

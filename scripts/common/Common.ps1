@@ -1,4 +1,4 @@
-# Shared helpers for Login.gov CRM migration automation scripts.
+﻿# Shared helpers for Login.gov CRM migration automation scripts.
 # Dot-source from a script in scripts/<category>/:
 #   . (Join-Path $PSScriptRoot "..\common\Common.ps1")
 #
@@ -128,7 +128,81 @@ function Assert-LdgcrmTypedConfirmation {
     return $true
 }
 
+# ============================================================
+# ONE DIRECTORY PER RUN
+# ============================================================
+# Everything a run produces goes in ONE folder: transcripts, review CSVs, bulk
+# failure rows, restore points, the summary report.
+#
+# WHY IT CHANGED (2026-08-13). It used to be the opposite. Each script wrote its
+# transcript and review CSVs loose into logs/<category>/, and separately created
+# its own typed folder - full-load-<ts>/, notes-load-<ts>/, bulk-results/<obj>-<ts>/,
+# rollback-<ts>/, account-bootstrap-<ts>/. So ONE logical load scattered output
+# across four folder shapes plus ~30 loose files, all correlated only by a
+# timestamp - and each child script stamps its OWN timestamp, so they didn't even
+# match. logs/data-migration/ reached 330 loose CSVs across ~40 runs, and
+# answering "what did the last load produce?" meant knowing which timestamps
+# belonged together.
+#
+# HOW IT WORKS. The first script to call Start-ScriptLog creates the run
+# directory and publishes it in $env:LDGCRM_RUN_DIRECTORY. Get-LogDirectory
+# returns that whenever it is set, so every existing caller redirects into it
+# with no change at the call site. Child processes inherit the variable, which is
+# what makes an orchestrated run land in one folder while a child still keeps its
+# own transcript - the orchestrator runs its steps as child processes precisely
+# so a failure cannot take down its own log.
+#
+# The variable is process-scoped, so it cannot leak into an unrelated shell:
+# setting $env:X in PowerShell affects this process and the ones it starts, and
+# nothing else. Running any script standalone still gets its own run directory.
+function Get-LdgcrmRunDirectory {
+    <#
+        The current run's directory, or "" when no run is in progress.
+    #>
+    if ($env:LDGCRM_RUN_DIRECTORY) { return $env:LDGCRM_RUN_DIRECTORY }
+    return ""
+}
+
 function Get-LogDirectory {
+    <#
+        Where this run's output goes.
+
+        Returns the RUN DIRECTORY when a run is in progress, so every caller
+        that already writes to "the log directory" lands in the run's own folder
+        without changing. Falls back to logs/<Category>/ otherwise - which is
+        what a call before Start-ScriptLog, or from an interactive session, gets.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("metadata", "cleanup", "data-migration")]
+        [string]$Category
+    )
+
+    $RunDirectory = Get-LdgcrmRunDirectory
+    if ($RunDirectory) {
+        if (-not (Test-Path -LiteralPath $RunDirectory)) {
+            New-Item -ItemType Directory -Path $RunDirectory -Force | Out-Null
+        }
+        return $RunDirectory
+    }
+
+    $LogDir = Join-Path (Join-Path (Get-RepoRoot) "logs") $Category
+
+    if (-not (Test-Path $LogDir)) {
+        New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+    }
+
+    return $LogDir
+}
+
+function Get-LogCategoryDirectory {
+    <#
+        logs/<Category>/ itself, ignoring any run in progress.
+
+        For the few things that are genuinely ABOUT the set of runs rather than
+        part of one: finding the previous run to compare against, listing run
+        directories. Everything else wants Get-LogDirectory.
+    #>
     param(
         [Parameter(Mandatory = $true)]
         [ValidateSet("metadata", "cleanup", "data-migration")]
@@ -146,10 +220,15 @@ function Get-LogDirectory {
 
 function Start-ScriptLog {
     <#
-        Starts a PowerShell transcript for the calling script under
-        logs/<Category>/<ScriptName>-<timestamp>.log and returns the
-        timestamp so callers can reuse it for any output files
-        (CSV exports, summaries, etc.) written during the same run.
+        Opens this script's transcript inside the run directory, creating that
+        directory (and joining an orchestrated run) as described above.
+
+        Returns the run's timestamp, which callers use to name their own output.
+        WITHIN A RUN EVERY SCRIPT GETS THE SAME TIMESTAMP - it comes from the
+        run directory's name, not from the clock at the moment each child
+        started. That is what makes the files in one folder obviously belong
+        together; previously each child stamped its own and a single load
+        produced a dozen different timestamps.
     #>
     param(
         [Parameter(Mandatory = $true)]
@@ -160,17 +239,57 @@ function Start-ScriptLog {
         [string]$ScriptName
     )
 
-    $LogDir = Get-LogDirectory -Category $Category
-    $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $TranscriptPath = Join-Path $LogDir "$ScriptName-$Timestamp.log"
+    $RunDirectory = Get-LdgcrmRunDirectory
+    $Script:LdgcrmRunOwned = $false
 
-    Start-Transcript -Path $TranscriptPath | Out-Null
+    if ($RunDirectory) {
+        # Joining a run someone else started. Recover its timestamp from the
+        # folder name so this script's output sorts with the rest of the run's.
+        $Timestamp = ""
+        if ((Split-Path -Leaf $RunDirectory) -match '(\d{8}-\d{6})$') { $Timestamp = $Matches[1] }
+        if (-not $Timestamp) { $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss" }
+    }
+    else {
+        $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        $RunDirectory = Join-Path (Get-LogCategoryDirectory -Category $Category) "$ScriptName-$Timestamp"
+        $env:LDGCRM_RUN_DIRECTORY = $RunDirectory
+        $Script:LdgcrmRunOwned = $true
+    }
+
+    if (-not (Test-Path -LiteralPath $RunDirectory)) {
+        New-Item -ItemType Directory -Path $RunDirectory -Force | Out-Null
+    }
+
+    # No timestamp in the file name: the folder already carries it, and a run
+    # that ran two scripts of the same name would be a resume, which should
+    # overwrite rather than accumulate near-identical transcripts.
+    Start-Transcript -Path (Join-Path $RunDirectory "$ScriptName.log") | Out-Null
 
     return $Timestamp
 }
 
 function Stop-ScriptLog {
+    <#
+        Closes the transcript, and releases the run directory if THIS script
+        created it.
+
+        Ownership is tracked by Start-ScriptLog rather than passed in, so no
+        caller changes: a script that JOINED a run must not release someone
+        else's directory, and it is Start-ScriptLog that knows which happened.
+
+        The release matters when scripts are dot-sourced or run twice in one
+        PowerShell session - a second run would otherwise inherit the first
+        run's folder and quietly merge two loads into one. Each step of an
+        orchestrated load runs as its own process, where the variable dies with
+        the process anyway; this covers the cases where it does not.
+    #>
+
     Stop-Transcript | Out-Null
+
+    if ($Script:LdgcrmRunOwned) {
+        $env:LDGCRM_RUN_DIRECTORY = $null
+        $Script:LdgcrmRunOwned = $false
+    }
 }
 
 function Import-DotEnv {

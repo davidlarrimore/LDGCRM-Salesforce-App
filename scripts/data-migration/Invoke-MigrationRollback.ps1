@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 <#
     MIGRATION ROLLBACK
@@ -210,18 +210,28 @@ if (-not (Test-Path -LiteralPath $RunDirectory)) {
 }
 
 $RunDirectory = (Resolve-Path -LiteralPath $RunDirectory).Path
-$ExternalIdDirectory = Join-Path $RunDirectory "external-ids"
 $AccountPreImageFile = Join-Path $RunDirectory "restore-point-Account.csv"
 $PostLoadCountsFile = Join-Path $RunDirectory "post-load-counts.csv"
 
 Write-Host ""
 Write-Host "Run directory: $RunDirectory"
 
-if (-not (Test-Path -LiteralPath $ExternalIdDirectory)) {
-    throw ("This run directory has no external-ids\ folder, so there is no record of which " +
-           "records existed BEFORE the run. Without it a rollback cannot tell what the run " +
-           "created from what was already there, and deleting on that basis could remove " +
-           "records an earlier migration loaded. Refusing to continue. " +
+# external-ids-<Object>.csv, flat in the run directory. It was an external-ids\
+# SUBFOLDER until 2026-08-13, when run output was consolidated into one folder
+# per run; both layouts are accepted so a rollback still works against a run
+# directory written before that change.
+$ExternalIdFiles = @(Get-ChildItem -LiteralPath $RunDirectory -Filter "external-ids-*.csv" -File -ErrorAction SilentlyContinue)
+$ExternalIdDirectory = Join-Path $RunDirectory "external-ids"
+
+if ($ExternalIdFiles.Count -eq 0 -and (Test-Path -LiteralPath $ExternalIdDirectory)) {
+    $ExternalIdFiles = @(Get-ChildItem -LiteralPath $ExternalIdDirectory -Filter "*.csv" -File -ErrorAction SilentlyContinue)
+}
+
+if ($ExternalIdFiles.Count -eq 0) {
+    throw ("This run directory has no external-ids-*.csv (nor a legacy external-ids\ folder), so " +
+           "there is no record of which records existed BEFORE the run. Without it a rollback " +
+           "cannot tell what the run created from what was already there, and deleting on that " +
+           "basis could remove records an earlier migration loaded. Refusing to continue. " +
            "(Run directories written before 2026-08-13 predate this capture.)")
 }
 
@@ -229,7 +239,7 @@ if (-not (Test-Path -LiteralPath $AccountPreImageFile)) {
     throw "Missing restore-point-Account.csv in $RunDirectory - the Account pre-image is not optional."
 }
 
-Write-Host "Restore point is complete (external-ids\ + Account pre-image present)." -ForegroundColor Green
+Write-Host ("Restore point is complete ({0} external-ID file(s) + Account pre-image present)." -f $ExternalIdFiles.Count) -ForegroundColor Green
 
 # --- drift check ------------------------------------------------------------
 # Rollback is scoped by a baseline, not by a run id, so anything loaded AFTER
@@ -281,7 +291,19 @@ $Plan = [System.Collections.Generic.List[object]]::new()
 $TotalToDelete = 0
 
 foreach ($ObjectApiName in $DeleteOrder) {
-    $BaselineFile = Join-Path $ExternalIdDirectory "$ObjectApiName.csv"
+    # Matched against the files actually found above, so the flat and the legacy
+    # subfolder layouts both resolve without a second Test-Path here.
+    $Match = @($ExternalIdFiles |
+        Where-Object { $_.Name -eq "external-ids-$ObjectApiName.csv" -or $_.Name -eq "$ObjectApiName.csv" })
+
+    # No per-object file means the object has no external-ID field to baseline
+    # (Save-RestorePoint writes one for every object that does, even when
+    # empty). Unchanged behaviour: Get-CreatedExternalIds then reads an empty
+    # baseline. The guard that the capture happened AT ALL is the file-set check
+    # above, which is what must never be weakened.
+    $BaselineFile = if ($Match.Count -gt 0) { $Match[0].FullName }
+                    else { Join-Path $RunDirectory "external-ids-$ObjectApiName.csv" }
+
     $Result = Get-CreatedExternalIds -ObjectApiName $ObjectApiName -BaselineFile $BaselineFile
 
     Write-Host ("  {0,-34} {1,8:N0} {2,8:N0} {3,8:N0}" -f `
@@ -414,8 +436,10 @@ Write-Host "  Deletes are PERMANENT - not the Recycle Bin - and Master-Detail ch
 Write-Host "  cascade, so more may go than the count above. Restoring Accounts overwrites" -ForegroundColor Yellow
 Write-Host "  any edit made since the run finished." -ForegroundColor Yellow
 
-$OutputDirectory = Join-Path (Get-LogDirectory -Category "data-migration") "rollback-$Timestamp"
-New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+# The rollback's own run directory, created by Start-ScriptLog. Deliberately
+# NOT inside the load run directory being rolled back: that folder is the
+# restore point and an undo must not write into the evidence it is reading.
+$OutputDirectory = Get-LogDirectory -Category "data-migration"
 
 if ($PlanOnly) {
     foreach ($Item in $Plan) {
@@ -547,3 +571,4 @@ Write-Host "run did not create, and anything a factory reset hard-deleted was al
 finally {
     Stop-ScriptLog
 }
+

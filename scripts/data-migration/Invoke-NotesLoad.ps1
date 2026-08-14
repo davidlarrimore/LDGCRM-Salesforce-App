@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 <#
     Loads the notes prepared by Build-NotesLoad.ps1.
@@ -92,7 +92,13 @@ param(
     # if a batch fails, and keeps each request payload well under REST limits -
     # some note bodies are several KB of base64.
     [ValidateRange(1, 200)]
-    [int]$BatchSize = 100
+    [int]$BatchSize = 100,
+
+    # Where to write this step's machine-readable result, for the run report.
+    # Same contract as Invoke-SalesforceLoad.ps1's parameter of the same name -
+    # this object has its own loader, so it needs its own reporting or the
+    # Notes line in the report can only ever say "0 loaded".
+    [string]$StepResultPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -106,6 +112,45 @@ $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Invoke-Note
 
 $ShareType = "I"
 $Visibility = "InternalUsers"
+
+# Reported through -StepResultPath. Same shape Invoke-SalesforceLoad.ps1 emits,
+# so the run report needs no special case for this object. "Succeeded" is notes
+# ATTACHED, not notes created: a ContentNote with no ContentDocumentLink exists
+# but is invisible on the record, which is not a successful migration of it.
+$StepResult = [ordered]@{
+    Object           = "ContentNote"
+    Operation        = "Insert"
+    Org              = $OrgAlias
+    Timestamp        = $Timestamp
+    Outcome          = "error"
+    Submitted        = 0
+    Succeeded        = 0
+    Failed           = 0
+    ExpectedFailed   = 0
+    UnexpectedFailed = 0
+    Allowance        = 0
+    JobId            = ""
+    FailureDirectory = ""
+    Errors           = @()
+    ErrorMessage     = ""
+}
+
+function Save-StepResult {
+    param([string]$Path, $Result)
+
+    if (-not $Path) { return }
+
+    try {
+        $Directory = Split-Path -Parent $Path
+        if ($Directory -and -not (Test-Path -LiteralPath $Directory)) {
+            New-Item -ItemType Directory -Path $Directory -Force | Out-Null
+        }
+        ($Result | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $Path -Encoding UTF8
+    }
+    catch {
+        Write-Host "  (could not write step result to $Path : $($_.Exception.Message))" -ForegroundColor DarkGray
+    }
+}
 
 function Invoke-SalesforceRestJson {
     <#
@@ -206,6 +251,7 @@ if (-not (Test-Path -LiteralPath $StagingFile)) {
 }
 
 $Staging = @(Import-Csv -LiteralPath $StagingFile)
+$StepResult.Submitted = $Staging.Count
 Write-Host ""
 Write-Host "Staging file   : $StagingFile"
 Write-Host "Notes to create: $($Staging.Count)"
@@ -214,11 +260,14 @@ Write-Host "Sharing        : ShareType=$ShareType  Visibility=$Visibility"
 
 if ($Staging.Count -eq 0) {
     Write-Host "Nothing to do." -ForegroundColor Yellow
+    $StepResult.Outcome = "ok"
     exit 0
 }
 
-$RunDirectory = Join-Path $LogDir "notes-load-$Timestamp"
-New-Item -ItemType Directory -Path $RunDirectory -Force | Out-Null
+# The run directory itself - not a notes-load-<ts>/ folder inside it. When
+# this runs as a step of Invoke-FullMigrationLoad.ps1 that is the load's own
+# folder, so the note ids land beside everything else that load produced.
+$RunDirectory = $LogDir
 
 # ============================================================
 # PREFLIGHT: can this user attach to these records?
@@ -273,6 +322,8 @@ if ($NoEditAccess.Count -gt 0) {
     Write-Host "The org's ContentDocumentLink trigger would reject those links - and the" -ForegroundColor Red
     Write-Host "notes would already exist, attached to nothing." -ForegroundColor Red
     Write-Host "  $AccessFile" -ForegroundColor Red
+    $StepResult.Outcome = "failed"
+    $StepResult.ErrorMessage = "$($NoEditAccess.Count) parent record(s) are not editable by this user; the org's ContentDocumentLink trigger would reject those links."
     exit 1
 }
 
@@ -293,6 +344,7 @@ if ($PlanOnly) {
     Write-Host ""
     Write-Host "-PlanOnly: nothing was sent. First batch payload written for inspection:" -ForegroundColor Yellow
     Write-Host "  $PreviewFile"
+    $StepResult.Outcome = "ok"
     exit 0
 }
 
@@ -306,6 +358,7 @@ Write-Host "ContentNote has no external ID - these cannot be matched or re-upser
 Write-Host "later, only found by what they are attached to." -ForegroundColor Yellow
 
 if (-not (Assert-LdgcrmProductionConsent -Environment $Environment -Action "create $($Staging.Count) notes and attach them" -ProductionConfirmation $ProductionConfirmation)) {
+    $StepResult.Outcome = "declined"
     exit 0
 }
 
@@ -314,6 +367,7 @@ if (-not (Assert-LdgcrmTypedConfirmation `
         -Provided $Confirmation `
         -Action "create $($Staging.Count) note(s) and attach them in $OrgAlias")) {
     Write-Host "Not confirmed. Nothing was written." -ForegroundColor Yellow
+    $StepResult.Outcome = "declined"
     exit 0
 }
 
@@ -399,6 +453,9 @@ else {
 if ($CreatedNotes.Count -eq 0) {
     Write-Host "No notes were created - nothing to link." -ForegroundColor Yellow
     if ($Failures.Count -gt 0) { $Failures | Export-Csv -LiteralPath $FailureFile -NoTypeInformation -Encoding UTF8 }
+    $StepResult.Outcome = "failed"
+    $StepResult.Failed = $Failures.Count
+    $StepResult.ErrorMessage = "No ContentNote records were created, so nothing could be attached."
     exit 1
 }
 
@@ -486,6 +543,27 @@ Write-Host ("{0,-46} {1,6:N0}" -f "Failures", $Failures.Count)
 Write-Host ("{0,-46} {1,6:N0}" -f "Notes now on those records (verified in org)", $Attached)
 Write-Host ""
 
+# --- feed the run report ----------------------------------------------------
+# Succeeded is notes ATTACHED, not notes created. A ContentNote with no
+# ContentDocumentLink exists in the org but appears on no record, so counting it
+# as a success would report a migration that isn't visible to anyone.
+$StepResult.Succeeded = $Linked
+$StepResult.Failed = $Staging.Count - $Linked
+$StepResult.UnexpectedFailed = $StepResult.Failed
+$StepResult.FailureDirectory = $RunDirectory
+$StepResult.Outcome = if ($StepResult.Failed -eq 0) { "ok" } else { "failed" }
+
+# ContentNote has no expected-failure patterns: nothing about this object has a
+# known-acceptable failure mode, so every one is real.
+$StepResult.Errors = @(
+    $Failures |
+        Group-Object { ConvertTo-NormalisedErrorMessage -Message "$($_.Error)" } |
+        Sort-Object Count -Descending |
+        ForEach-Object {
+            [ordered]@{ Message = $_.Name; Count = $_.Count; Classification = "UNEXPECTED" }
+        }
+)
+
 if ($Linked -lt $CreatedNotes.Count) {
     Write-Host "WARNING: $($CreatedNotes.Count - $Linked) note(s) exist but are NOT attached." -ForegroundColor Red
     Write-Host "They have no external ID - this file is the only record of them:" -ForegroundColor Red
@@ -501,5 +579,12 @@ if ($Failures.Count -gt 0) {
 
 }
 finally {
+    # Unconditional, and last: a Notes run that threw is exactly the one whose
+    # state the run report needs, because its notes may exist attached to
+    # nothing. See -StepResultPath.
+    Save-StepResult -Path $StepResultPath -Result $StepResult
+
     Stop-ScriptLog
 }
+
+

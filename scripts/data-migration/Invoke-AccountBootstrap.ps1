@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 <#
     Bootstraps an org's Account tree - names AND parent hierarchy - from the
@@ -114,7 +114,8 @@ $ErrorActionPreference = "Stop"
 $OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Invoke-AccountBootstrap"
-$RunDirectory = Join-Path (Get-LogDirectory -Category "data-migration") "account-bootstrap-$Timestamp"
+# The run directory itself - see Common.ps1's "one directory per run".
+$RunDirectory = Get-LogDirectory -Category "data-migration"
 
 function Get-NormalizedName {
     param([string]$Name)
@@ -898,3 +899,4 @@ if ($PlanOnly) {
 finally {
     Stop-ScriptLog
 }
+

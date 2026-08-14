@@ -306,6 +306,34 @@ Three things to know before a production run:
 found by looking at something else. The orchestrator runs a post-load validation automatically, but
 walk these regardless.
 
+### Start with the run report
+
+**Everything the run produced is in one folder:**
+`logs/data-migration/Invoke-FullMigrationLoad-<ts>/` — every transcript, every review CSV, the bulk
+failure rows, the restore point and the report, all sharing one timestamp.
+
+`Invoke-FullMigrationLoad.ps1` writes **`SUMMARY.txt`** into it and prints it as the last thing in
+the transcript. Read it before anything else — it is the whole run in one file, including everything
+the individual review CSVs found, compared against the previous run.
+
+Read it in this order:
+
+1. **UNEXPECTED load failures.** Rows Salesforce rejected for a cause not configured for that
+   object. These stopped the run.
+2. **ROWS WITHHELD.** The number most likely to surprise you, and **it is not a load error** — those
+   rows were never sent, so no job result, exit code or success count mentions them anywhere. On the
+   2026-08-13 reload, 31 rows failed and several hundred were withheld.
+3. **The deltas.** Every line carries `(was N, ±M)` against the previous run. A count that moved
+   without anyone changing anything is worth understanding; a count that moved *because* Airtable was
+   fixed is the point.
+4. **NEEDS A HUMAN**, then **LOADED WITH A CAVEAT**.
+
+A cause that failed rows last run and none this run appears under **gone since the last run** rather
+than just vanishing, so a fix is visible as a fix.
+
+**The first run has nothing to compare against** and says so. So does the first run after old
+`Invoke-FullMigrationLoad-*` directories are deleted — keep the most recent one.
+
 ### Automatic
 
 `Invoke-FullMigrationLoad.ps1` finishes with a **POST-LOAD VALIDATION** block covering before/after
@@ -369,8 +397,9 @@ ground with the expected figures and what each failure actually means.
   ```
 - **Objects nobody loaded** — Event, Task, Case and Lead should be unchanged.
 - **Pre-existing untagged test records** should still be at their previous counts.
-- **Every review CSV in `logs/data-migration/`** from this run. Findings sitting unread in `logs/`
-  are the failure mode those files exist to prevent — see
+- **Every review CSV in `logs/data-migration/`** from this run. `SUMMARY.txt` summarises all of them
+  with per-reason counts, so start there and open the individual files for the rows. Findings sitting
+  unread in `logs/` are the failure mode those files exist to prevent — see
   [TROUBLESHOOTING.md](TROUBLESHOOTING.md#reading-the-logs).
 
 ---

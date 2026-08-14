@@ -1,4 +1,4 @@
-# Shared helpers for the Airtable -> Salesforce data-migration scripts
+﻿# Shared helpers for the Airtable -> Salesforce data-migration scripts
 # (scripts/data-migration/Build-*.ps1). Dot-source both this file and
 # scripts/common/Common.ps1 from any script in this category:
 #   . (Join-Path $PSScriptRoot "..\common\Common.ps1")
@@ -575,6 +575,51 @@ function Get-CleanContactEmail {
     }
 
     return ""
+}
+
+function ConvertTo-NormalisedErrorMessage {
+    <#
+        Reduces a Salesforce row error to the CAUSE, so that N rows failing for
+        one reason group as one finding rather than N.
+
+        WHY THIS IS NEEDED. Several of the errors this pipeline actually hits
+        embed the offending record's id or value in the message text:
+
+          "Foreign key external ID: recYy1WsJdJoqJkWb not found for field ..."
+          "duplicate value found: LDGCRM_External_ID__c duplicates id 003cq0..."
+
+        Grouping those verbatim turns "20 Partner Accounts blocked by one
+        unreconciled parent" into twenty single-row causes - which reads as
+        twenty problems, buries the one that matters, and makes a run-over-run
+        comparison useless because the ids differ every time.
+
+        Deliberately conservative: it removes IDENTIFIERS only (Airtable rec...
+        ids, 15/18-char Salesforce ids, quoted values), never words. An error
+        this doesn't recognise passes through with its whitespace collapsed,
+        which is a slightly noisier grouping - never a wrong one.
+    #>
+    param([string]$Message)
+
+    if (-not $Message) { return "" }
+
+    $Text = ($Message -replace '\s+', ' ').Trim()
+
+    # Airtable record ids, which appear in every "parent not loaded" error.
+    $Text = $Text -replace '\brec[A-Za-z0-9]{14}\b', '<id>'
+
+    # Salesforce ids: exactly 15 or 18 alphanumerics. The lookahead REQUIRING A
+    # DIGIT is what stops this eating ordinary words - "characteristics" is 15
+    # letters and would otherwise be normalised into an id. Every real
+    # Salesforce id contains digits (the 3-char key prefix alone is 00X/003/006
+    # style), so the guard costs nothing and removes the whole class of
+    # false positives.
+    $Text = $Text -replace '\b(?=[A-Za-z0-9]*[0-9])[A-Za-z0-9]{18}\b', '<id>'
+    $Text = $Text -replace '\b(?=[A-Za-z0-9]*[0-9])[A-Za-z0-9]{15}\b', '<id>'
+
+    # Quoted values (field values echoed back in restricted-picklist errors).
+    $Text = $Text -replace '"[^"]*"', '"<value>"'
+
+    return $Text.Trim()
 }
 
 function Resolve-SalesforceOwnerIdsByName {

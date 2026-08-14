@@ -320,11 +320,11 @@ script's skipped/unmapped review CSVs should feed into this list as they're foun
 
 **For the stakeholder-facing status report — written for the Login.gov Partnerships lead, not for
 engineers — see
-[`migration-load-report-2026-08-13-post-reload.pdf`](../migration-load-report-2026-08-13-post-reload.pdf)**
-(the [HTML source](../migration-load-report-2026-08-13-post-reload.html) is kept alongside it). **This
-is the current report.** It supersedes `migration-load-report-2026-08-13.pdf`, which was written
-*before* the full wipe-and-reload the same day and is kept only as the record of what was true when
-it was sent — do not send it. The post-reload edition carries the measured ownership figures, the
+[`migration-load-report-2026-08-13-post-reload.html`](../migration-load-report-2026-08-13-post-reload.html),
+the tracked source; render the PDF from it with `Export-ReportPdf.ps1` before sending.** Only the
+current report is kept — the pre-reload edition of the same date was removed on 2026-08-13, because
+its numbers were superseded within hours and a stale report in the repo is more likely to be re-sent
+by mistake than to be useful. The post-reload edition carries the measured ownership figures, the
 537 loaded Notes, the 63 broker links, and two findings the rebuild exposed (the 92% service-account
 Contact ownership, and the 62% of Contacts with no name in Airtable). It reconciles every
 Airtable table against the records now in gsa-peo with counts, differences and percentages, shows how
@@ -432,7 +432,9 @@ Airtable pull of 2026-08-12.
 | `Build-OpportunityImpedimentLoad.ps1` | Prep — Impediment↔Opportunity junction (two Master-Details, both required) | Built and **loaded 2026-08-13: 267/267**. Composite external ID; severity comes from *which* Airtable column an Opportunity appears in. **Excludes the placeholder Impediment named "None"** (465 links, 53% of the loadable set) — see `TRANSFORMATION-RULES.md`. 44 pairs pending an unloaded Opportunity. |
 | `Build-OpportunityContactRoleLoad.ps1` | Prep — OpportunityContactRole. **The one object that cannot be upserted** | Built and **loaded 2026-08-13: 515 rows**. The previously-documented `externalId=true` fix is **impossible** — Salesforce forbids External ID fields on this object entirely — so it uses an INSERT + read-then-diff for idempotency instead. Extended the `ContactRole` StandardValueSet with 2 new Role values. 83 rows skipped pending an unresolved Opportunity/Contact. |
 | `Build-MeetingLoad.ps1` | Prep — Activity/Event | **Not built, and the approach changed 2026-08-13.** Airtable holds a date but no time, and synthesizing one fabricates scheduling history. Instead: stand up **Einstein Activity Capture**, let real calendar events sync, and fuzzy-match Airtable's meetings onto them (date + organizer + attendee overlap + subject), enriching the real event rather than inventing one. Depends on org configuration outside this repo and an unresolved spike — see `BACKLOG.md` §2. |
-| `Invoke-SalesforceLoad.ps1` | Load — generic `sf data upsert bulk`/`sf data update bulk` wrapper, any object | Built |
+| `Invoke-SalesforceLoad.ps1` | Load — generic `sf data upsert bulk`/`sf data update bulk` wrapper, any object | Built. Classifies each row failure against that object's `-ExpectedFailurePatterns` and exits **2** for an expected partial. **`-StepResultPath` (added 2026-08-13)** additionally writes that classification, the counts and the job id as JSON, because it runs as a child process and an exit code carries three states — which is why the orchestrator's summary could say "PARTIAL" but never how many or why. Written in a `finally`, so a step that throws still reports. |
+| `Invoke-FullMigrationLoad.ps1` | Load — the orchestrator. Runs every transform and load in dependency order as one operation | Built. Pre-flight → restore point → sequence → post-load validation → **run report**. `-PlanOnly` runs every transform and loads nothing (read-only, doubles as the readiness check); `-StartAtStep`/`-OnlySteps` resume. Stops at the first real failure, because everything downstream would silently withhold rows. |
+| `Common.LoadReport.ps1` | Load — builds the per-run report (`SUMMARY.txt` + `load-summary.csv`/`errors.csv`/`findings.csv`) | Built 2026-08-13. See "Reading a run" below. |
 | `Build-NotesLoad.ps1` | Notes — prep `ContentNote`/`ContentDocumentLink` for freeform columns, last chunk | Built 2026-08-13. ~537 notes ready; ~59 placeholder values (`None`/`N/A`) skipped, ~200 waiting on a parent the Account data-quality issue withheld. Diffs against what is already attached, which is what makes a re-run safe. |
 | `Invoke-NotesLoad.ps1` | Notes — load. **The one chunk with its own loader**, not `Invoke-SalesforceLoad.ps1` | Built 2026-08-13. Attaching a note is three steps against two objects (insert `ContentNote` → read back each `ContentDocumentId` → insert `ContentDocumentLink`), and `ContentNote` has no external ID, so created note Ids are written to disk before anything else is attempted. Has an access preflight for the org's unmanaged `ContentDocumentLinkTrigger`, whose kill switch is inert. |
 | `Build-ProdAccountSeed.ps1` | Bootstrap — production Account **name** seeding, not a regular pipeline chunk | **Superseded 2026-08-13** by `Invoke-AccountBootstrap.ps1`. Still runs (now via the shared parser). Its name-dedupe is what left 31 rows unmappable for the hierarchy pass — see "Rebuilding an org's Account tree". |
@@ -495,6 +497,102 @@ levels deep.
 
 General rule for any future self-referential lookup in this pipeline: it always needs its own second
 pass, and that pass should be generated by the same script rather than left to a human to remember.
+
+## Reading a run
+
+**Everything one run produces goes in one directory**, `logs/<category>/<ScriptName>-<timestamp>/`,
+and `Invoke-FullMigrationLoad.ps1` writes **`SUMMARY.txt`** into it and prints it at the end of the
+transcript. That is the one artifact answering "how did the load go, and was anything in it new?".
+`logs/README.md` describes the file layout; this section covers why it is built the way it is.
+
+### One directory per run (2026-08-13)
+
+Each script used to write its transcript and review CSVs loose into `logs/<category>/` **and** create
+its own typed folder — `full-load-<ts>/`, `notes-load-<ts>/`, `bulk-results/<obj>-<ts>/`,
+`rollback-<ts>/`, `account-bootstrap-<ts>/`. One logical load therefore scattered output across four
+folder shapes plus ~30 loose files, correlated only by a timestamp — and since **each child script
+stamped its own**, the timestamps didn't even match. `logs/data-migration/` reached 330 loose CSVs
+across ~40 runs.
+
+The mechanism is deliberately one small change in `Common.ps1` rather than an edit to every script:
+
+- `Start-ScriptLog` creates the run directory and publishes it in `$env:LDGCRM_RUN_DIRECTORY`.
+- `Get-LogDirectory` returns that whenever it is set, so **every existing caller redirects into it
+  unchanged**.
+- Child processes inherit the variable — which is what makes an orchestrated load land in one folder
+  while each step still keeps its own transcript. The orchestrator runs steps as child processes
+  precisely so a failing step cannot take down its own log.
+- The variable is process-scoped, so it cannot leak into an unrelated shell, and running any script
+  standalone still gets its own run directory.
+- `Get-LogCategoryDirectory` is the escape hatch for the few things that are genuinely *about* the
+  set of runs — finding the previous run to compare against.
+
+**Every file in a run now shares one timestamp**, taken from the folder name rather than the clock at
+the moment each child started.
+
+Two contracts changed with it, both kept backward compatible:
+
+- `external-ids/<Object>.csv` became `external-ids-<Object>.csv`. `Invoke-MigrationRollback.ps1`
+  accepts **both**, so a run directory written before this change can still be rolled back.
+- Bulk failure rows are renamed from the CLI's job-id-only name to
+  `<object>-<jobid>-failed-records.csv`. The job id is kept deliberately: it is what
+  `sf data bulk results` needs to fetch them again, **and** it keeps two steps that load the same
+  object apart — Application and BrokerParent both write `LDGCRM_application__c`, so a label-only
+  name would have the second silently overwrite the first.
+
+### The problem it solves: a withheld row is not an error
+
+Every step reports success or failure per *submitted* row. But each transform **withholds** rows
+before submitting anything — a Contact with no resolvable Account, an Application whose Partner
+Account isn't loaded, a junction row whose other side was itself withheld. Those rows are never sent,
+so the Bulk API has nothing to say about them, the step is recorded as a clean success, and the
+records are simply absent from the CRM.
+
+On the 2026-08-13 reload that was **31 rows failed against several hundred withheld**. The failures
+were visible in three places; the withholdings were in twenty separate review CSVs and no summary.
+`SUMMARY.txt` puts both in one table and labels the distinction explicitly.
+
+### Findings are attributed to a step by TIME, not by file name
+
+Transforms name their review CSVs inconsistently (`Contact-no-account-*`,
+`ApplicationContact-skipped-*`, `Account-reconciliation-unmatched-*`) and each child script stamps
+its own timestamp from its own `Start-ScriptLog` — so the orchestrator's timestamp never appears in
+them and cannot be matched on. What the orchestrator *does* know exactly is when each step started
+and finished, and steps run strictly in sequence.
+
+This is why the feature needed **no changes to any transform**. They already write everything; the
+report only had to collect it.
+
+### Expected vs unexpected: two different mechanisms
+
+| | Decided by | Where |
+| --- | --- | --- |
+| **A row failure** is expected | matching that object's `ExpectedFailurePatterns` | `$Steps` table → `Invoke-SalesforceLoad.ps1` |
+| **A count** is expected | comparing with the previous run | `Common.LoadReport.ps1` |
+
+The second is deliberately a **comparison, not a declared list**. A hard-coded expected count is
+wrong the moment Airtable is fixed — nine data-quality items closed in a single day — and the
+pipeline has already learned that a check which cries wolf every run is one nobody reads (see the
+FCIC junk-Account delta in `Save-RestorePoint`). Each run writes `findings.csv`/`errors.csv` and the
+next run diffs against the most recent earlier one, so it re-baselines itself.
+
+Three consequences that are design decisions rather than omissions:
+
+- **A cause that stopped firing is listed**, under "gone since the last run" — otherwise "we fixed
+  it" and "the check stopped running" are indistinguishable.
+- **An empty review CSV is reported at zero**, not skipped, for the same reason.
+- **No previous run means no deltas**, stated as such. Everything reading `(NEW)` on a first run
+  would be noise.
+
+### It is written on every path, and it can never fail a load
+
+A run that stopped at step four is exactly the run whose report is worth reading — it shows what the
+first three steps withheld, which is usually *why* step four failed. So the report is written after a
+failure too, before the non-zero exit.
+
+Conversely `Write-LoadRunReport` is called inside a `try`, and a failure there degrades to a thinner
+report and a warning. Reporting must never be able to change the outcome of a load, and post-load
+validation — not this — remains the thing that decides whether a run passed.
 
 ## Running what's built so far
 

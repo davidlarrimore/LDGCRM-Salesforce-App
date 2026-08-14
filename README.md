@@ -21,7 +21,8 @@ Two kinds of work live here:
 | Understand or change how the migration works | [docs/engineering/ARCHITECTURE.md](docs/engineering/ARCHITECTURE.md) |
 | Look up what a field maps to | [docs/engineering/TRANSFORMATION-RULES.md](docs/engineering/TRANSFORMATION-RULES.md) |
 | Fix something in the Airtable source data | [docs/data-quality/](docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) |
-| Read the status report | [docs/migration-load-report-2026-08-13-post-reload.pdf](docs/migration-load-report-2026-08-13-post-reload.pdf) |
+| **See where the project is** — what's left before production | **[docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md)** |
+| Read the status report | [docs/migration-load-report-2026-08-13-post-reload.html](docs/migration-load-report-2026-08-13-post-reload.html) — render the PDF before sending |
 | Change the Salesforce app itself | [Salesforce app changes](#salesforce-app-changes), below |
 
 Full index: **[docs/engineering/ARCHITECTURE.md](docs/engineering/ARCHITECTURE.md)**.

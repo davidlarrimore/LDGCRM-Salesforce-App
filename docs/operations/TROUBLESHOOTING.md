@@ -12,13 +12,24 @@ user, or at the data when the problem is a file's encoding. That is what this pa
 Everything a run produces lands under `logs/`, organised the same way `scripts/` is. It is
 **gitignored** because it can carry applicant PII — never commit anything from it.
 
+**Everything one run produces is in one folder:**
+`logs/<category>/<ScriptName>-<timestamp>/`. There are no `full-load-`/`notes-load-`/`bulk-results/`
+folders any more, and nothing is written loose — including the steps of an orchestrated load, which
+all write into the orchestrator's directory.
+
+**Start with `SUMMARY.txt`** in that folder. A full load writes one report covering every step, every
+error split into expected and unexpected, every row withheld before submission, and a comparison
+against the previous run. It is also printed at the end of the transcript. Everything below is for
+when you need the detail behind a line in it.
+
 | Path | What's in it |
 | --- | --- |
-| `logs/data-migration/<Script>-<timestamp>.log` | Full PowerShell transcript of one run |
-| `logs/data-migration/full-load-<timestamp>/` | Restore point, baseline counts, post-load counts |
-| `logs/data-migration/notes-load-<timestamp>/` | Created note IDs — the **only** handle on migrated notes |
-| `logs/data-migration/rollback-<timestamp>/` | What a rollback deleted and restored |
-| `logs/cleanup/sandbox-factory-reset-<timestamp>/` | IDs of everything a reset deleted |
+| `<run>/SUMMARY.txt` | **The run, in one file. Read this first** |
+| `<run>/Invoke-FullMigrationLoad.log` | The orchestrator's transcript; one `.log` per step beside it |
+| `<run>/external-ids-*.csv`, `restore-point-Account.csv` | The restore point — a rollback needs these |
+| `<run>/created-note-ids.csv` | Created note IDs — the **only** handle on migrated notes |
+| `logs/data-migration/Invoke-MigrationRollback-<timestamp>/` | What a rollback deleted and restored |
+| `logs/cleanup/Invoke-SandboxFactoryReset-<timestamp>/` | IDs of everything a reset deleted |
 | `logs/metadata/` | Data dictionary exports |
 
 ### The review CSVs matter more than the transcript
@@ -38,6 +49,19 @@ actual output of a run — the transcript just narrates it.
 **Findings sitting unread in `logs/` are the failure mode those files exist to prevent.** After a
 run, read them and fold anything new into
 [../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md).
+`SUMMARY.txt` summarises all of them with per-reason counts and a run-over-run delta, so it tells you
+which ones are worth opening.
+
+### "The load succeeded but records are missing"
+
+Usually not a defect. The transform **withheld** them before submitting — a Contact with no
+resolvable Account, an Application whose Partner Account isn't loaded, a junction row whose other
+side was itself withheld. A withheld row is never sent, so no job result, exit code or success count
+mentions it anywhere.
+
+Look at the **ROWS WITHHELD** section of `SUMMARY.txt`, which gives the count and the reason per
+step. Most withholdings resolve by fixing the *parent* — the Airtable Account duplicates are the
+usual root cause, and one Account fix can release rows across four objects.
 
 ### Getting the detail of a failed Bulk job
 
@@ -77,7 +101,7 @@ duplicate rule. The loader now classifies every failure against a per-object lis
 ```
 
 All matched and within allowance → the step reports `PARTIAL`, exits 2, and **the sequence
-continues**. Per-row detail lands in `logs/data-migration/bulk-results/<object>-<timestamp>/`.
+continues**. Per-row detail lands in `<object>-<jobid>-failed-records.csv` in the run's directory.
 
 It still stops if **any** failure doesn't match a known cause, or if the count exceeds
 `max(20 rows, 5% of the batch)` — a known cause at unusual volume means something upstream changed.

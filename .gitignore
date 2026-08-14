@@ -46,6 +46,13 @@ $RECYCLE.BIN/
 !.vscode/settings.json
 !.vscode/extensions.json
 
+# Generated stakeholder reports. The HTML is the SOURCE and is tracked; the PDF
+# is rendered from it by scripts/data-migration/Export-ReportPdf.ps1 and exists
+# only because Google Drive shows a standalone .html as raw markup. Tracking
+# both meant ~350 KB of binary churn per report for content already in the repo.
+# Regenerate before sending: the PDF is not in a fresh clone.
+docs/*.pdf
+
 # Salesforce CLI bulk job result files - written to CWD by `sf data bulk results`.
 # They contain full record payloads (applicant names, emails, partner notes), so
 # they are PII and must never be committed. Same reasoning as logs/ and data/.
