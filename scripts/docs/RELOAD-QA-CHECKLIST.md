@@ -492,10 +492,12 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 
 ### 4b. `LDGCRM_Partner_Account__c`
 
-- [ ] Run `Build-PartnerAccountLoad.ps1`. Expect **94 ready, 5 skipped**. Load: **92 succeed, 2 fail** (2026-08-13 reload; was ~74/~20 — the Account work fixed the rest).
-- [ ] Load (upsert). Expect ~74 succeed, ~20 fail — all tracing to parent Accounts among the 169
+- [ ] Run `Build-PartnerAccountLoad.ps1`. Expect **99 ready, 0 skipped** (2026-08-14; was 94 ready /
+      5 skipped — the Airtable owners linked the last 5 rows to an Account, so nothing is skipped here
+      any more).
+- [ ] Load (upsert). Expect **97 succeed, 2 fail** — both tracing to parent Accounts among the 154
       unmatched. Same failures as previous runs = correct, not a regression.
-- [ ] ✅ **FIXED 2026-08-13 — the orchestrator no longer stops here.** It used to halt every time:
+- [ ] ✅ **FIXED 2026-08-13, confirmed 2026-08-14 — the orchestrator no longer stops here.** It used to halt every time:
       `Invoke-SalesforceLoad.ps1` exited non-zero on *any* Bulk failure, and this step's correct
       outcome includes some failures, so a correct run was indistinguishable from a broken one and
       cost a manual diagnosis and resume. It now **classifies** failures against a per-object list of
@@ -675,13 +677,13 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 
 ### 4e. `LDGCRM_application__c`
 
-- [ ] Run `Build-ApplicationLoad.ps1`. **Re-baselined 2026-08-13 against the re-pulled export**
-      (1,056 Airtable rows): expect **1,026 ready**, 8 withheld for no Partner Account in Airtable +
-      359 for a Partner Account not loaded, **360 owner-inherited / 329 fallback**. Must run *after*
-      Partner Account and Opportunity are loaded, or it withholds far more.
-      *(The pre-re-pull figures were 688 ready and 511/177 on ownership. The ownership split moved a
-      long way on the same underlying rule — re-baseline, don't read it as a regression.)*
-- [ ] Load (upsert). Expect 1,026/1,026.
+- [ ] Run `Build-ApplicationLoad.ps1`. **Re-baselined 2026-08-14 against the re-pulled export**
+      (1,058 Airtable rows): expect **1,045 ready**, **13 withheld** — 8 for no Partner Account in
+      Airtable + 5 for a Partner Account not loaded (was 8 + 22; the Account merges freed 17). Must
+      run *after* Partner Account and Opportunity are loaded, or it withholds far more.
+      *(Trend on the same underlying rule: 688 ready → 1,026 → 1,045. Re-baseline each run rather than
+      reading movement as a regression.)*
+- [ ] Load (upsert). Expect 1,045/1,045.
 - [ ] Verify Market Segment came from the Flow; no formula field was written.
 - [ ] ℹ️ **Expect ~607 Applications to have Launch Level DEFAULTED to `1 - Very Low Impact`** (the
       build prints the count). Airtable leaves it blank on 621 of 1,056 rows, and blank is not
@@ -742,11 +744,10 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 
 ### 4g. `LDGCRM_Application_Contact__c`
 
-- [ ] Run `Build-ApplicationContactLoad.ps1`. **Re-baselined 2026-08-13** against the re-pulled export
-      *and* the new second admin source: expect **2,699 ready**, 128 skipped waiting on a side,
-      **573 flagged Partner Portal Admin**. (The pre-re-pull figure was 1,880 ready — re-baseline
-      rather than reading the drop as a regression; the Application count in the org moved too.)
-- [ ] Load (upsert). Expect 1,779/1,779, keyed on the composite external ID `<contact>|<application>`.
+- [ ] Run `Build-ApplicationContactLoad.ps1`. **Re-baselined 2026-08-14**: expect **2,750 ready**,
+      **77 skipped** waiting on a side (was 2,699 / 128 — the Account merges freed 51).
+- [ ] Load (upsert). Expect **2,750/2,750**, keyed on the composite external ID
+      `<contact>|<application>`, and **1,079 flagged Partner Portal Admin** in the org afterwards.
 - [ ] ⚠️ The duplicate-check Flow throws a hard error, fires only on Create, and **misses intra-batch
       duplicates** — it is not a safety net. Any duplicate error here means the composite key
       regressed.
@@ -756,16 +757,20 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
       Application). These are *new junction rows*, not just flags — if the count is 0, the Issuer
       Strings export is missing or the email match broke.
 - [ ] Review `logs/data-migration/ApplicationContact-admin-source-*.csv` — provenance per flag.
-      Expect **882 `BOTH` / 117 `Contacts.Roles only` / 86 `Issuer Strings only`**, and **0 admin
-      emails matching no Contact**. A non-zero count there means someone administers a portal team but
-      isn't a Contact in Airtable, so no junction row can be created for them.
-      - ⚠️ **This breakdown counts ALL pairs including skipped ones, so it does not sum to the 573 in
-        the load.** That is expected, not an inconsistency.
+      Expect **883 `BOTH` / 116 `Contacts.Roles only` / 86 `Issuer Strings only`** (2026-08-14; was
+      882/117/86), and **0 admin emails matching no Contact**. A non-zero count there means someone
+      administers a portal team but isn't a Contact in Airtable, so no junction row can be created for
+      them.
+      - ⚠️ **This breakdown counts ALL pairs including skipped ones (1,085), so it does not sum to the
+        1,079 flags in the org.** That is expected, not an inconsistency.
 
 ### 4i. Notes — LAST, after every other object
 
-- [ ] Run `Build-NotesLoad.ps1 -Environment Dev`. Expect **~716 notes ready** (2026-08-13 reload; was ~537), ~59 placeholder values
-      skipped (`None`/`N/A`), ~200 waiting on a parent the Account issue withheld.
+- [ ] Run `Build-NotesLoad.ps1 -Environment Dev`. Expect **~730 notes ready** (2026-08-14; was 716,
+      and 537 before that), placeholder values skipped (`None`/`N/A`), and only **7** waiting on a
+      parent the Account issue withheld (was 21).
+      *(The orchestrator runs this as step 12 of 12, so a normal full run does not need it invoked
+      separately — these steps are for an object-by-object load.)*
 - [ ] Dry-run the loader first: `Invoke-NotesLoad.ps1 -Environment Dev -PlanOnly`.
 - [ ] ⚠️ **The access preflight must pass.** The org has an unmanaged
       `ContentDocumentLinkTrigger` that rejects a link when the running user lacks **Edit** access to
@@ -789,8 +794,10 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 
 - [ ] **INSERT + read-then-diff, never upsert** — Salesforce forbids External ID fields on this object
       entirely; there is no upsert path and no metadata fix.
-- [ ] Confirm Phase 2 left 0 rows, or the diff will under-insert.
-- [ ] Expect **565 rows** (2026-08-13 reload; was 515), fewer skipped as Accounts resolve.
+- [ ] Confirm Phase 2 left 0 rows, or the diff will under-insert. *(Verified 0 on 2026-08-14 — it
+      cascades away with its parent Opportunity.)*
+- [ ] Expect **566 rows** (2026-08-14; was 565, and 515 before that), fewer skipped as Accounts
+      resolve. **34 withheld**, waiting on a side the Account issue held back.
 
 ---
 
@@ -800,16 +807,20 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 
       | Object | Expect own owner | Expect fallback (`peter.marks@gsa.gov`) |
       | --- | --- | --- |
-      | Opportunity | 471 | 271 |
-      | `LDGCRM_application__c` | 360 | 329 |
-      | Contact | 1,553 | 0 |
-      | `LDGCRM_Impediment__c` | 0 | 39 |
-      | `LDGCRM_Application_Contact__c` | 0 | 1,779 |
+      | Opportunity | 510 | **332** |
+      | `LDGCRM_application__c` | ~360 | ~329 |
+      | Contact | 1,876 | 0 |
+      | `LDGCRM_Impediment__c` | 0 | 38 |
+      | `LDGCRM_Application_Contact__c` | 0 | 2,750 |
 
-      ⚠️ **Re-baselined 2026-08-13** against the re-pulled Airtable export. Application's split moved
-      a long way (was 511/177) on an unchanged rule, and the junction dropped from 1,880 — neither is
-      a regression. Every figure in this table is a moving target; diff the *transform's* reasoning,
+      ⚠️ **Re-baselined 2026-08-14.** Measured Opportunity split: **332 on the fallback owner**, then
+      Daniel Ruggiero 226, Melissa Sowerwine 132, Omodayo Yunusa 65, Ryan Von Sonnenbrot 47, Trevor
+      Sinclair 21. Every figure in this table is a moving target; diff the *transform's* reasoning,
       not the absolute number.
+
+      ⚠️ **The fallback is still the largest single owner on Opportunity (332 of 842, ~39%)** because
+      247 distinct Airtable owner emails resolve to no active Salesforce User. That is the "missing
+      Salesforce logins" item in **AIRTABLE-DATA-QUALITY-REQUESTS.md**, not a pipeline fault.
 
       ```
       sf data query -q "SELECT OwnerId, Owner.Name, COUNT(Id) FROM Opportunity GROUP BY OwnerId, Owner.Name ORDER BY COUNT(Id) DESC" --target-org <alias> --result-format csv
@@ -849,7 +860,7 @@ too if you loaded object-by-object rather than through the orchestrator.
       match, and the count must not be zero:
       ```powershell
       $csv = @(Import-Csv "data\salesforce-loads\LDGCRM_Application_Contact__c-upsert.csv")
-      @($csv | Where-Object { $_.LGDCRM_P3_Partner_Portal_Admin__c -eq "true" }).Count   # expect 573
+      @($csv | Where-Object { $_.LGDCRM_P3_Partner_Portal_Admin__c -eq "true" }).Count   # expect 1,079
       ```
       ```
       sf data query -q "SELECT COUNT() FROM LDGCRM_Application_Contact__c WHERE LGDCRM_P3_Partner_Portal_Admin__c = true" --target-org <alias>
@@ -857,15 +868,16 @@ too if you loaded object-by-object rather than through the orchestrator.
       ⚠️ **A count of 0 means the source broke, not that nobody is an admin.** Both sources
       (`Contacts.Roles` *and* Issuer Strings' `Partner Portal Admin Email`) would have to be silent
       at once — check the Airtable export is current and actually includes `Issuer Strings.json`.
-- [ ] **2. The Issuer-Strings-created associations exist.** Expect **86 built**, **82 in the load**
-      (the rest wait on their Application). These are junction rows that exist *only* because Issuer
-      Strings names an admin — the Contacts table never links those people to those Applications. The
-      build step prints the count; if it says 0, the second source is not running.
+- [ ] **2. The Issuer-Strings-created associations exist.** Expect **86**. These are junction rows
+      that exist *only* because Issuer Strings names an admin — the Contacts table never links those
+      people to those Applications. The build step prints the count; if it says 0, the second source
+      is not running.
 - [ ] **3. Partner Portal Team Name / UUID.** Verify they landed:
       ```
       sf data query -q "SELECT COUNT() FROM LDGCRM_application__c WHERE LDGCRM_P3_Team_UUID__c != null" --target-org <alias>
       ```
-      Expect **681**. Also expect **0** holding the literal `#N/A` — it is transformed to blank:
+      Expect **691** (2026-08-14; was 681 — Airtable added 7 issuer strings). Also expect **0**
+      holding the literal `#N/A` — it is transformed to blank:
       ```
       sf data query -q "SELECT COUNT() FROM LDGCRM_application__c WHERE LDGCRM_P3_Team_UUID__c = '#N/A' OR LDGCRM_P3_Partner_Portal_Team_Name__c = '#N/A'" --target-org <alias>
       ```
@@ -875,8 +887,8 @@ too if you loaded object-by-object rather than through the orchestrator.
       data-quality doc tells the Airtable owners — if they have diverged, the doc is now lying to
       them and needs updating in the same change:
       - `Application-portal-team-review-*.csv` — expect **9 `CONFLICT`**, **18 `INCOMPLETE`**.
-      - `ApplicationContact-admin-source-*.csv` — expect **882 `BOTH` / 117 `Contacts.Roles only` /
-        86 `Issuer Strings only`**, and **0** admin emails matching no Contact.
+      - `ApplicationContact-admin-source-*.csv` — expect **883 `BOTH` / 116 `Contacts.Roles only` /
+        86 `Issuer Strings only`** (1,085 rows), and **0** admin emails matching no Contact.
 - [ ] **5. Spot-check one record end to end.** Open an Application in the UI that should have a portal
       team, confirm the team fields and that its Application Contacts show the right person with
       **Partner Portal Admin checked**. A count proves rows exist; only this proves they are right.
@@ -890,7 +902,18 @@ was found this way, never in a success count.
 
 - [ ] Account total unchanged by the Contact load (no junk FCIC Accounts).
 - [ ] `TriggerControls__c.Contact.On__c` = `true`.
-- [ ] `LDGCRM_Market_Segment__c` still 6 records.
+- [ ] `LDGCRM_Market_Segment__c` still 6 records (5 tagged + the untagged `Test Market Segment`).
+- [ ] ⚠️ **Market Segment CONTENTS, not just the segment count** — this is the check that would have
+      caught the 2026-08-14 QA load, where all nine Flows were off and every count still matched Dev.
+      All three must be **0**:
+      ```
+      sf data query -q "SELECT COUNT() FROM LDGCRM_Partner_Account__c WHERE LDGCRM_External_ID__c!=null AND LDGCRM_Market_Segment__c=null" --target-org <alias>
+      sf data query -q "SELECT COUNT() FROM Opportunity WHERE LDGCRM_External_ID__c!=null AND LDGCRM_Market_Segment__c=null" --target-org <alias>
+      sf data query -q "SELECT COUNT() FROM LDGCRM_application__c WHERE LDGCRM_External_ID__c!=null AND LDGCRM_Market_Segment__c=null" --target-org <alias>
+      ```
+      A non-zero count means the before-save Flows did not fire. **Re-activating them does not fix
+      the loaded records** — those Flows run on create or parent change, and the pipeline upserts, so
+      a re-run is an update that will not re-trigger them. It needs another wipe and reload.
 - [ ] No unexpected new records on objects nobody loaded (Event, Task, Case, Lead).
 - [ ] Pre-existing/untagged test records still at baseline counts.
 - [ ] Review every `logs/data-migration/*-skipped-*.csv` and `*-review-*.csv` from this run and fold
@@ -907,66 +930,117 @@ was found this way, never in a success count.
 | Rahul coordination confirmed | yes | | |
 | Loading user = intended fallback owner | | | |
 | Phase 3 ownership gate | passed | | |
-| Account | per D1 | | |
-| `LDGCRM_Partner_Account__c` | **92** tagged (94 submitted, 2 known fails) | | |
-| Contact | **~1,870** (account-less now skipped) | | |
-| Contact names DERIVED from email | ~597 | | |
-| Contact names read back from the org | **0** (any number = the self-referential bug) | | |
+| Account | **585** tagged (per D1) | | |
+| `LDGCRM_Partner_Account__c` | **97** tagged (99 submitted, 2 known fails) | | |
+| Contact | **~1,876** (account-less now skipped) | | |
+| Contact names DERIVED from email | ~592 | | |
+| Contact names read back from the org | **0–2** — anything higher is the self-referential bug. ⚠️ Only true on a **wiped** org; a plan-only run against a loaded org legitimately shows ~940 | | |
 | `last.first` domains learned | `dol.gov`, `pbgc.gov` | | |
-| Contacts named after a role inbox | 0 | | |
+| Contacts with a role inbox as `LastName`, **no FirstName** | ~57 (correct — address kept whole) | | |
+| Contacts where a role name was **split into a person** | **7**, all from Airtable's `Name` field | | |
 | Fallback owner resolved | `peter.marks@gsa.gov` | | |
 | Opportunity | **842** | | |
-| `LDGCRM_application__c` | **1,026** | | |
+| `LDGCRM_application__c` | **1,045** | | |
 | `LDGCRM_Opportunity_Impediment__c` | **296** | | |
-| `LDGCRM_Application_Contact__c` | **2,699** + pre-existing | | |
-| `OpportunityContactRole` | **565** | | |
-| `LDGCRM_Market_Segment__c` | 6 | | |
-| Junk FCIC Accounts created | 0 | | |
+| `LDGCRM_Application_Contact__c` | **2,750** + pre-existing | | |
+| `OpportunityContactRole` | **566** | | |
+| `ContentNote` | **730** | | |
+| `LDGCRM_Market_Segment__c` | 6 (5 tagged) | | |
+| Junk FCIC Accounts created | 0 (total stays at the pre-run baseline, **4** in Dev) | | |
 | `TriggerControls__c` restored | true | | |
 | Records owned by inactive users | 0 | | |
-| **Partner Portal Admin flags** | **1,061** (0 = source broke, not "no admins") | | |
-| **Associations added by Issuer Strings** | **86 built / 82 loaded** | | |
-| **Partner Portal Team UUID populated** | **681** (0 = `Unique` regressed, or the transform withheld the columns) | | |
+| Market Segment blank on PA / Opp / App | **0 / 0 / 0** — non-zero means the Flows did not fire | | |
+| Applications with a NULL Launch Level | 0 | | |
+| Opportunities with fully-ramped revenue > 0 | **~507** (formula field — **not** `Amount`, which this migration never writes and which is correctly 0) | | |
+| **Partner Portal Admin flags** | **1,079** (0 = source broke, not "no admins") | | |
+| **Associations added by Issuer Strings** | **86** | | |
+| **Partner Portal Team UUID populated** | **691** (0 = `Unique` regressed, or the transform withheld the columns) | | |
+| Applications holding literal `#N/A` | 0 | | |
 | Admin emails matching no Contact | 0 | | |
+| Orchestrator halts on an expected partial | **0** — it classifies and continues as of 2026-08-14 | | |
 
 ---
 
-## Results of the 2026-08-13 full reload (wipe → bootstrap → load → QA)
+## Results of the 2026-08-14 full reload (wipe → bootstrap → load → QA) — CURRENT BASELINE
 
-Recorded so the next run has a real baseline rather than figures carried over from partial loads.
-Sandbox wiped (6,335 records hard-deleted), Accounts rebuilt from the production export, Airtable
-re-pulled, then loaded end to end.
+**This is the figure set to diff against.** Sandbox wiped (8,018 records hard-deleted), Accounts
+rebuilt from the production export, Airtable re-pulled, then loaded end to end in **19m 47s**.
 
-| Object | Airtable rows | Loaded | Previous | Notes |
+| Object | Airtable rows | Loaded | 08-13 | Notes |
 | --- | --- | --- | --- | --- |
-| Account | 747 | 584 tagged | 588 | 155 unmatched (was 172) |
-| `LDGCRM_Partner_Account__c` | 99 | **92** | 74 | 94 submitted, 2 known fails |
-| Contact | 1,535 | **1,870** | 1,483 | 1,882 submitted, 12 duplicate-rule rejects |
-| Opportunity | 904 | **842** | 742 | 62 skipped, all unreconciled Accounts |
-| `LDGCRM_application__c` | 1,056 | **1,026** | 688 | 8 no Partner Account, 22 not loaded |
-| `LDGCRM_Impediment__c` | 40 | 38 | 39 | 2 skipped (no Name) |
-| `LDGCRM_Opportunity_Impediment__c` | — | **296** | 267 | 465 `None` links excluded by design |
-| `LDGCRM_Application_Contact__c` | — | **2,699** | 1,880 | 1,061 admin flags; 82 via Issuer Strings |
-| `OpportunityContactRole` | 520 | **565** | 515 | insert + read-then-diff |
-| `ContentNote` | — | **716** | 537 | 59 placeholders, 21 parent not loaded |
-| `LDGCRM_Market_Segment__c` | 7 | 6 | 6 | untouched by the reset |
-| **Total** | | **8,734** | 6,819 | **+1,915 (+28%)** |
+| Account | 747 | **585** tagged | 584 | 154 unmatched, 8 ambiguous |
+| `LDGCRM_Partner_Account__c` | 99 | **97** | 92 | 99 submitted, 2 known fails |
+| Contact | 1,535 | **1,876** | 1,870 | 1,886 submitted, 10 duplicate-rule rejects |
+| Opportunity | 904 | **842** | 842 | 62 skipped, all unreconciled Accounts |
+| `LDGCRM_application__c` | 1,058 | **1,045** | 1,026 | 8 no Partner Account, 5 not loaded |
+| `LDGCRM_Impediment__c` | 40 | 38 | 38 | 2 skipped (no Name) |
+| `LDGCRM_Opportunity_Impediment__c` | — | **296** | 296 | 465 `None` links excluded by design |
+| `LDGCRM_Application_Contact__c` | — | **2,750** | 2,699 | 1,079 admin flags; 86 via Issuer Strings |
+| `OpportunityContactRole` | 520 | **566** | 565 | insert + read-then-diff |
+| `ContentNote` | — | **730** | 716 | 7 parent not loaded |
+| `LDGCRM_Market_Segment__c` | 7 | 6 | 6 | now deleted + reloaded as step 1 |
+| **Total** | | **8,831** | 8,734 | **+97** |
 
-**All QA phases passed.** Ownership: Opportunity 510 own / 332 fallback, Application 677 / 349,
-**Contact 1,870 own / 0 fallback** (was 100% fallback — D2's premise no longer holds the way it did).
-0 records owned by an inactive user on any object; 0 Partner Accounts with an inactive owner; Market
-Segment populated on every migrated Opportunity and Application; 0 new FCIC junk Accounts; trigger
-switch restored and verified; Event/Task/Case/Lead all 0.
+**All QA phases passed. 0 unexpected failures. 265 rows withheld.**
 
-**Two expected stops, both documented, neither a defect:**
-- **PartnerAccount** — 2 of 94 failed (`DOS-CA`, `HHS-OIG`), both parent Accounts still untagged.
-  Verified 2 of 2 trace to the known cause. Resume at `Contact`.
-- **Contact** — 12 of 1,882 rejected by the org duplicate rule (First+Last name). Was 4; the rise is
-  purely volume (1,882 submitted vs 1,487). Resume at `Opportunity`.
+✅ **The orchestrator ran all 12 steps end to end without stopping once** — the friction point flagged
+below after the 2026-08-13 run is fixed. `PartnerAccount` and `Contact` both reported
+`PARTIAL (expected failures)` with every failure matched to a known cause, and the run carried on.
 
-⚠️ **The orchestrator halting on an expected partial bit twice in one run.** It is the single biggest
-friction point in this runbook and is worth fixing before the Operations hand-off — see the note in
-§4b.
+**Verified in the org after the load:**
+
+| Check | Result |
+| --- | --- |
+| Market Segment blank on Partner Account / Opportunity / Application | **0 / 0 / 0** — the Flows fired |
+| Records owned by an inactive user (4 objects) | **0** |
+| FCIC junk Accounts | **4** — unchanged from baseline |
+| `TriggerControls__c.Contact.On__c` | **True** — restored |
+| Event / Task / Lead | **0 / 0 / 0** |
+| Applications with a NULL Launch Level | **0** |
+| Applications holding literal `#N/A` | **0** |
+| Applications with Partner Portal Team UUID | **691** (was 681) |
+| Applications with Broker App Parent | **66** (was 63) |
+| Opportunities with computed fully-ramped revenue > 0 | **507** (was ~467) |
+| Impediment blocked-revenue rollup | genuine figures; `None` correctly absent |
+| Admin flag provenance | **883 BOTH / 116 Roles-only / 86 Issuer-Strings-only** |
+| Portal team review | **9 CONFLICT / 18 INCOMPLETE** |
+
+**Two expected stops, both documented, neither a defect — and neither halted the run this time:**
+- **PartnerAccount** — 2 of 99 failed, both parent Accounts still untagged. Within the allowance of 20.
+- **Contact** — 10 of 1,886 rejected by the org duplicate rule (First+Last name). Was 12.
+
+### ⚠️ Two Contact checks that only read correctly on a freshly-wiped org
+
+Both were measured on a `-PlanOnly` run against the **still-loaded** org immediately before the wipe,
+and both looked like serious regressions. They are not — they are the documented circular-read
+behaviour, and the wipe cleared them. **Do not raise these unless you see them post-wipe:**
+
+| Check | Against the loaded org | After the wipe |
+| --- | --- | --- |
+| Names "read back from a Contact already in the org" | **940** | **2** (the pre-existing test records) |
+| Names DERIVED from the email | suppressed | **592** |
+
+The pre-wipe figure is the transform reading back **its own derived names** from the previous load and
+counting them as recovered. It is exactly the failure mode §4c warns about, and seeing it on a
+plan-only run is expected rather than alarming.
+
+### Results of the 2026-08-13 full reload (superseded — kept for the trend)
+
+| Object | Loaded | Previous |
+| --- | --- | --- |
+| Account | 584 tagged | 588 |
+| `LDGCRM_Partner_Account__c` | 92 | 74 |
+| Contact | 1,870 | 1,483 |
+| Opportunity | 842 | 742 |
+| `LDGCRM_application__c` | 1,026 | 688 |
+| `LDGCRM_Opportunity_Impediment__c` | 296 | 267 |
+| `LDGCRM_Application_Contact__c` | 2,699 | 1,880 |
+| `OpportunityContactRole` | 565 | 515 |
+| `ContentNote` | 716 | 537 |
+| **Total** | **8,734** | 6,819 |
+
+⚠️ On that run the orchestrator **halted twice on expected partials** and needed manual resumes. That
+was the single biggest friction point in this runbook; it is resolved as of 2026-08-14.
 
 ---
 
@@ -974,18 +1048,29 @@ friction point in this runbook and is worth fixing before the Operations hand-of
 
 Expected, documented, not to be logged as failures:
 
-- **~169 unmatched Airtable Accounts**, cascading into 142 Opportunities, 359 Applications, 849
-  Application-Contact pairs and 20 Partner Accounts. Fixed at source in Airtable.
-- **`LDGCRM_Broker_App_Parent__c`** — 7 of 70 links stay unloaded: 6 waiting on an Application the
-  Account issue withheld, 1 a self-reference needing an Airtable fix. The other 63 load in step 4e-bis.
+- **154 unmatched Airtable Accounts** (was ~169), cascading into 62 Opportunities, 13 Applications,
+  77 Application-Contact pairs, 34 Opportunity Contacts, 7 Notes and 2 Partner Accounts.
+  ⚠️ **The nature of this gap changed on 2026-08-14.** Every duplicate row previously listed has been
+  merged at source. What remains is mostly **agencies, bureaus, territories and courts with no
+  Salesforce Account at all** (`U.S. Census Bureau`, `Guam`, `The Supreme Court of the United
+  States`…), so most of it now needs Accounts *creating in Salesforce* rather than an Airtable edit.
+  Two Airtable follow-ons remain and are worth doing: the **`Department of Treasury` name collision**
+  (2 rows share the name; unblocks 5 Opportunities) and **8 generic office names** that match 2+
+  Salesforce Accounts. See AIRTABLE-DATA-QUALITY-REQUESTS.md.
+- **`LDGCRM_Broker_App_Parent__c`** — 4 of 70 links stay unloaded (was 7): 3 waiting on an Application
+  the Account issue withheld, 1 a self-reference needing an Airtable fix. The other **66** load in
+  step 4e-bis.
+- **247 Opportunity owners do not resolve to an active Salesforce User**, so 332 Opportunities land on
+  the fallback owner. That is the "missing Salesforce logins" item in the data-quality doc, not a
+  pipeline fault, and it is not closed by any reload.
 - **Meetings** (1,845 rows) — **deferred by decision 2026-08-13, and out of scope for this reload.**
   Rather than synthesize the start/end times Airtable never recorded, the approach is now to stand up
   **Einstein Activity Capture**, let real Google Calendar events sync, and fuzzy-match Airtable's
   meetings onto them. That depends on an org configuration change outside this repo and an unresolved
   spike (do EAC events exist as standard `Event` records at all?). See `BACKLOG.md` §2.
-- **Notes** — **built 2026-08-13** (`Build-NotesLoad.ps1` + `Invoke-NotesLoad.ps1`), but runs *after*
-  everything else by definition, so it is a step at the end of this reload rather than a known gap.
-  537 notes ready; 200 wait on parents the Account data-quality issue withheld.
+- **Notes** — **built 2026-08-13** (`Build-NotesLoad.ps1` + `Invoke-NotesLoad.ps1`), and now **step 12
+  of 12 in the orchestrator**, so it runs as part of a normal full load rather than being a known gap.
+  730 notes loaded on 2026-08-14; only 7 wait on parents the Account issue withheld (was 200).
 - **Contact ownership meaningfulness** — see D2.
 - **9 Applications with no portal team** — their issuer strings name two different teams, so both
   fields are deliberately left blank. **Accepted outcome**: the portal team is optional (business

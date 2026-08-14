@@ -19,54 +19,73 @@ migration into Salesforce.
 **This list grows as more tables get migrated** (Contacts, Opportunities, and a few others haven't
 been reviewed yet as of 2026-08-13) — it isn't the final/complete list, just everything found so far.
 
-## 📈 Where things stand after the 2026-08-13 full reload
+## 📈 Where things stand after the 2026-08-14 full reload
 
-The sandbox was wiped and rebuilt from scratch to measure exactly this. **Your fixes moved a lot.**
+The sandbox was wiped and rebuilt from scratch again on **2026-08-14**, against a freshly pulled
+Airtable export, to measure exactly what your latest round of fixes moved.
 
-| | Before | After |
-| --- | --- | --- |
-| **Total records migrated** | 6,819 | **8,734** *(+28%)* |
-| Opportunities | 742 | **842** |
-| Applications | 688 | **1,026** |
-| Contacts | 1,483 | **1,870** |
-| Application–Contact links | 1,880 | **2,699** |
-| Notes | 537 | **716** |
-| Partner Accounts | 74 | **92** |
+| | 2026-08-12 | 2026-08-13 | **2026-08-14** |
+| --- | --- | --- | --- |
+| **Total records migrated** | 6,819 | 8,734 | **8,831** |
+| Opportunities | 742 | 842 | 842 |
+| Applications | 688 | 1,026 | **1,045** |
+| Contacts | 1,483 | 1,870 | **1,876** |
+| Application–Contact links | 1,880 | 2,699 | **2,750** |
+| Notes | 537 | 716 | **730** |
+| Partner Accounts | 74 | 92 | **97** |
 
-**Nine items on this list are now fully resolved** — see the [Resolved log](#-resolved-log). The
-standouts:
+**Zero unexpected failures**, and for the first time the whole 12-step load ran end to end without
+stopping once.
 
-- **Every Opportunity now has a real estimated go-live date** (199 of 928 → 904 of 904). Salesforce
-  requires a Close Date, so until now most were filled with a stand-in date that couldn't be trusted
-  for reporting. **Zero** now use a stand-in.
-- **Every Opportunity has a Status and an Account link** (28 and 16 missing → 0 and 0).
-- **Contacts with no agency dropped 86%** (390 → 54), purely as a knock-on effect of the Account work.
-- **Applications blocked by unmatched Accounts dropped 94%** (359 → 22).
+**Four more items closed this round** — see the [Resolved log](#-resolved-log):
 
-**The Account duplicate/matching work remains the highest-impact item left.** It's down 172 → 155
-rows, but almost everything still blocked traces back to it.
+- ✅ **Every one of the 12 duplicate Account rows this document asked you to merge is gone.** All 8
+  "confirmed duplicates" and all 4 "needs confirmation" rows have been merged into their canonical
+  twin. This was the top item on the list for two weeks.
+- ✅ **Every Partner Account now has exactly one Account link** (4 with none → 0; `USDT-SSP`'s
+  double link → resolved). Partner Accounts migrated went 92 → **97**.
+- ✅ **`Technical Emails` is gone from the Subscription Type field** (711 → 0). Nothing is being
+  dropped on load any more.
+- 🟡 **Duplicate contact rows dropped 80%** — email addresses appearing on 2+ rows went 61 → **12**.
 
-### Current measurements — 2026-08-14
+### ⚠️ The Accounts item has changed character — please read this before working it
 
-Figures below are measured against a fresh Airtable pull and a full sandbox wipe-and-reload.
-**8,734 records migrated, zero unexpected failures.** Some counts elsewhere in this document were
-taken from an earlier export; these are the current ones.
+It is still roughly the same size (155 → **154** unmatched), which makes it look like nothing
+happened. **That reading is wrong, and the number is hiding a real success.**
 
-| Item | Airtable rows | Records it holds back |
-| --- | --- | --- |
-| Accounts not matching a Salesforce Account | **155** | ~275 across 5 objects |
-| Contacts with no name | **1,054** of 1,535 | 0 — they load with a derived name |
-| Issuer Strings `#N/A` cells | **273** (136 name + 137 UUID) | 0 — ✅ closed, optional field |
-| Applications with no Launch Level | **621** | 0 — but see CR-3 |
-| Contacts with neither name nor email | **31** | 31 |
-| `Technical Emails` subscription | **711** | 0 — value dropped |
-| Partner Accounts with no Account link | **4** | 4, plus their Applications |
-| Applications with no Partner Account link | **8** | 8 |
-| Impediments with no name | **2** | 2 |
-| Contacts with an email in the `Name` field | **3** | 0 — loads as a name |
+The 154 are now an almost entirely *different* set of rows. Every duplicate this document named has
+been fixed. What remains is not duplicates at all — it is **agencies, bureaus, territories and
+courts that have no Salesforce Account to match, because one was never created**:
 
-**Highest leverage: the 155 unmatched Accounts.** They are why 62 Opportunities, 30 Applications,
-128 Application–Contact links, 34 Opportunity Contacts and 21 Notes were withheld.
+> `U.S. Census Bureau`, `United States Postal Service`, `Bureau of Diplomatic Security`,
+> `United States Army Corps of Engineers`, `The Supreme Court of the United States`,
+> `Guam`, `American Samoa`, `Puerto Rico`, `Northern Mariana Islands`, `United States Virgin Islands`,
+> `John F. Kennedy Center for the Performing Arts`, `U.S. Commission on Civil Rights` …
+
+**So this is no longer an Airtable de-duplication ask.** For most of the 154 the question is now for
+whoever owns the Salesforce org: *should these Accounts be created?* The Airtable rows look correct.
+See [the reframed item below](#accounts-rows-that-dont-match-an-existing-salesforce-account--172--155).
+
+### Current measurements — 2026-08-14 (after the reload)
+
+| Item | Airtable rows | Records it holds back | Change |
+| --- | --- | --- | --- |
+| Accounts not matching a Salesforce Account | **154** | ~166 across 5 objects | 155 → 154, but see above |
+| Contacts with no name | **1,054** of 1,535 | 0 — they load with a derived name | unchanged |
+| Issuer Strings `#N/A` cells | **273** (136 name + 137 UUID) | 0 — ✅ closed, optional field | unchanged |
+| Applications with no Launch Level | **621** | 0 — but see CR-3 | unchanged |
+| Contacts with neither name nor email | **31** | 31 | unchanged |
+| `Technical Emails` subscription | **0** | 0 | ✅ **711 → 0** |
+| Partner Accounts with no Account link | **0** | 0 | ✅ **4 → 0** |
+| Partner Accounts linked to two Accounts | **0** | 0 | ✅ **1 → 0** |
+| Emails appearing on 2+ Contact rows | **12** | 0 — rows are merged | 🟡 **61 → 12** |
+| Applications with no Partner Account link | **8** | 8 | unchanged (6 are `Decomissioned`) |
+| Impediments with no name | **2** | 2 | unchanged |
+| Contacts with an email in the `Name` field | **3** | 0 — loads as a name | unchanged |
+
+**What the remaining 154 unmatched Accounts hold back:** 62 Opportunities, 13 Applications,
+77 Application–Contact links, 34 Opportunity Contacts and 7 Notes. Every one of those figures
+except Opportunities came down this round.
 
 ### How to read the status on each item
 
@@ -97,26 +116,87 @@ to an Account, every Application must be linked to a Partner Account). Airtable 
 link get skipped rather than guessed at. None of these are broken on the Salesforce side — they need
 a decision or a data fix in Airtable.
 
-### Accounts: rows that don't match an existing Salesforce Account — 🟡 172 → 155
+### Accounts: rows that don't match an existing Salesforce Account — 🟡 172 → 155 → 154 (but see below)
 
-**Status: 🟡 Partially resolved — 172 → 155** as of the 2026-08-13 full reload. **Still the
-highest-impact item on this list**, because everything below cascades from it.
+**Status: 🟡 The duplicate half of this item is ✅ DONE. What's left is a different question.**
 
-What the remaining 155 are still blocking, measured on this reload (all sharply down):
+**✅ All 12 named duplicate rows have been merged** (verified against the 2026-08-14 export — every
+one of the 8 "confirmed duplicates" and all 4 "needs confirmation" rows is gone, and each canonical
+twin is present exactly once). **Thank you — this was the top item on the list for two weeks.**
 
-| Blocked by unmatched Accounts | Was | Now |
-| --- | --- | --- |
-| Partner Accounts | ~20 | **2** |
-| Applications | 359 | **22** |
-| Opportunities | 142 | **62** |
-| Contacts (no agency) | 390 | **54** |
+**The count barely moved (155 → 154) and that is misleading.** The remaining rows are almost
+entirely a *different* population. They are not duplicates of anything; they are real organisations
+with no Salesforce Account to match:
 
-Airtable has 747 Account rows; Salesforce has 584 tagged. Matching is by ID first, then exact name.
+> `U.S. Census Bureau`, `United States Postal Service`, `Bureau of Diplomatic Security`,
+> `United States Army Corps of Engineers`, `The Supreme Court of the United States`,
+> `United States Courts of Appeals`, `Special Courts: United States Tax Court`,
+> `Guam`, `American Samoa`, `Puerto Rico`, `Northern Mariana Islands`, `United States Virgin Islands`,
+> `John F. Kennedy Center for the Performing Arts`, `U.S. Commission on Civil Rights`,
+> `Council of Inspectors General on Integrity and Efficiency`, `Udall Foundation` …
+
+**What we need now is different from what this item used to ask for.** For most of the 154 there is
+nothing to fix in Airtable — the row is correct. The question is for **whoever owns the Salesforce
+org**: should an Account be created for these bodies? Until one exists, the migration has nothing to
+attach their Opportunities and Applications to.
+
+Please still check the list for anything that *is* a duplicate or is genuinely stale — but expect
+that to be the minority now, not the bulk.
+
+What the remaining 154 hold back (all down again this round except Opportunities):
+
+| Blocked by unmatched Accounts | 2026-08-12 | 2026-08-13 | **2026-08-14** |
+| --- | --- | --- | --- |
+| Partner Accounts | ~20 | 2 | **2** |
+| Applications | 359 | 22 | **13** |
+| Opportunities | 142 | 62 | **62** |
+| Contacts (no agency) | 390 | 54 | **49** |
+| Application–Contact links | 849 | 128 | **77** |
+
+Airtable has 747 Account rows; Salesforce has 585 tagged. Matching is by ID first, then exact name.
 Full list: `scripts/logs/data-migration/Account-reconciliation-unmatched-*.csv` (ask engineering for the
 latest one).
 
-One concrete example: **`Depart of Homeland Security`** looks like a typo'd duplicate of an Account
-that's already in Salesforce under its correct name.
+### ⚠️ NEW 2026-08-14: the `Department of the Treasury` merge left two rows with the same name — 🔴 OPEN
+
+**This is a small follow-on from the merge work, and it is blocking 5 Opportunities.**
+
+`Department of the Treasury` was correctly merged toward `Department of Treasury` — but there are now
+**two Airtable rows both named `Department of Treasury`**. Only one of them can claim the single
+Salesforce Account of that name; the other is left unmatched, and the 5 Opportunities hanging off it
+are withheld.
+
+**What we need:** merge the two `Department of Treasury` rows into one, relinking anything that
+points at the loser. This is the single highest-value remaining Account fix — 5 Opportunities for one
+merge.
+
+*(Three other names are also duplicated within Airtable, but they are generic sub-office names and
+are covered by the next item rather than this one: `Office of Communications` ×3,
+`Office of the Director` ×2, `Office Of The Secretary` ×2.)*
+
+### ⚠️ NEW 2026-08-14: 8 rows have generic office names that match more than one Salesforce Account — 🔴 OPEN
+
+**The migration refuses to guess on these, so they stay unmatched.** Eight Airtable Account rows are
+named after a generic sub-office, and Salesforce has **two or more** Accounts with that exact name —
+belonging to different parent agencies. There is no safe way to pick one.
+
+| Airtable row | Its Market Segment (the clue to the real parent) |
+| --- | --- |
+| `Office of Communications` | Finance & Regulation |
+| `Office of Communications` | Defense |
+| `Office of Communications` | Finance & Regulation |
+| `Office of the Director` | Finance & Regulation |
+| `Office of the Director` | Finance & Regulation |
+| `Office of the Deputy Secretary` | Defense |
+| `Office of the Inspector General` | Infrastructure |
+| `Departmental Management` | Benefits |
+
+**What we need:** disambiguate the names so each points at one agency — e.g.
+`Office of Communications (Treasury)` vs `Office of Communications (DoD)`. The Market Segment column
+already tells you which is which. Renaming them in Airtable to match the parent agency's naming is
+enough; no other change is needed.
+
+Full list: `scripts/logs/data-migration/Account-reconciliation-ambiguous-*.csv`.
 
 **Confirmed pattern (2026-08-13): most of these look like duplicate rows within Airtable itself, not
 missing Accounts.** Checked the 13 of the 172 that were specifically blocking Partner Account loads
@@ -222,19 +302,18 @@ unresolved Accounts will simply be skipped or fail to load until the underlying 
 in Airtable — that's expected, by-design behavior, not a bug the pipeline should route around. This
 list is what unblocks them.
 
-### Partner Accounts: 5 rows have no working link to an Account
+### Partner Accounts: 5 rows have no working link to an Account — ✅ RESOLVED 2026-08-14
 
-- **No Account linked at all** (4 rows, all marked `Inactive`): `USDT(inactive)`,
-  `DOD-AFRL-Bifrost - placeholder`, `USACE`, `DOD-ARMY-CAC (INACTIVE AGREEMENT)`. These look like
-  placeholder/retired agreements — confirm whether they should be deleted from Airtable, linked to
-  the correct Account, or just left as-is (they simply won't migrate either way).
-- **Linked to two Accounts at once** (1 row): `USDT-SSP`, linked to both `Internal Revenue Service`
-  (already correctly matched in Salesforce) and `Department of the Treasury` (itself a likely
-  duplicate of Salesforce's `Department of Treasury` — see the Account duplicate table further down
-  this document). A Partner Account can only belong to one Account in Salesforce — needs a decision on
-  which one is correct (or whether this should actually be two separate Partner Account records) —
-  and separately, whichever one is correct, `Department of the Treasury` still needs the duplicate
-  question resolved either way.
+**Status: ✅ Resolved. Thank you — nothing further needed.** Verified against the 2026-08-14 export:
+**all 99 Partner Account rows now have exactly one Account link.** Partner Accounts migrated went
+92 → **97**.
+
+- **No Account linked at all: 4 → 0.** `USDT(inactive)`, `DOD-AFRL-Bifrost - placeholder`, `USACE`
+  and `DOD-ARMY-CAC (INACTIVE AGREEMENT)` all now carry a link.
+- **Linked to two Accounts at once: 1 → 0.** `USDT-SSP` now resolves to a single Account.
+
+*(2 Partner Accounts still fail to load, but for the separate reason that their parent Account is
+among the 154 unmatched — that is the Accounts item above, not this one.)*
 
 ### Missing Salesforce logins block record ownership across three objects at once
 
@@ -620,10 +699,17 @@ This also means they pick up a Market Segment automatically (Salesforce derives 
 
 ### Opportunities: blocked by the duplicate-Account problem — 🟡 PARTIALLY RESOLVED
 
-**Status: 🟡 Partially resolved — 142 → 62.** These point at Airtable Account rows that don't match a
-Salesforce Account (the issue at the top of this document). Progress on the Account duplicates has cut
-this by more than half. **The remaining 62 will migrate automatically once those Accounts are
-resolved**, with no work needed on the Opportunity records themselves. Current list:
+**Status: 🟡 Partially resolved — 142 → 62, and held at 62 on 2026-08-14.** These point at Airtable
+Account rows that don't match a Salesforce Account (the issue at the top of this document). Progress
+on the Account duplicates cut this by more than half, but **this is the one downstream figure that did
+not improve this round** — because the duplicates that were merged were not the ones blocking
+Opportunities.
+
+**The biggest single win available here is the `Department of Treasury` name collision — 5
+Opportunities for one merge.** The rest are spread thinly across the genuinely-missing agencies and
+territories described at the top, so they need Salesforce Accounts creating rather than an Airtable
+edit. **All 62 will migrate automatically once those Accounts exist**, with no work needed on the
+Opportunity records themselves. Current list:
 `scripts/logs/data-migration/Opportunity-skipped-*.csv`.
 
 ### Opportunities: 729 records have no estimated go-live date — ✅ RESOLVED 2026-08-13
@@ -741,9 +827,40 @@ from a real name, so it loads verbatim — Salesforce ends up with a contact cal
 `shyla.morisetty@dot.gov`.
 
 **What we need:** replace the address in the `Name` field with the person's actual name (the `Email`
-field already holds the address).
+field already holds the address). The three are `shyla.morisetty@dot.gov`,
+`christopher.villas@cisa.dhs.gov` and `icam-portfolio@gsa.gov`.
 
-### Contacts: the same person is entered multiple times (61 email addresses appear on 2+ rows)
+### ⚠️ NEW 2026-08-14: 7 help-desk names became "people" in Salesforce — 🔴 OPEN
+
+Where Airtable's `Name` field holds a **help-desk or team name rather than a person**, the migration
+takes it at its word and splits it into a first and last name — because it has no way to tell
+"Help Desk" from a real name. Salesforce now contains contacts called:
+
+| Airtable `Name` | Became in Salesforce |
+| --- | --- |
+| `HELP DESK` | First `Help`, Last `Desk` |
+| `UI Claimant Portal Help Desk` | First `UI Claimant Portal Help`, Last `Desk` |
+| `EBSA Lost & Found Help Desk Information` | First `EBSA Lost & Found Help Desk`, Last `Information` |
+| `Peace Corps Help Desk` | First `Peace Corps Help`, Last `Desk` |
+| `FDM Help Desk` | First `FDM Help`, Last `Desk` |
+| `Help Desk Independent Study System` | First `Help Desk Independent Study`, Last `System` |
+| `Wisconsin UI Help Center` | First `Wisconsin UI Help`, Last `Center` |
+
+**This is only these 7.** The other 57 role inboxes the migration detected from their *email address*
+(`support@`, `nfrhelpdesk@`, `foiasupport@`) were handled correctly — the address is kept whole and
+**no first name is invented**. These 7 slipped through because the role name is in the `Name` field,
+where the migration is supposed to trust what you wrote.
+
+**What we need:** this is the same underlying question as the shared-mailbox item above — should
+these be Contacts at all? If they should, they need a convention that doesn't read as a person's
+name. If they shouldn't, removing the row (or the `Name` value) is enough.
+
+### Contacts: the same person is entered multiple times — 🟡 61 → 12
+
+**Status: 🟡 Down 80%** as of the 2026-08-14 export — email addresses appearing on 2+ Contact rows
+went **61 → 12**. Nothing was blocked either way (the migration merges them), but the Airtable table
+is now a much closer reflection of the real number of people. The text below still describes why the
+duplication happens and applies to the remaining 12.
 
 **This looks like a limitation of how Contacts are set up in Airtable, not careless data entry.**
 Airtable has no way to link one person to several Applications, so the same person is entered again
@@ -816,20 +933,21 @@ and each looks like a genuine data issue:
 **What we need:** for the first two, confirm which is right — the name or the email. For the last,
 confirm whether it's the same person already in Salesforce.
 
-### Contacts: "Technical Emails" isn't a valid subscription type
+### Contacts: "Technical Emails" isn't a valid subscription type — ✅ RESOLVED 2026-08-14
 
-716 contacts have `Subscription Type = "Technical Emails"`, but Salesforce only offers
-`Newsletter Recipient` and `Technical POC`. We are **not** assuming "Technical Emails" means
-"Technical POC" — a mailing-list preference and a point-of-contact role are different things, and
-guessing would invent role data on 716 records. The value is currently dropped.
+**Status: ✅ Resolved. Thank you — nothing further needed.** Verified against the 2026-08-14 export:
+**0 contacts** now carry `Subscription Type = "Technical Emails"`, down from 711. Nothing is being
+dropped on load any more.
 
-**What we need:** either confirm that "Technical Emails" should map to "Technical POC", or add a
-matching subscription option in Salesforce, or confirm it isn't needed.
+*(For the record, the original ask: Salesforce only offers `Newsletter Recipient` and `Technical
+POC`. We deliberately did **not** assume "Technical Emails" meant "Technical POC" — a mailing-list
+preference and a point-of-contact role are different things, and guessing would have invented role
+data on 711 records.)*
 
-### Contacts: can't be linked to any agency — 🟡 390 → 54, LARGELY RESOLVED
+### Contacts: can't be linked to any agency — 🟡 390 → 54 → 49, LARGELY RESOLVED
 
-**Status: 🟡 Down from 390 to 54** as of the 2026-08-13 full reload — an 86% reduction, driven by the
-Account fixes above rather than by anything done to the Contact records themselves. **1,870 Contacts
+**Status: 🟡 Down from 390 to 49** as of the 2026-08-14 full reload — an 87% reduction, driven by the
+Account fixes above rather than by anything done to the Contact records themselves. **1,876 Contacts
 now load, up from 1,483.**
 
 **Changed 2026-08-13.** Contacts with no resolvable Account are **skipped rather than loaded**. A
@@ -894,18 +1012,24 @@ opportunities and blocked-revenue totals are no longer split.
 ## Recommended cleanup — not blocking, but worth doing
 
 - **Impediments: 2 completely empty rows** (`recA9LjxxE56gV73J`, `recXyF5tOHJh07laz`) — no Name,
-  Category, Description, or anything else filled in. Look like accidental blank rows. Safe to delete
-  from Airtable; they won't migrate either way.
+  Category, Description, or anything else filled in; the only values on them are Airtable's own
+  computed rollups. Look like accidental blank rows. Safe to delete from Airtable; they won't migrate
+  either way. **These are the same two rows as the "Impediments with no name" count** elsewhere in
+  this document — one item, not two.
 - **Applications: `"Decomissioned"` is misspelled** in the Status field (should be
   `"Decommissioned"`, two *m*'s) — used on 89 records. We're correcting this automatically on the
   Salesforce side, so it's not blocking anything, but fixing the spelling at the source in Airtable
   would prevent it from being typed wrong again in the future.
-- **Applications: 6 records marked `Decomissioned` have no Partner Account link**: `CBP I'm Ready`,
-  `SAMS (CBP)`, `GSA Federal Advisory Committee Act Training`, `CCP Truck Staging`, `SPEARS
-  Opportunity Portal | HUD Section 3 Opportunity Portal`, `Army Contract Writing System's (ACWS)
-  Vendor Self Service (VSS)`. These are being treated as retired/historical and won't migrate — no
-  action needed unless there's a reason to preserve them, in which case they'd need a Partner Account
-  link added.
+- **Applications: 8 records have no Partner Account link — 6 are retired, but ⚠️ 2 are LIVE.**
+  Re-checked 2026-08-14.
+  - **6 marked `Decomissioned`**, treated as retired/historical and not migrating — no action needed:
+    `CBP I'm Ready`, `SAMS (CBP)`, `GSA Federal Advisory Committee Act Training`, `CCP Truck
+    Staging`, `SPEARS Opportunity Portal | HUD Section 3 Opportunity Portal`, `Army Contract Writing
+    System's (ACWS) Vendor Self Service (VSS)`.
+  - ⚠️ **2 are not retired and are being withheld**: **`DOJ JMD`** (`Partner Pause`) and
+    **`TSA News – Mobile Application`** (`Move to Production Request`). A Partner Account link is
+    required, so these two do not migrate at all. **These are worth linking** — unlike the six above,
+    they look like current work.
 
 ### Opportunities: only a small number have a real Partner Account link
 
@@ -969,6 +1093,11 @@ to the full item above, which is kept in place rather than deleted.
 | 2026-08-13 | [Impediments: "Feature - Citizenship verification" duplicated](#impediments-feature---citizenship-verification-exists-twice--resolved-2026-08-13) | The two records merged into one | **Airtable data owners** | Linked opportunities and blocked-revenue totals no longer split across two records. |
 | 2026-08-13 | [Accounts: unmatched rows](#accounts-rows-that-dont-match-an-existing-salesforce-account--172--155) *(partial)* | Ongoing duplicate/merge work in Airtable | **Airtable data owners** | 172 → 155 unmatched, but the *downstream* effect is far larger: Applications blocked 359 → **22**, Opportunities 142 → **62**, Contacts with no agency 390 → **54**, Partner Accounts ~20 → **2**. |
 | 2026-08-13 | Migration pipeline (engineering, not an Airtable fix) | Contact ownership now inherits the Account owner; Contact sourcing folds in the Opportunity Contacts table; Partner Portal Team + Admin sourced from the new Issuer Strings table; Account hierarchy bootstrap | Engineering | **8,734 records migrated, up from 6,819 (+28%)**. Contact ownership went from 100% fallback to **1,870 real owners / 0 fallback**. |
+| **2026-08-14** | [Accounts: the 12 named duplicate rows](#accounts-rows-that-dont-match-an-existing-salesforce-account--172--155--154-but-see-below) *(the duplicate half of the item)* | All 8 "confirmed duplicates" **and** all 4 "needs confirmation" rows merged into their canonical twin; each twin verified present exactly once | **Airtable data owners** | The longest-standing item on this list. Applications blocked 22 → **13**, Application–Contact links 128 → **77**, Contacts with no agency 54 → **49**, Notes 21 → **7**. ⚠️ Two follow-ons opened: the `Department of Treasury` name collision, and 8 ambiguous generic office names. |
+| **2026-08-14** | [Partner Accounts: 5 rows with no working Account link](#partner-accounts-5-rows-have-no-working-link-to-an-account--resolved-2026-08-14) | All 4 unlinked rows linked; `USDT-SSP`'s double link resolved to one Account | **Airtable data owners** | 5 → **0**. Partner Accounts migrated 92 → **97**. |
+| **2026-08-14** | [Contacts: "Technical Emails" subscription type](#contacts-technical-emails-isnt-a-valid-subscription-type--resolved-2026-08-14) | Value removed from the Subscription Type field | **Airtable data owners** | 711 → **0**. Nothing dropped on load any more. |
+| **2026-08-14** | [Contacts: the same person entered multiple times](#contacts-the-same-person-is-entered-multiple-times--61--12) *(partial)* | Duplicate contact rows consolidated | **Airtable data owners** | Emails on 2+ rows **61 → 12** (-80%). Nothing was blocked either way, but the table now reflects the real number of people far more closely. |
+| **2026-08-14** | Migration pipeline (engineering, not an Airtable fix) | Pre-flight now blocks the run unless all nine LDGCRM Flows are active — added after a QA load reported 8,740 records and 0 failures with every Flow switched off and Market Segment blank on 100% of Partner Accounts, Opportunities and Applications | Engineering | **8,831 records migrated**, 0 unexpected failures, and the 12-step load ran end to end **without stopping once** (it halted twice on 2026-08-13). Market Segment verified populated on **every** migrated Partner Account, Opportunity and Application. |
 
 ## Already decided, listed here for visibility (not asks)
 
