@@ -75,7 +75,41 @@ setting.
 
 ---
 
-## CR-2 — Retire `LDGCRM_PP_Issuer_Strings__c`, and fix the two formulas that depend on it — 🔴 OPEN
+## CR-2 — Retire `LDGCRM_PP_Issuer_Strings__c` — 🟡 FORMULA DONE, references still to clear
+
+> ### The approach changed on 2026-08-14, and it is cheaper than what is specified below
+>
+> Rather than **removing** the ninth checklist item and moving the denominator 9 → 8, the item's
+> **reference was swapped** to the successor field:
+>
+> ```
+> - IF(ISBLANK(LDGCRM_PP_Issuer_Strings__c), 0, 1)
+> + IF(ISBLANK(LDGCRM_P3_Team_UUID__c),      0, 1)
+> ```
+>
+> **The denominator stays 9, so `LDGCRM_Launch_Checklist_Completion__c` needs no change at all** —
+> steps 2a and 2b below are superseded. It hard-codes Level 1's item count as a weight (`*9`, `/16`,
+> `/20`); leaving the count at 9 leaves all three alone.
+>
+> The checklist item also keeps its business meaning instead of disappearing: "the partner portal is
+> set up" is still measured, just against the field that now holds that fact.
+>
+> **✅ Done and verified 2026-08-14:** ceiling moved 78 → 89, all 681 Applications with a Team UUID
+> score the item, 0 without one can reach 100%.
+>
+> **Still to do before the field can be deleted** — Salesforce blocks the delete while any of these
+> reference it:
+>
+> | Reference | Count | Owner |
+> | --- | --- | --- |
+> | Page layout `LDGCRM_application__c-Application Layout` | 1 | Config owner |
+> | Permission sets — FLS (`..._Team_Member_CRE`, `..._Viewer_R`, `..._Production_Support_CRED`) | 3 | Config owner |
+> | Report types — one is **named** `LDGCRM_Login_gov_Applications_with_Partner_Portal_Issuer_Strings`, so consider renaming rather than only dropping the column | 4 | Config owner |
+> | Then: delete the field | — | **This repo may do this by CLI** — deletion is the one sanctioned deploy |
+>
+> Records holding data: **1**, a pre-existing test record. No migration data is lost.
+
+<details><summary>Original specification (superseded — kept for the record)</summary>
 
 **Confirmed by the project owner (2026-08-13): the field is deprecated and this data is not being
 migrated.** It cannot simply be deleted — a formula depends on it, and removing it changes two
@@ -162,6 +196,8 @@ CASE(
 
 Layout → 3 permission sets → 4 report types → then delete the field. Deleting the field is the one
 step this repo may do by CLI deploy; everything above it is change-set work.
+
+</details>
 
 ---
 

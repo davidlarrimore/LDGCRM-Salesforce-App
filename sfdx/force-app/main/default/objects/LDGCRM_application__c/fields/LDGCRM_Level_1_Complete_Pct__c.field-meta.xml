@@ -11,7 +11,7 @@
     IF(LDGCRM_Production_Launch_Completed__c, 1, 0) +
     IF(LDGCRM_Launch_Activities_Confirmed__c, 1, 0) +
     IF(LDGCRM_Launch_Activities_Completed__c, 1, 0) +
-    IF(ISBLANK(LDGCRM_PP_Issuer_Strings__c), 0, 1)
+    IF(ISBLANK(LDGCRM_P3_Team_UUID__c), 0, 1)
 ) / 9</formula>
     <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
     <inlineHelpText>Percentage indicating Level 1 Launch Checklist</inlineHelpText>

@@ -1,15 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>LDGCRM_P3_Team_UUID__c</fullName>
-    <caseSensitive>false</caseSensitive>
     <description>References partner portal team id that is consistent across environments.</description>
     <externalId>false</externalId>
     <inlineHelpText>References partner portal team id that is consistent across environments.</inlineHelpText>
     <label>Partner Portal Team UUID</label>
-    <length>50</length>
+    <length>255</length>
     <required>false</required>
     <trackHistory>false</trackHistory>
     <trackTrending>false</trackTrending>
     <type>Text</type>
-    <unique>true</unique>
+    <unique>false</unique>
 </CustomField>

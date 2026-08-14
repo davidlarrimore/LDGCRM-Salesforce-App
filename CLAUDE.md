@@ -403,7 +403,7 @@ dropping one item silently moves a second metric.
 
 **Salesforce config changes the pipeline cannot make live in
 `docs/engineering/SALESFORCE-CHANGE-REQUESTS.md`** — the config-owner counterpart to the Airtable
-data-quality doc. **CR-1 (the `Unique` flags above) was resolved 2026-08-14.** Two remain: retiring
+data-quality doc. **CR-1 resolved 2026-08-14; CR-2 is half done** — its formula change landed the same day (the Level 1 checklist item now scores `LDGCRM_P3_Team_UUID__c` instead of the deprecated field, denominator unchanged at 9), leaving only the layout/permission-set/report-type references to clear before the field can be deleted. Remaining: finishing
 `LDGCRM_PP_Issuer_Strings__c` with its two dependent formulas (CR-2), and a live reporting defect
 found on 2026-08-13 (CR-3) — **a blank `Launch Level` falls through the `CASE` in
 `LDGCRM_Launch_Checklist_Completion__c` to its else value of `1`, so 607 of 1,026 migrated

@@ -1996,6 +1996,39 @@ Opportunity-FK failures are worth stating explicitly because the field-mapping t
 offending field. This is why Opportunity is now documented as a hard prerequisite for Application in
 the load order, despite the lookup being nominally optional.
 
+### The Level 1 checklist now scores the partner-portal team (changed 2026-08-14)
+
+`LDGCRM_Level_1_Complete_Pct__c` counts nine items and divides by nine. The ninth used to be
+`LDGCRM_PP_Issuer_Strings__c` — a deprecated field this migration never populates — so **every
+migrated Application forfeited that item by construction**. Measured ceiling: 78% (7 of 9), with 0
+of 1,026 able to reach 100%.
+
+The fix swapped the *reference* rather than removing the item:
+
+```
+- IF(ISBLANK(LDGCRM_PP_Issuer_Strings__c), 0, 1)
++ IF(ISBLANK(LDGCRM_P3_Team_UUID__c),      0, 1)
+```
+
+**The denominator stays 9**, which is what makes this cheaper than the originally-specified change.
+`LDGCRM_Launch_Checklist_Completion__c` weights each level by its item count and hard-codes those
+counts (`*9`, `/16`, `/20`); had Level 1 gone to 8 items, all three would have needed editing too.
+Swapping the reference leaves that formula untouched.
+
+Verified after the change: ceiling moved **78 → 89**, all **681** Applications with a Team UUID score
+the item, and **0** without one can reach 100%.
+
+**⚠️ This couples a launch-checklist metric to migration output.** The item was previously inert;
+it now depends on the portal team resolving. Consequences to keep in mind:
+
+- An Application whose team stops resolving **silently loses a checklist point** — the score drops
+  with no error anywhere.
+- The 9 Applications whose issuer strings name two different teams are left blank deliberately, so
+  they cap at 8 of 9.
+- This sits in mild tension with the 2026-08-14 rule that the portal team is **optional**. That is
+  intended: the checklist measures launch progress, not record validity. A missing team is a valid
+  record that has not completed one checklist item.
+
 ### Six fields are actually formula fields — don't write to them
 
 `LDGCRM_Launch_Checklist_Completion__c`, `LDGCRM_Level_1_Complete_Pct__c`,

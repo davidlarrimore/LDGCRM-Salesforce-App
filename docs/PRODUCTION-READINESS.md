@@ -81,7 +81,7 @@ Full analysis in [engineering/BACKLOG.md](engineering/BACKLOG.md) §2.
 
 ---
 
-## 3. Salesforce config changes — 🔴 3 open
+## 3. Salesforce config changes — 🟡 1 done, 1 half done, 1 open
 
 **Metadata moves by CHANGE SET only.** A CLI deploy from this repo is sanctioned for exactly one
 purpose — deleting corrupted metadata — so none of these can be unblocked by engineering. Full
@@ -91,7 +91,7 @@ specifications, including the exact formula edits, are in
 | | What | Why it matters | Blocking? |
 | --- | --- | --- | --- |
 | ~~**CR-1**~~ | ~~Set `Unique = false` on the two Partner Portal Team fields~~ | ✅ **Done 2026-08-14** — also widened Text(50) → Text(255), which cleared the six over-long team names. Verified: **681 Applications now carry a portal team**, 0 failures | No longer blocking |
-| **CR-2** | Retire `LDGCRM_PP_Issuer_Strings__c`, fixing its two dependent formulas first | It is deprecated, but `LDGCRM_Level_1_Complete_Pct__c` counts it as 1 of 9 checklist items and `LDGCRM_Launch_Checklist_Completion__c` hard-codes that 9 — deleting it silently moves a second metric | No, but **needs a /8-vs-/9 decision** before it can be specified |
+| **CR-2** | Retire `LDGCRM_PP_Issuer_Strings__c` | 🟡 **Formula done 2026-08-14** — the checklist item was re-pointed at `LDGCRM_P3_Team_UUID__c` rather than removed, so the denominator stays 9 and the second formula needed no change. Ceiling moved 78 → 89. Remaining: clear 1 layout, 3 permission sets, 4 report types, then delete | No |
 | **CR-3** | A blank `Launch Level` falls through the `CASE` in `LDGCRM_Launch_Checklist_Completion__c` to its else value of `1` | Reported 607 of 1,026 migrated Applications as 100% launch-complete purely because the field was empty. **Mitigated for migrated records**; the formula defect itself is still live for anything else | No, but it is a **live reporting defect** |
 
 **One coupling to watch:** all three `LDGCRM_` permission sets grant field-level security on
