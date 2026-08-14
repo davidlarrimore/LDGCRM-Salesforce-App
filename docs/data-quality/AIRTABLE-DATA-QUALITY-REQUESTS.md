@@ -706,6 +706,44 @@ were deliberately left as separate contacts: `enterpriseservicedesk@dol.gov` ("E
 Desk Information" *and* "ENT BPMS Contact Center") and `warcit@usgs.gov` ("HELP DESK" *and* "USGS
 WARC IT").
 
+### Contacts: 10 people are in Airtable twice under two different email addresses — 🔴 OPEN
+
+**New 2026-08-13.** These are the same person entered twice with **different** email addresses.
+Because we identify a person by their email, we cannot safely tell that the two rows are one person
+— so **each loads as its own Salesforce contact**, and Salesforce's duplicate rule then rejects the
+second one.
+
+**This is deliberate.** We could merge them on name, but that would assert that two email addresses
+belong to one person, and we have no consistent way to know which address is current. Guessing wrong
+attaches someone's history to an address they no longer use. **Two contacts is the honest outcome;
+consolidating them is a decision only you can make.**
+
+Sorted by how clear-cut they look:
+
+| Person | The two addresses | Looks like |
+| --- | --- | --- |
+| **Brian Cooke** | `brian.v.cooke@cbp.dhs.gov` + `brian.v.cooke@associates.cbp.dhs.gov` | Same person — employee and contractor address at the same agency |
+| **Linda Peters** | `peters.linda.j@dol.gov` + `peters.linda@dol.gov` | Same person — two formats on the same domain |
+| **Brian Platz** | `brian_platz@ios.doi.gov` + `brian.p.platz@gmail.com` | Same person — work and personal |
+| **Sivaram Ghorakavi** | `@nlrb.gov` + `@eeoc.gov` | Possibly moved agency |
+| **Joel Schlagel** | `@usace.army.mil` + `@ios.doi.gov` | Possibly moved agency |
+| **Patrick Newbold** | `@cms.hhs.gov` + `@ssa.gov` | Possibly moved agency |
+| **Jason Ashley** | `jason.ashley@arkansas.gov` + `jason.k.ashley1@uscg.mil` | Unclear — could be two different people |
+| **HELP DESK** | `hceperaton-moodle@hq.dhs.gov` + `warcit@usgs.gov` | Two different shared mailboxes that share a name |
+
+**What we need:** for each, confirm whether it is one person or two. If one, keep a single Airtable
+row with the current address and remove the other (or record the old one somewhere that isn't the
+Email field). If two, nothing to do — they will keep loading as two contacts, which is correct.
+
+**Two of these are not duplicates at all — they are mismatched data**, and are listed separately
+below: `Jyothsna Charagundla` paired with `zhijun.wang@...`, and `Andrea McClain` with
+`dunia.z.nooristani@...`.
+
+> **Already handled, for contrast:** where one of the two rows has **no email at all**, we now merge
+> it into the one that does — there is no competing address to be wrong about. That resolved
+> `Hyon Kim` (a row in Opportunity Contacts with no email, matching `hyon.kim@gsa.gov`) on
+> 2026-08-13. It is the only case in the current data.
+
 ### Contacts: 4 records were rejected as duplicates of existing Salesforce contacts
 
 Salesforce has a rule blocking two contacts with the same first and last name. Four records hit it,

@@ -1124,7 +1124,86 @@ function Get-AirtableContactGroups {
         })
     }
 
+    # ------------------------------------------------------------------
+    # ROWS WITH NO EMAIL: fold into a same-named contact where there is
+    # exactly one (decided 2026-08-13).
+    # ------------------------------------------------------------------
+    # Email is the identity key, so a row carrying no email has no identity of
+    # its own and would otherwise become a second, thinner contact for a person
+    # who is already here. `Hyon Kim` was the case that surfaced it: the
+    # Contacts table has hyon.kim@gsa.gov, Opportunity Contacts has a `Hyon Kim`
+    # with no email at all, and the two loaded as separate records - until the
+    # org's first+last-name duplicate rule rejected the second one.
+    #
+    # WHY THIS IS SAFE WHERE NAME-MATCHING GENERALLY IS NOT. Merging two
+    # contacts that BOTH have emails asserts those addresses belong to one
+    # person - a claim the data does not support (brian.v.cooke@cbp.dhs.gov and
+    # brian.v.cooke@associates.cbp.dhs.gov stay two records for exactly that
+    # reason). A row with no email contradicts nothing: there is no competing
+    # address to be wrong about.
+    #
+    # Still refuses to guess: a name matching two or more emailed contacts is
+    # ambiguous, so the row stays standalone rather than being attached to
+    # whichever sorted first.
+    # MATCHING IS AGAINST THE EMAIL'S LOCAL PART, NOT AN AUTHORED NAME.
+    # 1,023 of 1,535 Airtable Contacts rows carry an email but NO Name - their
+    # displayed name is recovered later in Build-ContactLoad.ps1, from the org or
+    # derived from the address. So at grouping time the emailed side usually has
+    # no name to compare against, and matching on one silently never fires
+    # (which is exactly what the first version of this did).
+    #
+    # Compared as a SET of tokens so word order doesn't matter: "Hyon Kim" and
+    # hyon.kim@gsa.gov both reduce to {hyon, kim}, and so do the last.first
+    # domains (dol.gov, pbgc.gov) without needing the order-learning that runs
+    # later.
+    function Get-NameTokenKey {
+        param([string]$Text)
+        if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+        $Parts = @(($Text.ToLower() -split '[^a-z0-9]+') | Where-Object { $_.Length -gt 1 })
+        if ($Parts.Count -lt 2) { return $null }   # a single token is too weak to match on
+        return (($Parts | Sort-Object) -join ' ')
+    }
+
+    $ByNormalisedName = @{}
+    foreach ($Group in $Groups) {
+        $Key = $null
+
+        foreach ($GroupRow in $Group.Rows) {
+            $Address = Get-CleanContactEmail $GroupRow.fields.Email
+            if ($Address) { $Key = Get-NameTokenKey ($Address -split '@')[0]; break }
+        }
+
+        if (-not $Key) {
+            foreach ($GroupRow in $Group.Rows) {
+                if ($GroupRow.fields.Name) { $Key = Get-NameTokenKey "$($GroupRow.fields.Name)"; break }
+            }
+        }
+
+        if (-not $Key) { continue }
+
+        if (-not $ByNormalisedName.ContainsKey($Key)) {
+            $ByNormalisedName[$Key] = [System.Collections.Generic.List[object]]::new()
+        }
+        $ByNormalisedName[$Key].Add($Group)
+    }
+
     foreach ($Row in $NoEmail) {
+        $RowName = Get-NameTokenKey "$($Row.fields.Name)"
+        $Match = $null
+
+        if ($RowName -and $ByNormalisedName.ContainsKey($RowName)) {
+            $Candidates = @($ByNormalisedName[$RowName])
+            if ($Candidates.Count -eq 1) { $Match = $Candidates[0] }
+        }
+
+        if ($Match) {
+            # Fold in. The emailed group keeps its ExternalId, so the surviving
+            # Contact is the one that actually carries an address.
+            $Match.MemberRecordIds = @($Match.MemberRecordIds) + $Row.id
+            $Match.Rows = @($Match.Rows) + $Row
+            continue
+        }
+
         $Groups.Add([PSCustomObject]@{
             ExternalId      = $Row.id
             MemberRecordIds = @($Row.id)
