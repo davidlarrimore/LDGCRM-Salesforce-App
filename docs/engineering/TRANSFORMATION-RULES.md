@@ -1,4 +1,4 @@
-# Airtable → Salesforce field transformation rules
+﻿# Airtable → Salesforce field transformation rules
 
 > **Who this is for:** engineers writing or changing a transform, and anyone asking "why does this
 > field end up like that?" It is a **reference to search, not a document to read end to end** —
@@ -21,6 +21,29 @@ a script does something a particular way, this is where the reasoning lives.
 table maps to which object, load order); `ARCHITECTURE.md` has the pipeline
 architecture and build status. This document is the detail underneath both — add a new `##` section
 here every time a `Build-*.ps1` script is built, before considering that chunk done.
+
+## Settled business rules — closed, not open questions
+
+Decisions the project owner has made and **which are not to be re-raised as data-quality asks**. Each
+was previously an open item in `AIRTABLE-DATA-QUALITY-REQUESTS.md`; they were moved here on
+2026-08-14, because that document now lists only what is still open and these are answered. The
+detail for each lives in its object's section below.
+
+| Decision | Confirmed | What it means in the pipeline |
+| --- | --- | --- |
+| **The owner chain is: authored owner → parent Account's owner → `peter.marks@gsa.gov`** | 2026-08-14 | Applies to Opportunity, Application and the Partner Account owner field. Every step requires `IsActive` **and** `UserType = 'Standard'`. See [the owner chain](#the-owner-chain-three-steps-business-rule-2026-08-14). |
+| **A Contact with no name gets one derived from its email** | 2026-08-14 | Split on `.` where present, else the whole local part becomes the surname and no forename is invented. Airtable will not be filling these in — this is the accepted import method, not a workaround. |
+| **A blank `Launch Level` defaults to `1 - Very Low Impact`** | 2026-08-14 | 616 Applications. Without it they inherit a formula's else-branch and report 100% launch-complete. |
+| **The Impediment named `None` is never created and never linked** | 2026-08-14 | Both the record and its 465 links are excluded. See [the `None` section](#the-impediment-named-none-is-deliberately-excluded). |
+| **Partner Portal Admin is the UNION of both sources** | 2026-08-14 | `Contacts.Roles` and Issuer Strings' `Partner Portal Admin Email`. Never the intersection; a silent source is not evidence of absence. |
+| **Contacts sharing an email are merged into one record** | 2026-08-14 | The current merge is the accepted method. Rows for the same person under *different* emails stay separate — merging on name would assert two addresses belong to one person. |
+| **Issuer strings, portal Team Name and Team UUID are optional** | 2026-08-14 | A missing value is an accepted outcome. `#N/A` becomes blank. The 9 Applications whose issuer strings name two teams stay blank deliberately. |
+| **Opportunity → Partner Account is optional and sparse** | 2026-08-14 | Only ~9% can be populated, because the only genuine link is via Applications. The Partner Accounts table's `Opportunities` column is a rollup of the parent Account's, not a real link. |
+| **Cases are out of scope** | 2026-08-14 | Partner Accounts' `Escalated User Support Cases` column is ignored; there is no Case object in this design. |
+| **Partner Accounts' `Goals` column is not migrated** | 2026-08-14 | No destination field, and none is being added. |
+| **Applications' `Pilots`, `Usage Tracker Application Name`, `Vital Update %`** | earlier | Confirmed not needed in Salesforce. |
+| **Partner Accounts' `Migrated to the partner portal`** | earlier | Not migrating for now. Not permanent. |
+| **The issuer string VALUES themselves are not migrated** | earlier | Salesforce's field holds one 40-character value; most issuer strings are longer and most Applications have several. Its help text describes it as OE-maintained by hand. |
 
 ## General principle (read this before writing a new transform)
 
@@ -163,14 +186,49 @@ changes; a named fallback owner cannot. If that becomes a problem, the fix is to
 owners per record and skip rows already owned by someone else — deliberately not built, because it
 adds a query and a failure mode for a case that hasn't arisen yet.
 
+### The owner chain, three steps (business rule, 2026-08-14)
+
+⚠️ **Superseding the two-step rule below.** Every owned object now resolves its owner in the same order,
+and only reaches the named fallback when both earlier steps fail:
+
+1. **The record's own authored owner**, where Airtable records one.
+2. **The parent Account's owner** — reached through whatever relationship the object has
+   (Application → Partner Account → Account).
+3. **`peter.marks@gsa.gov`**, the named fallback.
+
+**Every step tests eligibility, not just existence.** A candidate is skipped unless the User is
+`IsActive = true` **and** `UserType = 'Standard'` — see the UserType section below, which is the trap
+that only a real load finds. Carrying an ineligible owner forward would swap a clean fallback for a
+row that fails the load outright.
+
+Measured on the 2026-08-14 export, immediately after implementing it:
+
+| Object | Step 1 (authored) | Step 2 (Account) | Step 3 (fallback) |
+| --- | --- | --- | --- |
+| `LDGCRM_Partner_Account__c` (the owner **field**) | 37 | 60 | 2 |
+| Opportunity | 515 | 327 | **0** |
+| `LDGCRM_application__c` | 682 *(via Partner Account)* | 363 | **0** |
+
+**The fallback is now empty on Opportunity and Application.** That is the rule working, not a bug —
+but it is worth being clear about what it means: **265 of those Opportunities inherit
+`SystemUser DataLoader`**, a bulk-load service account that owns 48% of production Accounts. Ownership
+that *looks* authored and isn't is exactly the concern recorded for Contact below. The project owner
+accepted this trade explicitly on 2026-08-14; the real fix stays the missing Salesforce logins.
+
+**Implementing step 2 on Partner Account is what gives Application the chain for free.** Application
+inherits `LDGCRM_Partner_Account_Owner__c`, so once that field resolves through the chain, Application
+does too. Its own step 2 remains as a safety net for a Partner Account whose owner field is blank or
+ineligible.
+
 ### Which object takes its owner from where
 
-Figures below are **measured from the completed reload of 2026-08-13**, not predicted.
+Figures in the last column are **measured from the completed reload of 2026-08-13** and predate the
+three-step chain above — see that table for current splits.
 
 | Object | Owner source | Own owner / fallback (2026-08-13, loaded) |
 | --- | --- | --- |
-| Opportunity | `Pod Opportunity Lead` (collaborator, scalar — verified 0 of 826 rows are multi-valued) | **471 / 271** |
-| `LDGCRM_application__c` | its Partner Account's `LDGCRM_Partner_Account_Owner__c` | **361 / 327** — *revised down from a predicted 511/177, see below* |
+| Opportunity | `Pod Opportunity Lead` (collaborator, scalar — verified 0 of 826 rows are multi-valued), then the Account | **471 / 271** |
+| `LDGCRM_application__c` | its Partner Account's `LDGCRM_Partner_Account_Owner__c`, then the Account | **361 / 327** — *revised down from a predicted 511/177, see below* |
 | Contact | its resolved Account's `OwnerId` | **1,548 inherited / 0 fallback** — but 1,426 of those inherit `SystemUser DataLoader`; see the warning below |
 
 **⚠️ Application's split was predicted as 511/177 and is actually 361/327.** The difference is 150
@@ -181,7 +239,7 @@ ownership prediction the same way.
 | `LDGCRM_Impediment__c` | *none — the Airtable table has no owner column* | 0 / 39 |
 | `LDGCRM_Application_Contact__c` | *none — Airtable records the association, not an owner* | 0 / 1,880 |
 | Activity/Event (Meetings) | `Meeting Leader` (collaborator) — **not yet built** | 1,315 of 1,845 would resolve |
-| `LDGCRM_Partner_Account__c` | **n/a — no `OwnerId`.** Master-Detail child of Account, inherits its owner | — |
+| `LDGCRM_Partner_Account__c` | **n/a for the RECORD — no `OwnerId`.** Master-Detail child of Account, so Salesforce forces it to follow the Account's owner. Its `LDGCRM_Partner_Account_Owner__c` **lookup** does run the three-step chain, because Application inherits from it | see the chain table |
 | `LDGCRM_Opportunity_Impediment__c` | **n/a — no `OwnerId`.** Two Master-Details | — |
 | `OpportunityContactRole` | **n/a — no `OwnerId`.** A junction on Opportunity | — |
 | Account | **deliberately untouched.** Airtable has no Account owner column, and Accounts pre-date the migration | — |
@@ -1209,9 +1267,21 @@ Loading it would have been actively wrong in two ways:
    with a meaningless multi-million-dollar figure.
 
 It accounted for **297 of the 564 otherwise-loadable pairs (53%)** and **115 of the 122 severity
-conflicts** — so excluding it also removed most of the ambiguity. User-confirmed: skip and flag for
-the data owners. The behaviour is parameterised (`-PlaceholderImpedimentName`) so reversing the
-decision needs no code edit.
+conflicts** — so excluding it also removed most of the ambiguity.
+
+**⚠️ SETTLED 2026-08-14: the Impediment RECORD is not created either.** Until then only its *links*
+were excluded, so the org carried an impediment named `None` that nothing pointed at — a record whose
+only purpose was to be ignored. The project owner's decision is that it should not exist at all, so
+`Build-ImpedimentLoad.ps1` now skips the row as well (37 ready, was 38).
+
+Excluding the record makes the junction exclusion **structural rather than a second rule that has to
+agree**: with no parent Impediment, a junction row for it cannot be created even if that filter were
+removed. Both scripts take the same `-PlaceholderImpedimentName` parameter and **must always be
+given the same value**; setting it to `""` in one place only would produce links to a parent that
+does not exist.
+
+This is no longer an open question for the Airtable data owners — it is a settled business rule.
+Deleting the Airtable row remains optional tidy-up on their side and changes nothing here.
 
 Verified post-load that the roll-up now shows genuine figures — `Feature - Solution to proof 16+
 users` at $20.5M, `Feature - Foreign Passport IDV` at $20.1M — which is exactly the reporting `None`

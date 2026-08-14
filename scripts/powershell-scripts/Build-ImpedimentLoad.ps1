@@ -59,7 +59,14 @@ param(
 
     # Owner for every Impediment, since Airtable records none. Resolved to a
     # User at run time and the run FAILS if it doesn't match an active User.
-    [string]$FallbackOwnerEmail = "peter.marks@gsa.gov"
+    [string]$FallbackOwnerEmail = "peter.marks@gsa.gov",
+
+    # The Airtable Impediment that means "no impediment" rather than naming one.
+    # NOT migrated - see the skip in the transform. Named here rather than
+    # hard-coded so the same string is used by
+    # Build-OpportunityImpedimentLoad.ps1, which excludes its links; the two
+    # must always agree. Set to "" to migrate it after all.
+    [string]$PlaceholderImpedimentName = "None"
 )
 
 $ErrorActionPreference = "Stop"
@@ -110,6 +117,28 @@ foreach ($Row in $AirtableImpediments) {
         $SkippedRows.Add([PSCustomObject]@{
             AirtableRecordId = $RecId
             Reason           = "No Name - looks like an empty placeholder row in Airtable (no Name, Category, Description, Talking Point, or Opportunity links). Needs human review before loading."
+        })
+        continue
+    }
+
+    # --- The "None" placeholder is never created (business rule 2026-08-14) ---
+    # It is not an impediment, it is how Airtable says "this opportunity has no
+    # impediment": no Description, no Talking Point, and 465 Opportunity links,
+    # five times any real one.
+    #
+    # Its LINKS were already excluded by Build-OpportunityImpedimentLoad.ps1,
+    # but the Impediment RECORD itself was still being created - so the org
+    # carried an impediment named "None" that nothing pointed at. The project
+    # owner's decision is that it should not exist at all.
+    #
+    # Excluding the record makes the junction exclusion structural rather than a
+    # second rule that has to agree: with no parent record, a junction row for
+    # it cannot be created even if that filter were removed.
+    if ($PlaceholderImpedimentName -and
+        $Name.Trim() -eq $PlaceholderImpedimentName.Trim()) {
+        $SkippedRows.Add([PSCustomObject]@{
+            AirtableRecordId = $RecId
+            Reason           = "The '$PlaceholderImpedimentName' placeholder is deliberately not migrated (business rule 2026-08-14). It means 'no impediment', not an impediment, and would top every blocked-revenue report with a meaningless figure."
         })
         continue
     }
@@ -166,7 +195,14 @@ Write-Host "============================================================" -Foreg
 Write-Host ""
 Write-Host ("{0,-40} {1,8:N0}" -f "Airtable Impediment rows", $AirtableImpediments.Count)
 Write-Host ("{0,-40} {1,8:N0}" -f "Ready for upsert", $UpsertRows.Count)
-Write-Host ("{0,-40} {1,8:N0}" -f "Skipped (no Name)", $SkippedRows.Count)
+# Split by cause: lumping the deliberate placeholder exclusion in with "no Name"
+# would make a by-design skip read as an Airtable data problem.
+$SkippedNoName = @($SkippedRows | Where-Object { $_.Reason -like "No Name*" }).Count
+$SkippedPlaceholder = $SkippedRows.Count - $SkippedNoName
+Write-Host ("{0,-40} {1,8:N0}" -f "Skipped (no Name)", $SkippedNoName)
+if ($SkippedPlaceholder -gt 0) {
+    Write-Host ("{0,-40} {1,8:N0}" -f "Skipped ('$PlaceholderImpedimentName' placeholder, by design)", $SkippedPlaceholder)
+}
 Write-Host ("{0,-40} {1,8:N0}" -f "Unmapped Category (included, blank)", $UnmappedCategoryRows.Count)
 Write-Host ""
 

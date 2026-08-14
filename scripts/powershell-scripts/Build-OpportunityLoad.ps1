@@ -117,11 +117,18 @@ $FocusLevelPattern = '^(Highest|High|Backlog|Developing)'
 # column name exactly. Matching labels are not evidence of ownership here.
 #
 # WHY IT'S BLOCKED: LDGCRM_Level_of_Priority__c is restricted=true and
-# currently defines only Low / Medium / High - in BOTH Dev (peodv8dvn) and QA
-# (peodv15dvn), verified 2026-08-13. Airtable's seven values (Strategic,
-# High Volume, IdV Upgrade, Leadership Escalation, HISP - High Volume,
-# HISP - Low Volume, N/A) are none of those, and a restricted picklist rejects
-# anything outside its defined set, so all 462 in-scope rows would fail.
+# currently defines only Low / Medium / High. Re-verified in Dev on 2026-08-14
+# BOTH ways, because this repo's own rule is that `sf sobject describe` hides
+# inactive picklist values: the live describe and
+# objects/Opportunity/fields/LDGCRM_Level_of_Priority__c.field-meta.xml agree on
+# three values. A restricted picklist rejects anything outside its defined set,
+# so every in-scope row would fail.
+#
+# Airtable is now down to FIVE distinct values, not the seven recorded on
+# 2026-08-13 - the two HISP ones are gone: Strategic (263), N/A (157),
+# High Volume (72), IdV Upgrade (38), Leadership Escalation (15). 545 rows carry
+# one. Confirm the current set before asking for a change set rather than
+# copying this list, which goes stale on any Airtable edit.
 #
 # TO ENABLE, once the seven values exist on the field AND are assigned to the
 # Login_gov record type (an ADDITION - it must be promoted by change set, not
@@ -392,15 +399,35 @@ Write-Host "RecordTypeId: $LoginGovRecordTypeId"
 
 Write-Host "Querying $OrgAlias for Accounts carrying an external ID..." -ForegroundColor Cyan
 $LoadedAccounts = @(Invoke-SalesforceQuery `
-    -Soql "SELECT LDGCRM_External_ID__c FROM Account WHERE LDGCRM_External_ID__c != null" `
+    -Soql ("SELECT LDGCRM_External_ID__c, OwnerId, Owner.IsActive " +
+           "FROM Account WHERE LDGCRM_External_ID__c != null") `
     -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
 
 $LoadedAccountIds = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
+
+# --- OWNER INHERITANCE: the Account's owner, as step 2 of 3 ---
+# Business rule confirmed 2026-08-14: a record whose own Airtable owner has no
+# active Salesforce User inherits the owner of its parent Account, and only
+# falls back to the named fallback owner when that fails too.
+#
+# ONLY ACTIVE owners are indexed. Salesforce rejects an inactive User as an
+# OwnerId outright, so carrying one forward would swap a clean fallback for a
+# row that fails the load - and the Account hierarchy is full of them (only 5 of
+# the production export's 14 owner names match an active User in Dev).
+$AccountOwnerByExternalId = @{}
+
 foreach ($Acct in $LoadedAccounts) {
-    if ($Acct.LDGCRM_External_ID__c) { $LoadedAccountIds.Add($Acct.LDGCRM_External_ID__c) | Out-Null }
+    if (-not $Acct.LDGCRM_External_ID__c) { continue }
+    $LoadedAccountIds.Add($Acct.LDGCRM_External_ID__c) | Out-Null
+
+    if ($Acct.OwnerId -and $Acct.Owner -and $Acct.Owner.IsActive -eq $true) {
+        $AccountOwnerByExternalId[$Acct.LDGCRM_External_ID__c] = $Acct.OwnerId
+    }
 }
+
 Write-Host "$($LoadedAccountIds.Count) reconciled Accounts present in $OrgAlias."
+Write-Host "$($AccountOwnerByExternalId.Count) of them have an ACTIVE owner available to inherit."
 
 # --- Opportunity -> Partner Account, derived from the Applications export ---
 # See the header for why this is derived from Applications and not from the
@@ -458,6 +485,13 @@ $UpsertRows = [System.Collections.Generic.List[object]]::new()
 $SkippedRows = [System.Collections.Generic.List[object]]::new()
 $ValueReviewRows = [System.Collections.Generic.List[object]]::new()
 $CloseDateFallbackRows = [System.Collections.Generic.List[object]]::new()
+
+# Which of the three owner steps each row ended up on, keyed by Airtable record
+# Id. Kept beside the rows rather than on them: OwnerSource is a diagnostic, and
+# anything added to the output row becomes a column in the CSV sent to
+# Salesforce. Counted at summary time from the rows that actually survived, so
+# a row skipped after its owner was resolved is not counted.
+$OwnerSourceByRecId = @{}
 $UnresolvedOwnerRows = [System.Collections.Generic.List[object]]::new()
 $DroppedDemographicCount = 0
 $DroppedIdentityPlatformCount = 0
@@ -620,32 +654,57 @@ foreach ($Row in $AirtableOpportunities) {
         $FirstYearRamp = [math]::Round([double]$Row.fields.'Est. First Year Ramp %' * 100, 0)
     }
 
-    # --- OwnerId ---
+    # --- OwnerId: three steps, in order (business rule 2026-08-14) ---
+    #   1. Airtable's "Pod Opportunity Lead", if it matches one ACTIVE User.
+    #   2. Otherwise the parent ACCOUNT's owner, if that User is active.
+    #   3. Otherwise the named fallback owner.
+    #
     # The fallback is written EXPLICITLY, not left blank. A blank OwnerId makes
     # Salesforce assign the record to whoever ran the load, which stopped being
     # the right owner once GSA IT Operations took over running this in
     # production - see Resolve-FallbackOwnerId for the full reasoning and the
     # re-run trade-off it costs.
     $OwnerId = $FallbackOwnerId
+    $OwnerSource = "Fallback"
     $LeadEmail = $Row.fields.'Pod Opportunity Lead'.email
+    $LeadResolved = $false
+
     if ($LeadEmail) {
         $LeadKey = "$LeadEmail".Trim().ToLower()
         if ($OwnerLookup.IdByEmail.ContainsKey($LeadKey)) {
             $OwnerId = $OwnerLookup.IdByEmail[$LeadKey]
+            $OwnerSource = "PodOpportunityLead"
+            $LeadResolved = $true
         }
-        else {
+    }
+
+    if (-not $LeadResolved) {
+        # Step 2. Inherit from the Account this Opportunity already resolved to.
+        if ($AccountId -and $AccountOwnerByExternalId.ContainsKey($AccountId)) {
+            $OwnerId = $AccountOwnerByExternalId[$AccountId]
+            $OwnerSource = "AccountOwner"
+        }
+
+        # Reported whenever Airtable named someone we could not use, even if the
+        # Account rescued the row - the missing login is still the thing to fix,
+        # and inheriting quietly would hide how many are affected.
+        if ($LeadEmail) {
+            $LeadKey = "$LeadEmail".Trim().ToLower()
             $UnresolvedOwnerRows.Add([PSCustomObject]@{
                 AirtableRecordId = $RecId
                 OpportunityName  = $Name
                 OwnerEmail       = $LeadEmail
+                ResolvedTo       = $OwnerSource
                 Reason           = if ($OwnerLookup.Ambiguous -contains $LeadKey) {
-                    "More than one ACTIVE Salesforce User has this email - not guessed at. Owner falls back to the loading user."
+                    "More than one ACTIVE Salesforce User has this email - not guessed at. Owner falls back to $OwnerSource."
                 } else {
-                    "No active Salesforce User has this email (checked with and without the sandbox '.invalid' suffix). Owner falls back to the loading user."
+                    "No active Salesforce User has this email (checked with and without the sandbox '.invalid' suffix). Owner falls back to $OwnerSource."
                 }
             })
         }
     }
+
+    $OwnerSourceByRecId[$RecId] = $OwnerSource
 
     $OutputRow = [ordered]@{
         LDGCRM_External_ID__c                      = $RecId
@@ -724,8 +783,19 @@ Write-Host ("{0,-50} {1,8:N0}" -f "Partner Account linked (via Applications)", @
 Write-Host ("{0,-50} {1,8:N0}" -f "Partner Account known but not loaded yet", $UnresolvedPartnerAccountCount)
 # Compare against the fallback Id, not "is OwnerId set" - every row carries one
 # now, so a truthiness test would report every record as owner-resolved.
-Write-Host ("{0,-50} {1,8:N0}" -f "Owner set from Pod Opportunity Lead", @($UpsertRows | Where-Object { $_.OwnerId -ne $FallbackOwnerId }).Count)
-Write-Host ("{0,-50} {1,8:N0}" -f "Owner = fallback ($FallbackOwnerEmail)", @($UpsertRows | Where-Object { $_.OwnerId -eq $FallbackOwnerId }).Count)
+# Counted by which STEP resolved the owner, not by comparing against the
+# fallback Id. Once an unresolved lead can inherit the Account's owner, "not the
+# fallback Id" no longer means "came from Airtable" - it would silently fold the
+# inherited ones in with the authored ones.
+$OwnerStepCounts = @{ PodOpportunityLead = 0; AccountOwner = 0; Fallback = 0 }
+foreach ($Row in $UpsertRows) {
+    $Src = $OwnerSourceByRecId[$Row.LDGCRM_External_ID__c]
+    if ($Src -and $OwnerStepCounts.ContainsKey($Src)) { $OwnerStepCounts[$Src]++ }
+}
+
+Write-Host ("{0,-50} {1,8:N0}" -f "Owner set from Pod Opportunity Lead", $OwnerStepCounts.PodOpportunityLead)
+Write-Host ("{0,-50} {1,8:N0}" -f "Owner inherited from the Account", $OwnerStepCounts.AccountOwner)
+Write-Host ("{0,-50} {1,8:N0}" -f "Owner = fallback ($FallbackOwnerEmail)", $OwnerStepCounts.Fallback)
 Write-Host ("{0,-50} {1,8:N0}" -f "CloseDate came from a fallback field", $CloseDateFallbackRows.Count)
 Write-Host ("{0,-50} {1,8:N0}" -f "Demographic tags dropped (unmapped)", $DroppedDemographicCount)
 Write-Host ("{0,-50} {1,8:N0}" -f "Existing Identity Platforms populated", @($UpsertRows | Where-Object { $_.LDGCRM_Existing_Identity_Platforms__c }).Count)

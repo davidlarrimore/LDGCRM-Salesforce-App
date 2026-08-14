@@ -79,7 +79,10 @@ param(
     # Set this only to reach an org that isn't in the registry; doing so skips
     # the registry's identity checks.
     [string]$OrgAlias = "",
-    [string]$ApiVersion = "67.0"
+    [string]$ApiVersion = "67.0",
+
+    # Last step of the owner chain - see the OWNER CHAIN block in the transform.
+    [string]$FallbackOwnerEmail = "peter.marks@gsa.gov"
 )
 
 $ErrorActionPreference = "Stop"
@@ -136,12 +139,54 @@ if (@($OwnerLookup.Ambiguous).Count -gt 0) {
 }
 
 # ============================================================
+# OWNER CHAIN - steps 2 and 3
+#
+# Business rule confirmed 2026-08-14: where Airtable's owner has no active
+# Salesforce User, inherit the parent ACCOUNT's owner; only if that fails too
+# does the row take the named fallback owner.
+#
+# Doing it HERE rather than only on Application matters: this field is what
+# Application inherits from, so implementing the chain once at the Partner
+# Account means Application picks it up without a second copy of the rule.
+#
+# LDGCRM_Partner_Account_Owner__c is a LOOKUP, not the record's owner. Partner
+# Account is a Master-Detail child of Account and therefore has no OwnerId of
+# its own - Salesforce forces it to follow the Account's owner regardless of
+# what this field says. That is why filling it in cannot misassign the record
+# itself, and why the value only really matters downstream.
+# ============================================================
+
+Write-Host ""
+Write-Host "Resolving the fallback owner ($FallbackOwnerEmail)..." -ForegroundColor Cyan
+$FallbackOwnerId = Resolve-FallbackOwnerId -Email $FallbackOwnerEmail -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+Write-Host "Fallback owner resolves to $FallbackOwnerId."
+
+Write-Host "Reading Account owners for the inheritance step..." -ForegroundColor Cyan
+$AccountOwnerRows = @(Invoke-SalesforceQuery `
+    -Soql ("SELECT LDGCRM_External_ID__c, OwnerId, Owner.IsActive, Owner.UserType " +
+           "FROM Account WHERE LDGCRM_External_ID__c != null") `
+    -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
+
+# Only owners that can actually hold a record. An ACTIVE user is not enough -
+# a non-Standard UserType is rejected as an owner, which is the same trap
+# Build-ApplicationLoad.ps1 documents against this very field.
+$AccountOwnerByExternalId = @{}
+foreach ($Acct in $AccountOwnerRows) {
+    if ($Acct.LDGCRM_External_ID__c -and $Acct.OwnerId -and
+        $Acct.Owner.IsActive -and $Acct.Owner.UserType -eq "Standard") {
+        $AccountOwnerByExternalId[$Acct.LDGCRM_External_ID__c] = $Acct.OwnerId
+    }
+}
+Write-Host "$($AccountOwnerByExternalId.Count) Accounts have an owner eligible to inherit."
+
+# ============================================================
 # TRANSFORM
 # ============================================================
 
 $UpsertRows = [System.Collections.Generic.List[object]]::new()
 $SkippedRows = [System.Collections.Generic.List[object]]::new()
 $UnmappedOwnerRows = [System.Collections.Generic.List[object]]::new()
+$OwnerStepCounts = @{ AirtableOwner = 0; AccountOwner = 0; Fallback = 0 }
 
 foreach ($Row in $AirtablePartnerAccounts) {
     $RecId = $Row.id
@@ -171,21 +216,36 @@ foreach ($Row in $AirtablePartnerAccounts) {
         continue
     }
 
+    # --- OWNER CHAIN: Airtable owner -> parent Account's owner -> fallback ---
     $OwnerEmail = $Row.fields.'Account Owner'.email
     $OwnerId = ""
+    $OwnerSource = ""
 
-    if ($OwnerEmail) {
-        if ($OwnerIdByEmail.ContainsKey($OwnerEmail)) {
-            $OwnerId = $OwnerIdByEmail[$OwnerEmail]
-        }
-        else {
-            $UnmappedOwnerRows.Add([PSCustomObject]@{
-                AirtableRecordId   = $RecId
-                AgreementShortName = $AgreementShortName
-                OwnerEmail          = $OwnerEmail
-                Reason               = "No active Salesforce User matches this email (checked with and without the sandbox '.invalid' suffix). Owner left blank - needs human review."
-            })
-        }
+    if ($OwnerEmail -and $OwnerIdByEmail.ContainsKey($OwnerEmail)) {
+        $OwnerId = $OwnerIdByEmail[$OwnerEmail]
+        $OwnerSource = "AirtableOwner"
+    }
+    elseif ($AccountOwnerByExternalId.ContainsKey($AccountRecordIds[0])) {
+        $OwnerId = $AccountOwnerByExternalId[$AccountRecordIds[0]]
+        $OwnerSource = "AccountOwner"
+    }
+    else {
+        $OwnerId = $FallbackOwnerId
+        $OwnerSource = "Fallback"
+    }
+
+    $OwnerStepCounts[$OwnerSource]++
+
+    # Still reported even when the Account rescued the row. The missing login is
+    # the thing to fix, and inheriting quietly would hide how many are affected.
+    if ($OwnerEmail -and $OwnerSource -ne "AirtableOwner") {
+        $UnmappedOwnerRows.Add([PSCustomObject]@{
+            AirtableRecordId   = $RecId
+            AgreementShortName = $AgreementShortName
+            OwnerEmail          = $OwnerEmail
+            ResolvedTo          = $OwnerSource
+            Reason               = "No active Salesforce User matches this email (checked with and without the sandbox '.invalid' suffix). Owner falls back to $OwnerSource."
+        })
     }
 
     $SummaryUrl = $Row.fields.'Agency Summary'
@@ -238,7 +298,10 @@ Write-Host ""
 Write-Host ("{0,-40} {1,8:N0}" -f "Airtable Partner Account rows", $AirtablePartnerAccounts.Count)
 Write-Host ("{0,-40} {1,8:N0}" -f "Ready for upsert", $UpsertRows.Count)
 Write-Host ("{0,-40} {1,8:N0}" -f "Skipped (no/ambiguous parent Account)", $SkippedRows.Count)
-Write-Host ("{0,-40} {1,8:N0}" -f "Unmapped owner (included, blank)", $UnmappedOwnerRows.Count)
+Write-Host ("{0,-40} {1,8:N0}" -f "Owner from Airtable", $OwnerStepCounts.AirtableOwner)
+Write-Host ("{0,-40} {1,8:N0}" -f "Owner inherited from the Account", $OwnerStepCounts.AccountOwner)
+Write-Host ("{0,-40} {1,8:N0}" -f "Owner = fallback ($FallbackOwnerEmail)", $OwnerStepCounts.Fallback)
+Write-Host ("{0,-40} {1,8:N0}" -f "Airtable owner unusable (reported)", $UnmappedOwnerRows.Count)
 Write-Host ""
 
 if ($UpsertRows.Count -gt 0) {
