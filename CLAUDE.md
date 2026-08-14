@@ -893,19 +893,26 @@ reports are removed rather than retained: their numbers are wrong within hours, 
 the repo is likelier to be re-sent by mistake than to be useful. Status over time belongs in
 `PRODUCTION-READINESS.md`, which is maintained rather than snapshotted.
 
-### Tracking what's been resolved (standing convention, user-requested 2026-08-13)
+### Tracking what's been resolved (standing convention — REVISED 2026-08-14, supersedes 2026-08-13)
 
-**When something is fixed, record it — don't just delete the item.** Two documents move together:
+**⚠️ This convention was reversed on 2026-08-14 (user-stated).** The previous rule was "mark items
+resolved in place and never remove them, plus keep a Resolved log". That produced a 1,100-line
+document where the open asks were outnumbered by closed ones and the reader had to work out which was
+which. **The new rule is the opposite:**
 
-- `docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md` — mark the item 🔴 Open / 🟡 Partially
-  resolved / ✅ Resolved **in place**, and add a row to its **Resolved log** (date, what changed,
-  **who fixed it**, effect). Resolved items are never removed: the Airtable data owners read this doc
-  and have no other way to see their work landed, and deleting a closed item invites someone to
-  re-raise it. 🟡 is a real state — say exactly which part is done and what remains.
+- `docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md` **documents only what is currently open.**
+  When an item is fixed, **delete it** — no ✅ markers, no in-place status history, no Resolved log,
+  no "was 172 → now 155" trails. Re-measure the remaining items against the current export in the
+  same change so every number in the file describes today. The document states this rule in its own
+  header, so a data owner who fixed something knows that its absence *is* the confirmation.
+  - History has not been lost, it has moved: git carries the full record, per-run detail lives in
+    each run's `SUMMARY.txt`, and load-over-load movement belongs in `RELOAD-QA-CHECKLIST.md`.
+  - **Do not re-introduce a status-history section here.** It was removed deliberately.
 - `scripts/docs/RELOAD-QA-CHECKLIST.md` — update the matching expectation **in the same change**.
   A resolved item usually invalidates a row count, an "expect N skipped", a known-empty field, or
   makes an optional step mandatory. A checklist saying "expect 142 blocked" must not outlive the fix
-  that unblocked them.
+  that unblocked them. **This half of the convention is unchanged**, and the checklist *is* where
+  run-to-run trend belongs.
 
 ## Skills
 
