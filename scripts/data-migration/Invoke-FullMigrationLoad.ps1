@@ -162,9 +162,15 @@ $Steps = @(
         Why = "Needs Partner Account (required) and Opportunity (optional but fatal if dangling)."
     }
     [ordered]@{
-        Name = "BrokerParent"; Build = ""
+        # NAMED FOR THE FIELD IT FILLS, NOT FOR RECORDS IT CREATES - it creates
+        # none. The previous name, "BrokerParent", read as "load the broker
+        # parents", which invites the reasonable objection that parents should
+        # surely be loaded BEFORE their children. They are: a broker parent IS
+        # an ordinary Application, created by the Application step above along
+        # with everything else. This step only sets a pointer on the child.
+        Name = "PopulateBrokerParent"; Build = ""
         Object = "LDGCRM_application__c"; Csv = "LDGCRM_application__c-broker-parent-upsert.csv"
-        Why = "SECOND PASS. Bulk API can't resolve a self-lookup within its own batch."
+        Why = "SECOND PASS - sets LDGCRM_Broker_App_Parent__c on Applications the step above already created. Creates nothing; Bulk can't resolve a self-lookup inside its own batch."
     }
     [ordered]@{
         Name = "OpportunityImpediment"; Build = "Build-OpportunityImpedimentLoad.ps1"
@@ -751,7 +757,7 @@ foreach ($Step in $Selected) {
     # Taken BEFORE the transform runs - see the staleness check below.
     $TransformStart = Get-Date
 
-    # BrokerParent has no transform of its own - Build-ApplicationLoad.ps1
+    # PopulateBrokerParent has no transform of its own - Build-ApplicationLoad.ps1
     # produces its file as a side effect, which is the whole point of
     # generating it automatically rather than as a separate script.
     if ($BuildScript) {
@@ -786,9 +792,9 @@ foreach ($Step in $Selected) {
         # - which is the resume path the Operations team will actually use.
         #
         # Only applies where the transform that OWNS the file ran in this
-        # invocation. BrokerParent's file is written by the Application step,
-        # so on a -StartAtStep BrokerParent resume it is legitimately older
-        # than this run; that case is reported, not suppressed.
+        # invocation. PopulateBrokerParent's file is written by the Application
+        # step, so on a -StartAtStep PopulateBrokerParent resume it is
+        # legitimately older than this run; that is reported, not suppressed.
         $Written = (Get-Item -LiteralPath $CsvPath).LastWriteTime
 
         if ($BuildScript -and $Written -lt $TransformStart) {

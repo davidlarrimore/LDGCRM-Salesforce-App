@@ -1,4 +1,4 @@
-# Migration pipeline architecture
+﻿# Migration pipeline architecture
 
 > **Who this is for:** engineers changing how the migration works — adding an object, altering a
 > transform, or working out why the pipeline is built the way it is.
@@ -487,6 +487,33 @@ it finishes. A link is emitted only when both sides will exist once the main loa
 planned set plus whatever is already in the org), so a re-run picks up newly-resolvable links with no
 code change.
 
+### ⚠️ The second pass creates nothing, and the step name says so
+
+The orchestrator step is called **`PopulateBrokerParent`**. It was `BrokerParent` until 2026-08-13,
+which read as "load the broker parents" and drew exactly the objection it deserved: *surely parents
+have to be loaded before their children?*
+
+They do — and they are. **A broker parent IS an ordinary Application**, created by the Application
+step along with everything else; nothing distinguishes it in the data except that another Application
+points at it. So both ends of the relationship are created in one job, and the second pass is a
+**2-column update** on the *child*:
+
+```
+LDGCRM_External_ID__c , LDGCRM_Broker_App_Parent__r.LDGCRM_External_ID__c
+```
+
+The general rule — parents before children — applies to *cross-object* dependencies (Account →
+Partner Account → Application), where there genuinely is an earlier step to put the parent in. It
+cannot apply to a self-reference: parent and child come from the same Airtable table, the same
+transform and the same CSV, so "load the parents first" and "load the children first" are the same
+operation. What must be deferred is only the **pointer**, because Bulk resolves an external-ID
+lookup against *committed* org state, not against rows in its own in-flight batch — and Bulk 2.0
+does not guarantee row order, so sorting the file topologically would not help either.
+
+Verified on the 2026-08-13 reload: 64 links set, 0 unresolved, 0 self-references, 0 cycles, deepest
+chain 1, and Application totals identical before and after the pass (1,026 → 1,026) — the proof that
+it inserts nothing.
+
 Current state: 70 Airtable rows carry a Broker App Parent → **63 ready**, 6 waiting on an Application
 withheld by the Account data-quality issue, 1 dropped as a **self-reference** (one Application lists
 itself as its own parent; the script drops that single link and records it in the review CSV — the
@@ -537,7 +564,7 @@ Two contracts changed with it, both kept backward compatible:
 - Bulk failure rows are renamed from the CLI's job-id-only name to
   `<object>-<jobid>-failed-records.csv`. The job id is kept deliberately: it is what
   `sf data bulk results` needs to fetch them again, **and** it keeps two steps that load the same
-  object apart — Application and BrokerParent both write `LDGCRM_application__c`, so a label-only
+  object apart — Application and PopulateBrokerParent both write `LDGCRM_application__c`, so a label-only
   name would have the second silently overwrite the first.
 
 ### The problem it solves: a withheld row is not an error

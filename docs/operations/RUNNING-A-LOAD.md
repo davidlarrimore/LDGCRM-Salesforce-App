@@ -78,7 +78,7 @@ Treat a `-PlanOnly` run as the readiness check. If it is clean, the load usually
 | 4 | `Contact` | Contact | Disables another app's trigger — see below |
 | 5 | `Opportunity` | Opportunity | Must precede Application |
 | 6 | `Application` | `LDGCRM_application__c` | Needs Partner Account *and* Opportunity |
-| 7 | `BrokerParent` | `LDGCRM_application__c` | **Second pass** — a self-reference can't resolve inside its own batch |
+| 7 | `PopulateBrokerParent` | `LDGCRM_application__c` | **Second pass, creates nothing** — fills `LDGCRM_Broker_App_Parent__c` on Applications step 6 already made |
 | 8 | `OpportunityImpediment` | `LDGCRM_Opportunity_Impediment__c` | Two Master-Details, both must exist |
 | 9 | `ApplicationContact` | `LDGCRM_Application_Contact__c` | Junction — needs both sides |
 | 10 | `OpportunityContactRole` | `OpportunityContactRole` | **Insert + read-then-diff**, never upsert |

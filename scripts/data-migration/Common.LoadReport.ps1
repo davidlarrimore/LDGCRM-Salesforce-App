@@ -431,7 +431,7 @@ function Write-LoadRunReport {
     Add-Line $Line
     # KEYED BY OBJECT, which is what anyone reading this is actually asking
     # about. The step name is appended only where it has to be: two steps load
-    # LDGCRM_application__c (Application, then BrokerParent for the self-lookup
+    # LDGCRM_application__c (Application, then PopulateBrokerParent for the self-lookup
     # second pass), so the object alone is not unique. Everywhere else the step
     # name would just repeat the object.
     $ObjectCounts = @{}

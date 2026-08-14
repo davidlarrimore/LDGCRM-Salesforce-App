@@ -271,7 +271,7 @@ function Get-BulkFailureDetail {
     # in it. Rename to <object>-<jobid>-... : the label makes the file findable,
     # and the job id is kept because it is what `sf data bulk results` needs to
     # fetch it again, AND because it keeps two steps that load the SAME object
-    # apart - Application and BrokerParent both write LDGCRM_application__c, so
+    # apart - Application and PopulateBrokerParent both write LDGCRM_application__c, so
     # a label-only name would have the second silently overwrite the first.
     foreach ($Kind in @("failed", "success")) {
         $Written = Join-Path $OutputDirectory "$JobId-$Kind-records.csv"
