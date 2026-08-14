@@ -84,13 +84,13 @@ easier to ignore.
 
 | File | |
 | --- | --- |
-| **[migration-load-report-2026-08-13-post-reload.html](migration-load-report-2026-08-13-post-reload.html)** | **Current.** Written for the Partnerships lead, not for engineers |
+| **[migration-load-report-2026-08-14.html](migration-load-report-2026-08-14.html)** | **Current.** Written for the Partnerships lead, not for engineers |
 
 **Only the HTML is tracked — it is the source. The PDF is generated and is not in a fresh clone.**
 Render it before sending:
 
 ```powershell
-scripts\data-migration\Export-ReportPdf.ps1 -HtmlPath docs\migration-load-report-2026-08-13-post-reload.html
+scripts\data-migration\Export-ReportPdf.ps1 -HtmlPath docs\migration-load-report-2026-08-14.html
 ```
 
 **Send the PDF, not the HTML.** Google Drive renders a standalone `.html` as raw markup.

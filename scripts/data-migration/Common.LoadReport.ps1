@@ -445,6 +445,9 @@ function Write-LoadRunReport {
     foreach ($Row in $SummaryRows) {
         $Label = if ($ObjectCounts[$Row.Object] -gt 1) { "{0} ({1})" -f $Row.Object, $Row.Step }
                  else { $Row.Object }
+        # Truncate rather than let a long label shove the numeric columns out of
+        # alignment - a misaligned table is harder to read than an elided name.
+        if ($Label.Length -gt 38) { $Label = $Label.Substring(0, 35) + "..." }
         Add-Line ("  {0,-38} {1,9:N0} {2,9:N0} {3,7:N0} {4,9:N0}  {5}" -f `
             $Label, $Row.Submitted, $Row.Loaded, $Row.Failed, $Row.Withheld, $Row.Result)
     }

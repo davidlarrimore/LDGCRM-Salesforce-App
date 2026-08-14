@@ -320,17 +320,14 @@ script's skipped/unmapped review CSVs should feed into this list as they're foun
 
 **For the stakeholder-facing status report — written for the Login.gov Partnerships lead, not for
 engineers — see
-[`migration-load-report-2026-08-13-post-reload.html`](../migration-load-report-2026-08-13-post-reload.html),
-the tracked source; render the PDF from it with `Export-ReportPdf.ps1` before sending.** Only the
-current report is kept — the pre-reload edition of the same date was removed on 2026-08-13, because
-its numbers were superseded within hours and a stale report in the repo is more likely to be re-sent
-by mistake than to be useful. The post-reload edition carries the measured ownership figures, the
-537 loaded Notes, the 63 broker links, and two findings the rebuild exposed (the 92% service-account
-Contact ownership, and the 62% of Contacts with no name in Airtable). It reconciles every
-Airtable table against the records now in gsa-peo with counts, differences and percentages, shows how
-much of the automated pipeline is built per data set, explains the transformations in plain language,
-and lists the decisions needed from the Partnerships team in order of how many records each one
-unblocks.
+[`migration-load-report-2026-08-14.html`](../migration-load-report-2026-08-14.html)**, the tracked
+source; render the PDF from it with `Export-ReportPdf.ps1` before sending.
+
+**Only the current report is kept.** Superseded editions are removed rather than retained: their
+numbers go stale within hours, and a stale report in the repo is more likely to be re-sent by
+mistake than to be useful. Programme status over time belongs in
+[`PRODUCTION-READINESS.md`](../PRODUCTION-READINESS.md), which is maintained rather than
+snapshotted.
 
 **Send the PDF, not the HTML.** Google Drive won't render a standalone `.html` file — it displays the
 raw markup — so the HTML is only useful opened directly in a browser. Regenerate the PDF with

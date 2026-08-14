@@ -46,6 +46,28 @@ standouts:
 **The Account duplicate/matching work remains the highest-impact item left.** It's down 172 → 155
 rows, but almost everything still blocked traces back to it.
 
+### Current measurements — 2026-08-14
+
+Figures below are measured against a fresh Airtable pull and a full sandbox wipe-and-reload.
+**8,734 records migrated, zero unexpected failures.** Some counts elsewhere in this document were
+taken from an earlier export; these are the current ones.
+
+| Item | Airtable rows | Records it holds back |
+| --- | --- | --- |
+| Accounts not matching a Salesforce Account | **155** | ~275 across 5 objects |
+| Contacts with no name | **1,054** of 1,535 | 0 — they load with a derived name |
+| Issuer Strings `#N/A` cells | **273** (136 name + 137 UUID) | 0 |
+| Applications with no Launch Level | **621** | 0 — but see CR-3 |
+| Contacts with neither name nor email | **31** | 31 |
+| `Technical Emails` subscription | **711** | 0 — value dropped |
+| Partner Accounts with no Account link | **4** | 4, plus their Applications |
+| Applications with no Partner Account link | **8** | 8 |
+| Impediments with no name | **2** | 2 |
+| Contacts with an email in the `Name` field | **3** | 0 — loads as a name |
+
+**Highest leverage: the 155 unmatched Accounts.** They are why 62 Opportunities, 30 Applications,
+128 Application–Contact links, 34 Opportunity Contacts and 21 Notes were withheld.
+
 ### How to read the status on each item
 
 Items are **never deleted from this document when they're fixed** — they're marked resolved and kept,
@@ -311,9 +333,12 @@ optional.
 **New 2026-08-13**, from the first review of the **Issuer Strings** table (now part of the migration —
 see the note at the bottom of this document, which used to say this table wasn't needed).
 
-136 `Team Name` cells and 137 `Team UUID` cells hold the four-character text **`#N/A`** rather than
-being empty. This is a spreadsheet artifact — the kind of value Excel writes when a lookup fails —
-that got saved as ordinary text when the column was populated.
+136 `Team Name` cells and 137 `Team UUID` cells hold the four-character text **`#N/A`**
+rather than being empty. Of 901 issuer strings: 691 carry a real team name, 136 carry `#N/A`,
+74 are blank.
+
+This is a spreadsheet artifact — the kind of value Excel writes when a lookup fails — that got saved
+as ordinary text when the column was populated.
 
 The migration treats `#N/A` as blank, so nothing incorrect reaches Salesforce and **nothing is
 blocked**. Raising it because it's invisible in Airtable's own views (a cell with `#N/A` in it looks
@@ -664,27 +689,50 @@ Nothing migrates into them; harmless, but worth a look when these picklists are 
 > *after* the conversion. The transform now refuses to run against an older export rather than
 > silently dropping the 453 affected values — see the Resolved log entry below.
 
-### Contacts: 1,087 of 1,599 have no name — the single biggest data gap found
+### Contacts: 1,054 of 1,535 have no name — the single biggest data gap found
 
-Salesforce requires a last name on every contact. Only 491 Airtable contacts have a `Name` filled in.
-For the rest we currently load **the email address in the last-name field** as a visible placeholder,
-so they're easy to find and fix later. 45 contacts have neither a name nor an email and can't be
-loaded at all.
+**Status: 🔴 OPEN.** **1,054 of 1,535** contacts have no `Name`; **31** have neither a name nor
+an email.
+
+Salesforce requires a last name, so where Airtable has none the migration **derives one from the
+email address** rather than putting the raw address in the surname field. Of the 951 contacts that
+needed this:
+
+| What the migration could do | Contacts |
+| --- | --- |
+| Recovered a genuine **first and last name** from the address | **592** |
+| Only the local part was usable (e.g. `jwoolf`, `crdavis1`) — no defensible split | 314 |
+| **Skipped entirely** — no name *and* no email, nothing to identify the person | 45 |
+
+A derived name is a good guess, not a fact: a nickname, a married name or an unusual address
+produces the wrong name, and nobody in Salesforce can tell the difference. **Every derived name is
+still a name you did not choose.**
 
 Roughly 116 of the nameless ones look like **service or shared mailboxes** (`help`, `support`,
 `desk`, `info`, `admin` in the address) rather than people — for example
-`enterpriseservicedesk@dol.gov`, `warcit@usgs.gov`, `FEMA-EMI-LCMS@fema.dhs.gov`. The other ~971 look
+`enterpriseservicedesk@dol.gov`, `warcit@usgs.gov`, `FEMA-EMI-LCMS@fema.dhs.gov`. The rest look
 like real individuals whose name simply wasn't recorded.
 
 **What we need — two separate decisions:**
 1. **For real people:** names filled in, ideally as a first/last convention rather than one free-text
-   field. This is the single highest-value cleanup on this list: it affects ~971 contacts.
+   field. Still the single highest-value cleanup for *data quality* on this list. The 314 contacts
+   whose address has no split point (`jwoolf`) are the priority — the migration can do nothing
+   useful with those, whereas the 592 at least get a plausible name.
 2. **For service/shared mailboxes:** a decision on whether they should be Contacts at all. A shared
    help-desk address isn't a person, and forcing it into a Contact record (with a person's first/last
    name) will always look wrong. Options worth discussing: a dedicated record type, a naming
    convention, or storing them somewhere other than Contact entirely.
 
-Full list in `logs/data-migration/Contact-name-review-*.csv`.
+Full list in the run directory's `Contact-name-review-*.csv`.
+
+### Contacts: 3 rows have an email address in the Name field — 🔴 OPEN
+
+Three Contacts rows hold an **email address in the `Name` field**. The migration cannot tell that
+from a real name, so it loads verbatim — Salesforce ends up with a contact called
+`shyla.morisetty@dot.gov`.
+
+**What we need:** replace the address in the `Name` field with the person's actual name (the `Email`
+field already holds the address).
 
 ### Contacts: the same person is entered multiple times (61 email addresses appear on 2+ rows)
 

@@ -4,7 +4,7 @@
 > already known?" Each item records the decisions it still needs, not just the task.
 
 Work that is agreed but not yet built. This is the engineering-facing companion to the
-[stakeholder report](../migration-load-report-2026-08-13-post-reload.html); overall readiness for the
+[stakeholder report](../migration-load-report-2026-08-14.html); overall readiness for the
 production load is tracked in [PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md), per-object build status
 lives in [ARCHITECTURE.md](ARCHITECTURE.md) and the field-level detail in
 [TRANSFORMATION-RULES.md](TRANSFORMATION-RULES.md).

@@ -9,17 +9,22 @@
 > controlled *because* those are not: run output tells you what happened once, this tells you where
 > the programme is.
 
-**Last reviewed:** 2026-08-13 · **Target org:** `gsa-peo` (production, not yet authorized on any
+**Last reviewed:** 2026-08-14 · **Target org:** `gsa-peo` (production, not yet authorized on any
 dev machine).
 
 ---
 
 ## Where we are in one line
 
-**Every object except Meetings is built and proven by a full wipe-and-reload of the Dev sandbox
-(8,734 records, 2026-08-13).** What stands between that and production is not transform work: it is
-one rehearsal in an org nobody has loaded yet, three Salesforce config changes only the config owner
-can make, and a production authorization that does not exist yet.
+**Every object except Meetings is built, and proven twice by independent wipe-and-reload cycles of
+the Dev sandbox — 8,734 records, identical both times, zero unexpected failures.** What stands
+between that and production is not transform work: it is one rehearsal in an org nobody has loaded
+yet, three Salesforce config changes only the config owner can make, and a production authorization
+that does not exist yet.
+
+**Reproducibility is now evidence, not a claim.** The second cycle ran against a freshly pulled
+Airtable export and produced the same 8,734 records, the same 13 expected failures, the same 357
+withheld rows and the same 24 findings.
 
 ---
 
@@ -30,7 +35,7 @@ closed until it has been demonstrated, not merely built.
 
 | # | Gate | Status | Owner |
 | --- | --- | --- | --- |
-| 1 | The pipeline loads every in-scope object | 🟢 **Done** — proven in Dev, 8,734 records | Engineering |
+| 1 | The pipeline loads every in-scope object | 🟢 **Done** — 8,734 records, reproduced identically across two independent reloads | Engineering |
 | 2 | Meetings decided — build, defer, or drop | 🔴 **Blocked on a spike**, not on code | Project owner + SF admin |
 | 3 | Salesforce config changes landed | 🔴 **3 open** (CR-1, CR-2, CR-3) | Salesforce config owner |
 | 4 | A full rehearsal in **QA**, end to end | 🔴 **Not started** — QA has never been loaded | Engineering |
@@ -130,15 +135,16 @@ withhold rows it cannot place rather than guess, and to report exactly what it w
 decision to make is *what level of incompleteness is acceptable to go live with*, not *when is
 Airtable perfect*.
 
-The largest remaining items, by records affected:
+The largest remaining items, measured 2026-08-14 against a fresh export:
 
 | Item | Scale | Status |
 | --- | --- | --- |
-| Airtable Account rows matching no Salesforce Account | 155 rows, and they cascade | 🟡 172 → 155. **Still the biggest single blocker** — one Account fix releases rows across four objects |
-| Contacts with no name | 1,087 of 1,599 | 🔴 Open. Names are derived from the email address where possible (597 recovered); the rest carry a placeholder |
-| Issuer Strings `#N/A` team cells | 273 cells | 🔴 Open |
-| Applications with no Launch Level | 621 rows | 🟡 Worked around — see CR-3 |
+| Airtable Account rows matching no Salesforce Account | **155** rows | 🟡 172 → 155. **The biggest single blocker** — holds back ~275 records across 5 objects |
+| Contacts with no name | **1,054** of 1,535 | 🔴 Open. 592 get a real name derived from their email; 314 get only the local part; 45 don't load at all |
+| Issuer Strings `#N/A` team cells | **273** (136 name + 137 UUID) | 🔴 Open |
+| Applications with no Launch Level | **621** rows | 🟡 Worked around — see CR-3 |
 | The same person under two different email addresses | 10 people | 🔴 Open — **deliberately not auto-merged**; two contacts is the honest outcome |
+| Contacts with an email address in the `Name` field | 3 | 🔴 Open — loads verbatim as the contact's name |
 
 **How to read a load's contribution to this gate:** the **ROWS WITHHELD** section of any run's
 `SUMMARY.txt`, which counts them by reason and compares against the previous run.
