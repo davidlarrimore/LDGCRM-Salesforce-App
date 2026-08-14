@@ -213,6 +213,15 @@ function Get-PreviousLoadRunDirectory {
     #>
     param(
         [Parameter(Mandatory = $true)][string]$CurrentDirectory,
+
+        # Only consider runs that targeted THIS org. Without it the comparison
+        # crosses orgs, which is worse than having no baseline: QA's first ever
+        # load (2026-08-14) diffed itself against a Dev run and reported every
+        # finding as NEW. Different orgs have different Account populations and
+        # different duplicate-rule behaviour, so a cross-org delta is not a
+        # weaker signal - it is a meaningless one.
+        [string]$Org = "",
+
         [string]$Directory = ""
     )
 
@@ -239,9 +248,21 @@ function Get-PreviousLoadRunDirectory {
         Sort-Object { if ($_.Name -match '(\d{8}-\d{6})$') { $Matches[1] } else { "" } } -Descending)
 
     foreach ($Candidate in $Candidates) {
-        if (Test-Path -LiteralPath (Join-Path $Candidate.FullName "findings.csv")) {
-            return $Candidate.FullName
+        if (-not (Test-Path -LiteralPath (Join-Path $Candidate.FullName "findings.csv"))) { continue }
+
+        if ($Org) {
+            # run-info.json is written by Write-LoadRunReport. A run directory
+            # without one predates this check; skip it rather than guess, so a
+            # missing file can never be read as "same org".
+            $InfoFile = Join-Path $Candidate.FullName "run-info.json"
+            if (-not (Test-Path -LiteralPath $InfoFile)) { continue }
+
+            $Info = $null
+            try { $Info = Get-Content -LiteralPath $InfoFile -Raw | ConvertFrom-Json } catch { continue }
+            if ("$($Info.Org)" -ne $Org) { continue }
         }
+
+        return $Candidate.FullName
     }
 
     return ""
@@ -310,7 +331,7 @@ function Write-LoadRunReport {
     }
 
     # --- the previous run, for the comparison ------------------------------
-    $PreviousDirectory = Get-PreviousLoadRunDirectory -CurrentDirectory $RunDirectory
+    $PreviousDirectory = Get-PreviousLoadRunDirectory -CurrentDirectory $RunDirectory -Org "$($Header.Org)"
     $PreviousFindings = @{}
     $PreviousErrors = @{}
     $HasBaseline = $false
@@ -396,6 +417,15 @@ function Write-LoadRunReport {
         })
     }
 
+    # Identifies this run for the NEXT run's baseline lookup. Written before the
+    # report itself so a run that dies mid-report is still identifiable.
+    ([ordered]@{
+        Environment = $Header.Environment
+        Org         = $Header.Org
+        Started     = ([datetime]$Header.Started).ToString("s")
+        Mode        = $Header.Mode
+    } | ConvertTo-Json) | Set-Content -LiteralPath (Join-Path $RunDirectory "run-info.json") -Encoding UTF8
+
     $SummaryRows | Export-Csv -LiteralPath (Join-Path $RunDirectory "load-summary.csv") -NoTypeInformation -Encoding UTF8
     $FindingRows | Export-Csv -LiteralPath (Join-Path $RunDirectory "findings.csv") -NoTypeInformation -Encoding UTF8
     $ErrorRows | Export-Csv -LiteralPath (Join-Path $RunDirectory "errors.csv") -NoTypeInformation -Encoding UTF8
@@ -421,7 +451,7 @@ function Write-LoadRunReport {
         Add-Line (" Compared with  {0}" -f (Split-Path -Leaf $PreviousDirectory))
     }
     else {
-        Add-Line " Compared with  (nothing - no earlier run carries a findings.csv, so no deltas below)"
+        Add-Line (" Compared with  (nothing - no earlier run against {0} carries a report, so no deltas below)" -f $Header.Org)
     }
     Add-Line ""
 

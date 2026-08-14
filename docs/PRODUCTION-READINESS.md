@@ -16,15 +16,15 @@ dev machine).
 
 ## Where we are in one line
 
-**Every object except Meetings is built, and proven twice by independent wipe-and-reload cycles of
-the Dev sandbox — 8,734 records, identical both times, zero unexpected failures.** What stands
-between that and production is not transform work: it is one rehearsal in an org nobody has loaded
-yet, three Salesforce config changes only the config owner can make, and a production authorization
-that does not exist yet.
+**Every object except Meetings is built, and now proven in TWO orgs** — Dev (8,734 records, twice,
+identically) and **QA (8,740 records, first attempt, 2026-08-14)** — both with zero unexpected
+failures. What stands between that and production is no longer transform work or an untested
+pipeline: it is **one Salesforce formula fix, a sandbox that does not exist yet, and a production
+authorization nobody has requested.**
 
-**Reproducibility is now evidence, not a claim.** The second cycle ran against a freshly pulled
-Airtable export and produced the same 8,734 records, the same 13 expected failures, the same 357
-withheld rows and the same 24 findings.
+**Reproducibility is evidence, not a claim.** Dev reloaded twice from empty against a freshly pulled
+Airtable export and produced identical results both times. QA then loaded first time in an org that
+had never held migration data, with every object matching Dev except three explainable differences.
 
 ---
 
@@ -38,7 +38,7 @@ closed until it has been demonstrated, not merely built.
 | 1 | The pipeline loads every in-scope object | 🟢 **Done** — 8,734 records, reproduced identically across two independent reloads | Engineering |
 | 2 | Meetings decided — build, defer, or drop | 🔴 **Blocked on a spike**, not on code | Project owner + SF admin |
 | 3 | Salesforce config changes landed | 🟡 **1 open** (CR-3) — CR-1 and CR-2 done 2026-08-14 | Salesforce config owner |
-| 4 | A full rehearsal in **QA**, end to end | 🔴 **Not started** — QA has never been loaded | Engineering |
+| 4 | A full rehearsal in **QA**, end to end | 🟢 **Done 2026-08-14** — 8,740 records, 0 unexpected failures | Engineering |
 | 5 | Airtable data quality at an accepted level | 🟡 **Improving** — 9 items closed 2026-08-13 | Airtable data owners |
 | 6 | The **Full** sandbox exists and Operations rehearse in it | 🔴 **Not provisioned** | GSA IT / Operations |
 | 7 | Production authorized, scheduled, supervised | 🔴 **Not started** | Project owner + GSA IT |
@@ -96,19 +96,50 @@ specifications, including the exact formula edits, are in
 
 **One coupling to watch:** all three `LDGCRM_` permission sets grant field-level security on
 `priority_type__c`, which **does not exist in QA at all**. That reference will fail a change set into
-any org lacking the field — independent of this migration, and it will bite at gate 4.
+any org lacking the field — independent of this migration. **It did not affect the QA data load** (gate 4 passed), because a data load does not deploy permission sets; it will matter when change sets move to the Full sandbox.
 
 ---
 
-## 4. A full rehearsal in QA — 🔴 not started
+## 4. A full rehearsal in QA — 🟢 DONE 2026-08-14
 
-**QA (`peodv15dvn`) has never been loaded.** It was authorized on this machine on 2026-08-13
-(`dave.larrimore@gsa.gov.peo.peodv15dvn`), so `-Environment QA` works, but every count in this repo
-comes from Dev.
+**Loaded successfully on 2026-08-14 — 8,740 records in 19m37s, zero unexpected failures.** QA's first
+ever load, and the first time the pipeline ran against any org but Dev.
 
-**This is the single largest untested risk in the project.** Everything proven so far is proven in
-one org that has been reloaded a dozen times and whose metadata is the source for change sets. Known
-differences that will surface here, not before:
+| | QA | Dev |
+| --- | --- | --- |
+| Migrated total | **8,740** | 8,734 |
+| Account | 587 | 584 |
+| Contact | 1,871 (10 dup-rule rejects) | 1,870 (11) |
+| Application–Contact links | 2,701 | 2,699 |
+| **Every other object** | **exact match** | |
+| Unexpected failures | **0** | 0 |
+
+**What this proved that Dev never could** — the point of the gate:
+
+- The pipeline has **no hidden dependency on Dev-specific state**. It ran clean in an org holding one
+  Account and nothing else.
+- **CR-1 and CR-2 travelled correctly by change set** — 681 Applications carry a portal team here
+  too, `LDGCRM_PP_Issuer_Strings__c` is absent, and the Level 1 formula matches.
+- **The FCIC trigger bypass flips and restores another team's config safely** in a fresh org.
+- **The Account bootstrap builds a hierarchy from near-nothing** — 1 Account to 1,346, 1,101 parented.
+- The org duplicate rule **exists here but fires slightly differently** (10 rejects vs 11) — the only
+  behavioural difference found between the two orgs, and an expected partial either way.
+
+**Two defects were found by preparing for this run, both of which would have reached production:**
+
+1. **Market Segment was required by pre-flight but never loaded.** QA held five segments with the
+   right names and no external IDs; the reconciliation resolves by external ID, so it would have
+   matched nothing and left Market Segment blank across the entire migration, silently. Pre-flight's
+   count check could not see it. Fixed by loading Market Segment as step 1 and checking
+   *resolvability* rather than presence. **Under the old code QA could not have been loaded at all** —
+   pre-flight would have hard-failed on it.
+2. **The run report compared across orgs.** QA's first run diffed itself against a *Dev* run and
+   reported every finding as NEW. Fixed: `run-info.json` records each run's org and the baseline
+   lookup matches on it, so a first run in a new org correctly reports no baseline.
+
+<details><summary>What we expected to find, kept for the record</summary>
+
+Known differences expected to surface here and not before:
 
 - **QA can trail Dev by a change set.** Never assume Dev's metadata state applies. Confirmed example:
   `priority_type__c` exists in Dev and does not exist in QA.
@@ -126,6 +157,8 @@ differences that will surface here, not before:
   an unmet precondition, and by changing pre-flight to report *resolvable* segments, not a count.
 
 **Run it with** [operations/RELOAD-QA-CHECKLIST.md](operations/RELOAD-QA-CHECKLIST.md).
+
+</details>
 
 ---
 
