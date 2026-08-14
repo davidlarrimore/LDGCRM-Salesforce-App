@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_Support_Information__c</fullName>
+    <description>Contact or support/helpdesk information for this application</description>
+    <inlineHelpText>Contact or support/helpdesk information for this application</inlineHelpText>
+    <label>Support Information</label>
+    <length>32768</length>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>3</visibleLines>
+</CustomField>

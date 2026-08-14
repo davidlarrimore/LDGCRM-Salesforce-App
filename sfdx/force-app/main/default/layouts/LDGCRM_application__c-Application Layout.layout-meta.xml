@@ -203,6 +203,10 @@
                 <behavior>Readonly</behavior>
                 <field>LDGCRM_Market_Segment__c</field>
             </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>LDGCRM_Support_Information__c</field>
+            </layoutItems>
         </layoutColumns>
         <layoutColumns>
             <layoutItems>
