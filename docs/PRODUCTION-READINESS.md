@@ -118,6 +118,12 @@ differences that will surface here, not before:
   runs tests.
 - **Account reconciliation needs Accounts to reconcile onto.** A fresh org needs
   `Invoke-AccountBootstrap.ps1` first, or every downstream object withholds nearly everything.
+- **Market Segment must be *resolvable*, not merely present.** Found 2026-08-14: QA held all five
+  segments with the right names and **no external IDs**, so the Account reconciliation — which
+  matches on `LDGCRM_Market_Segment__r.LDGCRM_External_ID__c` — would have resolved nothing and left
+  Market Segment blank across the whole migration, with pre-flight passing and no error anywhere.
+  Fixed by making Market Segment **step 1 of the load** (`Build-MarketSegmentLoad.ps1`) rather than
+  an unmet precondition, and by changing pre-flight to report *resolvable* segments, not a count.
 
 **Run it with** [operations/RELOAD-QA-CHECKLIST.md](operations/RELOAD-QA-CHECKLIST.md).
 

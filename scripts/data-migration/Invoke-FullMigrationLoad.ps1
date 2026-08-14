@@ -123,6 +123,19 @@ $RunStart = Get-Date
 #               place. See the classification block in Invoke-SalesforceLoad.ps1.
 $Steps = @(
     [ordered]@{
+        # FIRST, and it must stay first. Three before-save Flows derive Market
+        # Segment from the parent chain, and Build-AccountReconciliation.ps1
+        # resolves a segment through LDGCRM_Market_Segment__r.LDGCRM_External_ID__c
+        # - so segments that do not exist, or exist untagged, silently produce a
+        # blank Market Segment on every downstream record with no error anywhere.
+        # Added 2026-08-14 after QA was found holding all five segments with NO
+        # external IDs; pre-flight passed on a count and the data would have been
+        # empty org-wide.
+        Name = "MarketSegment"; Build = "Build-MarketSegmentLoad.ps1"
+        Object = "LDGCRM_Market_Segment__c"; Csv = "LDGCRM_Market_Segment__c-upsert.csv"
+        Why = "FIRST - everything downstream derives its Market Segment from these, via Flows and the Account reconciliation."
+    }
+    [ordered]@{
         Name = "Impediment"; Build = "Build-ImpedimentLoad.ps1"
         Object = "LDGCRM_Impediment__c"; Csv = "LDGCRM_Impediment__c-upsert.csv"
         Why = "Independent parent - no lookups, so it can go first."
@@ -240,14 +253,33 @@ function Invoke-PreflightChecks {
         }
     }
 
-    # 2. Market Segment. Not loaded by this pipeline and not recreated by it, but
-    #    three before-save Flows derive from it - if it is empty, every Account,
-    #    Opportunity and Application loads with a blank segment and nothing
-    #    errors.
-    $Segments = @(Invoke-SalesforceQuery -Soql "SELECT Id FROM LDGCRM_Market_Segment__c" -OrgAlias $Org -ApiVersion $Version).Count
-    Write-Host ("  Market Segments        {0}" -f $Segments)
-    if ($Segments -eq 0) {
-        $Findings.Blocking += "No LDGCRM_Market_Segment__c records. The before-save Flows have nothing to assign; every downstream record would load with a blank segment."
+    # 2. Market Segment - REPORTED, NOT BLOCKING (changed 2026-08-14).
+    #
+    #    It used to hard-fail on a count of zero, which was wrong twice over: the
+    #    pipeline demanded a precondition it refused to satisfy, and a COUNT does
+    #    not answer the question that matters. QA held all five segments with the
+    #    right names and NO external IDs; the count check passed and the data
+    #    would have been silently empty, because Build-AccountReconciliation.ps1
+    #    resolves a segment through LDGCRM_Market_Segment__r.LDGCRM_External_ID__c,
+    #    not through Name.
+    #
+    #    Market Segment is now step 1 of the load, so blocking here would refuse
+    #    to run the very step that fixes it. What this reports instead is whether
+    #    segments are RESOLVABLE - tagged with an external ID - which is the
+    #    property everything downstream actually depends on.
+    $Segments = @(Invoke-SalesforceQuery `
+        -Soql "SELECT Id, LDGCRM_External_ID__c FROM LDGCRM_Market_Segment__c" `
+        -OrgAlias $Org -ApiVersion $Version)
+    $Resolvable = @($Segments | Where-Object { $_.LDGCRM_External_ID__c }).Count
+
+    Write-Host ("  Market Segments        {0} present, {1} resolvable (external ID set)" -f $Segments.Count, $Resolvable)
+
+    if ($Resolvable -eq 0) {
+        Write-Host "                         none are resolvable yet - the MarketSegment step will fix this" -ForegroundColor DarkGray
+        $Findings.Warning += ("No LDGCRM_Market_Segment__c record carries an external ID, so nothing can resolve a " +
+                              "segment yet. The MarketSegment step loads them; if you have EXCLUDED that step " +
+                              "(-OnlySteps/-StartAtStep), every downstream record will load with a blank Market " +
+                              "Segment and nothing will error.")
     }
 
     # 3. Fallback owner. Every transform resolves it and throws if it can't -

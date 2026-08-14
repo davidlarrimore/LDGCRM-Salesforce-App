@@ -204,12 +204,15 @@ environment; nothing else in this repo reads it.
 on `Accounts Record ID`) that is the upsert key for `LDGCRM_External_ID__c` on the matching Salesforce
 object — one Airtable base row becomes one Salesforce record carrying that ID. Two exceptions to hold
 onto:
-- **`LDGCRM_Market_Segment__c` currently stores the segment *name*** (`"Benefits"`, `"Defense"`, …) in
-  `LDGCRM_External_ID__c`, not the Airtable `rec...` ID from the Market Segments table's `Unique ID`
-  column. There are only 5 real segments plus a `Test Market Segment` row, all already loaded — decide
-  once (backfill to the `rec...` ID for consistency, or keep matching by name since the segment list is
-  small and stable) rather than let a load script silently create duplicates by upserting on the wrong
-  value.
+- **`LDGCRM_Market_Segment__c` stores the segment *name*** (`"Benefits"`, `"Defense"`, …) in
+  `LDGCRM_External_ID__c`, not the Airtable `rec...` ID. **Decided 2026-08-14: keep the name**, and
+  `Build-MarketSegmentLoad.ps1` now loads the object on that key. Rationale: the set is five fixed,
+  human-meaningful values; `Build-AccountReconciliation.ps1` already resolves a segment by matching
+  Airtable's segment name against that external ID, so `rec...` IDs would add a name→id→record hop
+  for no benefit and orphan the external IDs already loaded. **If this is ever revisited, that
+  script's `$MarketSegmentMap` and the transform must change together**, or a load will silently
+  create duplicates by upserting on the wrong value. The transform hard-fails if two Airtable rows
+  share a name, since the name is the key.
 - **`OpportunityContactRole.LDGCRM_External_ID__c` has `externalId=false` and CANNOT be changed.**
   Deploying `externalId=true` fails with *"Fields on Opportunity Contact Role do not support the
   property Is External Identifier."* — Salesforce forbids External ID fields on this object entirely,
@@ -441,7 +444,8 @@ backfill — read-only against Salesforce, writing an update CSV plus human-revi
 it can't confidently match; see `docs/engineering/ARCHITECTURE.md` for the full pipeline.
 
 **Load order** (parents before children/junctions — the reverse of the delete order in
-`scripts/cleanup/Invoke-SandboxFactoryReset.ps1`): Market Segment → Account → `LDGCRM_Partner_Account__c` →
+`scripts/cleanup/Invoke-SandboxFactoryReset.ps1`): **Market Segment (loaded by the pipeline as of
+2026-08-14 — `Build-MarketSegmentLoad.ps1`, step 1 of 12)** → Account → `LDGCRM_Partner_Account__c` →
 Contact → Opportunity → `LDGCRM_application__c` → `LDGCRM_Opportunity_Impediment__c` (needs
 `LDGCRM_Impediment__c` and Opportunity first) → `LDGCRM_Application_Contact__c` →
 `OpportunityContactRole` → Activity (Meetings, needs Account/Opportunity first).
