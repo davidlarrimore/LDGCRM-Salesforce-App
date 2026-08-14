@@ -152,7 +152,16 @@ step this repo may do by CLI deploy; everything above it is change-set work.
 
 ---
 
-## CR-3 — A blank Launch Level reports 100% launch-checklist completion — 🔴 OPEN
+## CR-3 — A blank Launch Level reports 100% launch-checklist completion — 🟡 MITIGATED FOR MIGRATED RECORDS
+
+> **Status update 2026-08-13, later the same day.** The migration now **defaults a blank Launch Level
+> to `1 - Very Low Impact`** (project owner's decision), so no migrated Application can fall through
+> the `CASE` any more. Verified after reloading all 1,026: **records reporting 100% went 607 → 0**,
+> and the maximum is now a real **90%**.
+>
+> **This does not close the item.** The formula is unchanged, so *any* Application created or edited
+> later with a blank Launch Level still reports 100% complete. The data-side default protects the
+> records this migration owns; it does not protect the org. The `else` value still needs fixing.
 
 **Found 2026-08-13 while working CR-2. This one is a live reporting defect, independent of the
 migration.**
@@ -168,8 +177,9 @@ Measured on the 1,026 migrated Applications:
 | **Blank** | **607** (59%) | **100%, every one of them** |
 | Set (levels 1–5) | 419 | max 90% |
 
-Those 607 are demonstrably not complete — their own `Level 1 Complete %` maxes out at 78%. So
-**59% of Applications currently report as fully launch-complete because a field is empty.**
+Those 607 were demonstrably not complete — their own `Level 1 Complete %` maxed out at 78%. So
+**59% of Applications reported as fully launch-complete because a field was empty.** (Those specific
+records are now fixed by the migration-side default above; the formula behaviour is not.)
 
 **What we need — a decision, then a formula edit.** The `1` should become something that isn't
 "finished". Two sensible options:

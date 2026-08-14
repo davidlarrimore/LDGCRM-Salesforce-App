@@ -280,6 +280,25 @@ previously `0202-02-18`, which Salesforce rejected outright. The field now migra
 intended value was `2022-02-18`, and it was set to `2020`. Either is plausible and neither blocks
 anything — just confirm 2020 is the year you meant.)*
 
+### Applications: 621 rows have no Launch Level — 🟡 WORKED AROUND, but a real value would be better
+
+**New 2026-08-13.** 621 of 1,056 Applications have no `Launch Level`. Nothing is blocked — but this
+one was quietly causing a **wrong number in Salesforce**, which is worth explaining because it isn't
+obvious.
+
+Salesforce calculates a "Launch Checklist Completion %" from the Launch Level. With the level empty,
+the calculation fell through to its default and reported the application as **100% complete**. Before
+we fixed it, **607 migrated Applications were reporting themselves fully launch-complete** while
+their underlying checklist was at most 78% done.
+
+**We now default a blank Launch Level to `1 - Very Low Impact`** on load (project owner's decision),
+which fixed it — 607 → 0 reporting 100%. So nothing is broken today.
+
+**What we need — nothing urgent, but:** that default is an *assumption we're making on your behalf*,
+and once it's in Salesforce it looks identical to a real value. For any application where the level
+is genuinely known, filling it in is better than our guess. Levels in use: 1 (354 rows), 3 (32),
+4 (29), 2 (12), 5 (8).
+
 ### Applications: 2 rows have an unusable "Ramp Up Approach" value — ✅ RESOLVED 2026-08-13
 
 **Status: ✅ Resolved.** The `"Q1 - FY'23"` and `"146"` values are gone. All **745** Applications that

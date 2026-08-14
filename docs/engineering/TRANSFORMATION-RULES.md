@@ -2056,6 +2056,36 @@ the `field-meta.xml` would leave dangling `<field>` entries that break the next 
 components — so a field removal means sweeping `layouts/`, `permissionsets/` and `reportTypes/` too.
 `grep -rl <fieldName> sfdx/force-app` finds them all.
 
+### Launch Level defaults to 1 — because blank is not neutral here
+
+**Decided 2026-08-13 by the project owner.** 621 of 1,056 Airtable Applications record no Launch
+Level. The obvious handling — leave it blank, it's optional — is **wrong**, and the reason is a good
+example of a downstream formula changing what "empty" means:
+
+`LDGCRM_Launch_Checklist_Completion__c` is a `CASE` on `LDGCRM_Launch_Level__c` whose **else value is
+`1`** (= 100%). A blank level matches none of the five cases and falls through to *fully
+launch-complete*. Measured on the 2026-08-13 reload before the fix: **607 of 1,026 migrated
+Applications reported 100% complete**, while their own `Level 1 Complete %` topped out at 78%.
+
+So a blank Launch Level does not produce a missing number — it produces a **confidently wrong** one,
+on 59% of the object. The transform now writes `"1 - Very Low Impact"` when Airtable has none.
+
+Why level 1 specifically: it is the lowest, and levels 1 and 2 both compute completion from
+`LDGCRM_Level_1_Complete_Pct__c` alone, so the reported figure becomes that record's real Level 1
+progress rather than a placeholder. After reloading: **records reporting 100% went 607 → 0**, maximum
+now a genuine 90%.
+
+**Two things to keep in mind:**
+- **The default is invisible afterwards.** A defaulted level looks identical to an authored one in
+  Salesforce. The count is reported at build time (`Launch Level DEFAULTED to 1`) and that is the only
+  record of it.
+- **It protects migrated records, not the org.** Anything created later with a blank level still
+  reports 100%. The formula fix is CR-3 in
+  [SALESFORCE-CHANGE-REQUESTS.md](SALESFORCE-CHANGE-REQUESTS.md).
+
+A value that is present but outside 1–5 is also defaulted rather than blanked — same reasoning — but
+written to a review CSV so an unexpected value cannot hide inside the default. 0 rows hit that today.
+
 ### Partner portal team — the source was in a table nobody was pulling
 
 **Added 2026-08-13.** `LDGCRM_P3_Partner_Portal_Team_Name__c` and `LDGCRM_P3_Team_UUID__c` were

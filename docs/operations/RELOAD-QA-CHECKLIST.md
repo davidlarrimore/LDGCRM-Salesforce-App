@@ -633,8 +633,17 @@ Market Segment (already loaded - do not touch)
       Partner Account and Opportunity are loaded, or it withholds far more.
       *(The pre-re-pull figures were 688 ready and 511/177 on ownership. The ownership split moved a
       long way on the same underlying rule — re-baseline, don't read it as a regression.)*
-- [ ] Load (upsert). Expect 689/689.
+- [ ] Load (upsert). Expect 1,026/1,026.
 - [ ] Verify Market Segment came from the Flow; no formula field was written.
+- [ ] ℹ️ **Expect ~607 Applications to have Launch Level DEFAULTED to `1 - Very Low Impact`** (the
+      build prints the count). Airtable leaves it blank on 621 of 1,056 rows, and blank is not
+      neutral: `LDGCRM_Launch_Checklist_Completion__c` falls through its `CASE` to an else value of
+      100%. **Verify no migrated Application reports 100% completion** — before this default, 607 did:
+      ```
+      sf data query -q "SELECT COUNT() FROM LDGCRM_application__c WHERE LDGCRM_Launch_Level__c = null AND LDGCRM_External_ID__c != null" --target-org <alias>
+      ```
+      Expect **0**. A non-zero count means the default regressed and those records are reporting
+      themselves fully launch-complete.
 - [ ] ℹ️ **Partner Portal Team Name / Team UUID will be ABSENT from the CSV, and that is expected.**
       The transform reads both fields' definitions from the org it is pointed at and **withholds the
       two columns while `Unique` is switched on**, because one portal team legitimately owns many

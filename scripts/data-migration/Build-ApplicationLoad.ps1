@@ -55,6 +55,14 @@
     the UNIQUE-CONSTRAINT PREFLIGHT block for why the columns may be withheld
     from the CSV altogether pending a change set.
 
+    LDGCRM_Launch_Level__c DEFAULTS TO "1 - Very Low Impact" when Airtable has
+    none (621 of 1,056 rows). This is an assumption, not source data, and it is
+    made because a BLANK level is worse than a conservative one: the
+    LDGCRM_Launch_Checklist_Completion__c formula is a CASE on this field whose
+    else value is 1, so a blank level reports the Application as 100%
+    launch-complete. See the block that sets it, and CR-3 in
+    docs/engineering/SALESFORCE-CHANGE-REQUESTS.md for the formula-side fix.
+
     Rows with no linked Partner Account are skipped (required field) and
     written to a review CSV, same pattern as every other required-lookup
     check in this pipeline. Rows whose linked Partner Account exists in
@@ -104,6 +112,11 @@ $LaunchLevelMap = @{
     "4" = "4 - High Impact"
     "5" = "5 - Very High Impact"
 }
+
+# Applied when Airtable records no Launch Level - see the block that uses it for
+# why blank is worse than a conservative default. Named rather than inlined so
+# the assumption is visible in one place and easy to change.
+$DefaultLaunchLevel = "1 - Very Low Impact"
 
 # The 24 Demographic Served categories used within the last 18 months
 # (2026-08-12 analysis - see docs/engineering/TRANSFORMATION-RULES.md), mapped to their
@@ -573,8 +586,10 @@ $SkippedRows = [System.Collections.Generic.List[object]]::new()
 $OverLengthRows = [System.Collections.Generic.List[object]]::new()
 $UnmappedRampUpRows = [System.Collections.Generic.List[object]]::new()
 $PortalTeamReviewRows = [System.Collections.Generic.List[object]]::new()
+$UnmappedLaunchLevelRows = [System.Collections.Generic.List[object]]::new()
 $DroppedDemographicTagCount = 0
 $UnresolvedOpportunityCount = 0
+$DefaultedLaunchLevelCount = 0
 
 # ============================================================
 # PARTNER PORTAL TEAM (from the Issuer Strings table)
@@ -749,9 +764,46 @@ foreach ($Row in $AirtableApplications) {
         }
     }
 
-    $LaunchLevel = ""
-    if ($Row.fields.'Launch Level' -and $LaunchLevelMap.ContainsKey($Row.fields.'Launch Level')) {
-        $LaunchLevel = $LaunchLevelMap[$Row.fields.'Launch Level']
+    # LAUNCH LEVEL DEFAULTS TO 1 WHEN AIRTABLE HAS NONE (decided 2026-08-13).
+    #
+    # This is a deliberate assumption, not source data: 621 of 1,056 Airtable
+    # rows have no Launch Level. Left blank, they are not merely incomplete -
+    # they are actively WRONG in Salesforce, because
+    # LDGCRM_Launch_Checklist_Completion__c is a CASE on this field whose else
+    # value is 1 (= 100%). A blank level matches none of the five cases and
+    # falls through to "fully launch-complete". On the 2026-08-13 reload that
+    # made 607 of 1,026 migrated Applications report 100% complete while their
+    # own Level 1 Complete % topped out at 78%.
+    #
+    # Defaulting to "1 - Very Low Impact" is the conservative choice: it is the
+    # lowest level, and levels 1 and 2 both compute completion from Level 1
+    # alone, so the reported figure becomes that record's real Level 1 progress
+    # instead of a placeholder 100%.
+    #
+    # NOTE the trade-off, because it is not visible in Salesforce afterwards: a
+    # defaulted level is indistinguishable from an authored one. The fix for the
+    # underlying formula is CR-3 in docs/engineering/SALESFORCE-CHANGE-REQUESTS.md
+    # - this default protects the migrated records, not records created later.
+    $LaunchLevel = $DefaultLaunchLevel
+    if ($Row.fields.'Launch Level') {
+        if ($LaunchLevelMap.ContainsKey($Row.fields.'Launch Level')) {
+            $LaunchLevel = $LaunchLevelMap[$Row.fields.'Launch Level']
+        }
+        else {
+            # Defensive: 0 rows hit this today (values are 1-5 only). Still
+            # defaulted rather than blanked, for the reason above, but reported
+            # so an unexpected value can't hide inside the default.
+            $UnmappedLaunchLevelRows.Add([PSCustomObject]@{
+                AirtableRecordId = $RecId
+                Name             = $Name
+                RawValue         = "$($Row.fields.'Launch Level')"
+                AppliedValue     = $DefaultLaunchLevel
+                Reason           = "Launch Level is not one of the expected values 1-5. Defaulted to '$DefaultLaunchLevel' rather than left blank, because a blank Launch Level makes Launch Checklist Completion report 100%. Needs a real value in Airtable."
+            })
+        }
+    }
+    else {
+        $DefaultedLaunchLevelCount++
     }
 
     $DemographicTags = [System.Collections.Generic.List[string]]::new()
@@ -961,6 +1013,7 @@ $SkippedFile = Join-Path $LogDir "Application-skipped-$Timestamp.csv"
 $UnmappedRampUpFile = Join-Path $LogDir "Application-unmapped-rampup-$Timestamp.csv"
 $OverLengthFile = Join-Path $LogDir "Application-overlength-$Timestamp.csv"
 $PortalTeamReviewFile = Join-Path $LogDir "Application-portal-team-review-$Timestamp.csv"
+$UnmappedLaunchLevelFile = Join-Path $LogDir "Application-unmapped-launchlevel-$Timestamp.csv"
 
 if ($UpsertRows.Count -gt 0) {
     Export-DataLoaderCsv -InputObject $UpsertRows.ToArray() -Path $UpsertFile
@@ -990,6 +1043,10 @@ if ($PortalTeamReviewRows.Count -gt 0) {
     $PortalTeamReviewRows | Export-Csv -LiteralPath $PortalTeamReviewFile -NoTypeInformation -Encoding UTF8
 }
 
+if ($UnmappedLaunchLevelRows.Count -gt 0) {
+    $UnmappedLaunchLevelRows | Export-Csv -LiteralPath $UnmappedLaunchLevelFile -NoTypeInformation -Encoding UTF8
+}
+
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host " APPLICATION PREP COMPLETE" -ForegroundColor Green
@@ -1008,6 +1065,10 @@ Write-Host ("{0,-48} {1,8:N0}" -f "Opportunity links blanked (Opportunity not lo
 Write-Host ("{0,-48} {1,8:N0}" -f "Owner inherited from Partner Account", @($UpsertRows | Where-Object { $_.OwnerId -ne $FallbackOwnerId }).Count)
 Write-Host ("{0,-48} {1,8:N0}" -f "Owner = fallback ($FallbackOwnerEmail)", @($UpsertRows | Where-Object { $_.OwnerId -eq $FallbackOwnerId }).Count)
 Write-Host ("{0,-48} {1,8:N0}" -f "Unmapped Ramp Up Approach (left blank)", $UnmappedRampUpRows.Count)
+Write-Host ("{0,-48} {1,8:N0}" -f "Launch Level DEFAULTED to 1 (Airtable blank)", $DefaultedLaunchLevelCount)
+if ($UnmappedLaunchLevelRows.Count -gt 0) {
+    Write-Host ("{0,-48} {1,8:N0}" -f "  ...unexpected Launch Level value (defaulted)", $UnmappedLaunchLevelRows.Count) -ForegroundColor Yellow
+}
 Write-Host ("{0,-48} {1,8:N0}" -f "Demographic Served tags dropped (stale category)", $DroppedDemographicTagCount)
 Write-Host ("{0,-48} {1,8:N0}" -f "Name/URL/date values corrected or blanked", $OverLengthRows.Count)
 Write-Host ""
@@ -1064,6 +1125,11 @@ if ($OverLengthRows.Count -gt 0) {
 if ($PortalTeamReviewRows.Count -gt 0) {
     Write-Host "Partner-portal team review (CONFLICT rows block the fields; INCOMPLETE rows are tidy-up):" -ForegroundColor Yellow
     Write-Host $PortalTeamReviewFile
+}
+
+if ($UnmappedLaunchLevelRows.Count -gt 0) {
+    Write-Host "Unexpected Launch Level values (defaulted, need a real value in Airtable):" -ForegroundColor Yellow
+    Write-Host $UnmappedLaunchLevelFile
 }
 
 }
