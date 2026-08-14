@@ -472,27 +472,57 @@ source data (Application is exactly that: built and proven, 65% loaded).
 
 ---
 
-## 7. Consolidated org pre-flight check — sanctioned 2026-08-14, not built
+## 7. Consolidated org pre-flight check — ✅ BUILT 2026-08-14
 
-**Status:** agreed in principle by the project owner, unbuilt. It belongs in the **bundle**
-(`scripts/powershell-scripts/`), not in `tools/`.
+**Status:** built as `scripts/powershell-scripts/Invoke-LoadPreflight.ps1`, in the **bundle** (not
+`tools/`) — Operations runs it, so it ships. Read-only by default; `-ActivateFlows` is the only
+thing it changes and is blocked in Prod at run time.
+
+### What it turned out to be for
+
+Narrower and sharper than the "check every field exists" sketch below, because a real incident
+defined it: **QA was loaded on 2026-08-14 with 8,740 records and 0 unexpected failures while every
+LDGCRM Flow in the org was switched off.** Nothing failed, nothing was withheld, and object counts
+matched Dev exactly — flow activation changes field *contents*, not row counts, so the Dev-vs-QA
+comparison passed too. The only visible symptom was Market Segment blank on all 92 Partner Accounts,
+842 Opportunities and 1,026 Applications, because the three before-save Flows never ran.
+
+**That is the failure mode it guards: not a load that breaks, but a load that succeeds against an
+org whose automation is off.** It checks three things — expected flows present and active; flows
+whose *latest* version is newer than the *active* one (deployed but never switched on, which passes
+a naive "is it active?" test); and an inverse check that `LDGCRM_Screen_Flow_Developer_Data_Delete_Flow`
+is **absent** outside Dev, since it bulk-deletes records and previously nothing but hand-picking
+change set contents kept it out.
 
 ### The boundary this sits inside
 
-Standing rule from the same conversation: **metadata is not the Operations team's job, and this
-project is not responsible for pushing or pulling it.** Metadata moves between orgs by change set
-only, and the metadata tooling (`tools/metadata/`) is a development aid that does not ship.
+Standing rule: **metadata is not the Operations team's job, and this project is not responsible for
+pushing or pulling it.** Metadata moves between orgs by change set only, and the metadata tooling
+(`tools/metadata/`) is a development aid that does not ship.
 
-What the pipeline *may* do — and the project owner explicitly said we "should feel comfortable"
-doing — is:
+Activation is permitted inside that rule, per the project owner (2026-08-14): *"There is a
+difference between changing settings in the org via CLI and adding/updating core object definitions.
+We want change sets to migrate all xml, but allow for our pre-flight script to prep and validate the
+environment for a successful load."* Flipping `FlowDefinition.Metadata.activeVersionNumber` points
+at a version **already in the org** — it moves no XML and creates no component.
 
-- **read the org to confirm things that should exist do exist**, and
-- **turn things on / activate things** the load needs, restoring them afterwards.
+Two design points worth keeping:
 
-What it must never do is deploy or retrieve metadata in either direction. When something is missing,
-the correct behaviour is to say so precisely and stop.
+- **Nothing is restored afterwards**, deliberately unlike the `TriggerControls__c` bypass. A flow
+  switched on so the load is correct must *stay* on, or the org resumes producing wrong data for
+  every record a human creates in the UI.
+- **Flow version numbers are per-org counters and are not comparable across orgs.** Dev on v4 and QA
+  on v2 is the ordinary result of four saves there and two deployments here. An earlier draft
+  asserted otherwise and was wrong. A clean pre-flight therefore means "on, and running the newest
+  version *this* org holds" — whether that version carries the intended logic is a change-set
+  question.
 
-### Why it is worth building
+### Still open
+
+The field/picklist/record-type checks sketched below are **not** built — the flow checks are. The
+open questions in the last section still apply if that part is picked up.
+
+### Why the field-level checks are still worth building
 
 The checks already exist, but scattered and implicit, so a missing prerequisite surfaces as a
 mid-load failure rather than a refusal to start:
@@ -510,7 +540,7 @@ A single step, run before anything is submitted, that reports every prerequisite
 and refuses to continue on absent, would convert several classes of mid-load failure into a clear
 list handed to whoever builds the change set.
 
-### Shape (proposed, not agreed)
+### Shape for the unbuilt field-level part (proposed, not agreed)
 
 - `Test-OrgReadiness.ps1` in the bundle, read-only, no confirmation gate needed.
 - A declarative table of expectations per object: field API name, type, whether it must be writable,

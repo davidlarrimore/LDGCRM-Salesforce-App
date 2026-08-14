@@ -54,6 +54,13 @@
         <name>PermissionSetGroup</name>
     </types>
     <types>
+        <members>GSA Standard Basic User</members>
+        <members>GSA Standard Platform User</members>
+        <members>GSA Standard Salesforce User</members>
+        <members>GSA System Administrator</members>
+        <name>Profile</name>
+    </types>
+    <types>
         <members>Account-Federal</members>
         <members>Contact-Federal Contact Layout</members>
         <members>Contact-LDGCRM Federal Contact Layout</members>
@@ -73,7 +80,6 @@
         <members>LDGCRM_Opportunity_Impediment_Before_Save_New_Record_Duplicate_Check</members>
         <members>LDGCRM_Partner_Account_After_Save_Update_Re_Parent_Cascade</members>
         <members>LDGCRM_Partner_Account_Before_Save_Create_Update_Market_Segment</members>
-        <members>LDGCRM_Screen_Flow_Developer_Data_Delete_Flow</members>
         <members>LGDCRM_Opportunity_After_Save_Update_Opportunity_Impediments</members>
         <members>LGDCRM_Opportunity_Before_Save_Update_Current_Status_Summary_DateTime</members>
         <members>LGDCRM_Opportunity_Impediment_Before_Save_Update_Blocked_Revenue</members>

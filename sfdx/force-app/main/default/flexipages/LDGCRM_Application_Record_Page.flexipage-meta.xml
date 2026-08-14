@@ -41,16 +41,6 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
-                <fieldItem>Record.LDGCRM_Estimated_Go_Live_Date__c</fieldItem>
-                <identifier>RecordLDGCRM_Estimated_Go_Live_Date_cField</identifier>
-            </fieldInstance>
-        </itemInstances>
-        <itemInstances>
-            <fieldInstance>
-                <fieldInstanceProperties>
-                    <name>uiBehavior</name>
-                    <value>none</value>
-                </fieldInstanceProperties>
                 <fieldItem>Record.LDGCRM_Launch_Level__c</fieldItem>
                 <identifier>RecordLDGCRM_Launch_Level_cField2</identifier>
             </fieldInstance>
