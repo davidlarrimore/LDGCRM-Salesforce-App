@@ -232,68 +232,62 @@ the duplicate or update anything linking to it (Partner Accounts, Applications, 
 canonical row instead; (b) it's a genuinely new Account not yet in Salesforce, flag it as such; or (c)
 it's stale/no longer relevant, fine to leave unmigrated.
 
-### Follow-up (2026-08-13): the same duplicate/unmatched Accounts also block Opportunities, not just Partner Accounts and Applications — full impact below
+### Follow-up (2026-08-13): the 14 highest-impact Account rows — ✅ 13 of 14 RESOLVED 2026-08-14
 
-While tracing why 1,045 of 1,047 Application records failed to load, every failure that involved a
-missing Partner Account traced back to one of 15 Airtable Account rows that either duplicate an
-existing Salesforce Account under different wording, or have no Salesforce match at all. These aren't
-just blocking Partner Accounts — the **same** rows are also the direct parent of **87 Opportunity
-records** (checked against the current Airtable Opportunities export), **60 of which are still open**
-(`Identified`/`Prospecting`/`Qualified`/`Agreements`), not closed/stale. This is materially bigger
-than the original 13-row spot-check suggested, and it's sitting under active pipeline, not just
-historical records. Full impact per Account row (Partner Accounts and Applications counted against
-what's in gsa-peo/prepped today; Opportunities counted against the Airtable export, since that
-object hasn't been built/loaded yet):
+**Status: ✅ Effectively closed. 13 of these 14 rows are done — thank you.** This section used to be
+the main worklist on this document. It is kept because closed items are never deleted here, but
+**there is only one row left to act on.**
 
-| Airtable Account row (unresolved) | Status | Salesforce match | Partner Accounts blocked | Applications blocked | Opportunities blocked (open / closed) |
-| --- | --- | --- | --- | --- | --- |
-| `Department of the Interior` | Confirmed duplicate | `Department of Interior` | 1 | **203** | 10 (10 open / 0 closed) |
-| `General Service Administration` | Confirmed duplicate | `General Services Administration` | 2 | 65 | 20 (12 open / 8 closed) |
-| `Technology Transformation Services (TTS)` | Confirmed duplicate | `Technology Transformation Services` | 2 | 24 | 0 |
-| `National Institute of Standards and Technology` | Needs confirmation | `National Institute **for** Standards and Technology` | 1 | 17 | 8 (8 open / 0 closed) |
-| `Department of the Treasury` | Needs confirmation (see the USDT-SSP entry above) | `Department of Treasury` (no "the") | 1 | 8 | 17 (10 open / 7 closed) |
-| `Department of Agriculture` | Needs confirmation | `U.S. Department of Agriculture` | 2 | 6 | 14 (10 open / 4 closed) |
-| `Office of Inspector General` (the `HHS-OIG` Partner Account's parent) | Ambiguous — see below | none confidently | 1 | 3 | 0 |
-| `U.S. International Development Finance Corporation` | Needs confirmation | `International Development Finance Corporation` | 1 | 3 | 2 (2 open / 0 closed) |
-| `Army` | Confirmed duplicate | `Department of the Army` | 4 | 5 | 8 (4 open / 4 closed) |
-| `Navy` | Confirmed duplicate | `Department of the Navy` | 2 | 3 | 0 |
-| `Bureau of Consular Affairs` | Genuinely missing | none | 1 | 2 | 2 (0 open / 2 closed) |
-| `United States House of Representatives` | Confirmed duplicate | `U.S. House of Representatives` | 1 | 1 | 2 (1 open / 1 closed) |
-| `U.S. Office of Special Counsel` | Confirmed duplicate | `Special Counsel` | 1 | 1 | 1 (1 open / 0 closed) |
-| `Air Force` | Confirmed duplicate | `Department of the Air Force` | 1 | 1 | 3 (2 open / 1 closed) |
+Re-checked against the 2026-08-14 export: 12 of the rows have been merged away entirely, and
+`Office of Inspector General` now matches a Salesforce Account. The `Department of the Interior` fix
+alone was worth 203 Applications.
+
+| Airtable Account row | Was | **Now** |
+| --- | --- | --- |
+| `Department of the Interior` | Confirmed duplicate — blocked **203** Applications | ✅ merged |
+| `General Service Administration` | Confirmed duplicate — 65 Applications | ✅ merged |
+| `Technology Transformation Services (TTS)` | Confirmed duplicate — 24 Applications | ✅ merged |
+| `National Institute of Standards and Technology` | Needed confirmation — 17 Applications | ✅ merged |
+| `Department of the Treasury` | Needed confirmation — 17 Opportunities | ✅ merged ⚠️ *but see the name-collision item above — the merge left two rows sharing the target name* |
+| `Department of Agriculture` | Needed confirmation — 14 Opportunities | ✅ merged |
+| `Office of Inspector General` | Ambiguous, no confident match | ✅ now matches |
+| `U.S. International Development Finance Corporation` | Needed confirmation | ✅ merged |
+| `Army` | Confirmed duplicate — 4 Partner Accounts | ✅ merged |
+| `Navy` | Confirmed duplicate | ✅ merged |
+| `United States House of Representatives` | Confirmed duplicate | ✅ merged |
+| `U.S. Office of Special Counsel` | Confirmed duplicate | ✅ merged |
+| `Air Force` | Confirmed duplicate | ✅ merged |
+| **`Bureau of Consular Affairs`** | **Genuinely missing — no Salesforce match** | 🔴 **STILL OPEN — the only one left** |
+
+**The one remaining ask:** `Bureau of Consular Affairs` has no Salesforce Account and never did. It
+blocks 1 Partner Account, 2 Applications and 2 Opportunities (both already `Closed Won`, so the
+urgency is low). **Decide one of:** create the Account in Salesforce, point the Airtable row at an
+existing parent (e.g. Department of State), or confirm it is fine left unmigrated.
 
 All but two of these rows (`United States House of Representatives`, created 2024-01-23;
 `Office of Inspector General`, created 2023-08-30) were created on **2023-06-21** — the original
-Airtable base's bulk-import date. These are longstanding structural duplicates baked in from day one,
-not recent data-entry mistakes, so fixing them shouldn't disrupt anyone's active work.
+Airtable base's bulk-import date. They were longstanding structural duplicates baked in from day one,
+not recent data-entry mistakes, which is why fixing them did not disrupt anyone's active work.
 
-**What we need, in priority order by impact:**
+**What we asked for, and where it landed:**
 
-1. **The 8 confirmed duplicates above** — for each, merge the orphan row into its already-linked twin
+1. ✅ **The 8 confirmed duplicates — DONE.** All merged into their already-linked twin
    (`Army`→`Department of the Army`, `Navy`→`Department of the Navy`, `Air Force`→`Department of the
    Air Force`, `General Service Administration`→`General Services Administration`, `Technology
    Transformation Services (TTS)`→`Technology Transformation Services`, `United States House of
    Representatives`→`U.S. House of Representatives`, `U.S. Office of Special Counsel`→`Special
-   Counsel`, `Department of the Interior`→`Department of Interior`): relink every Partner
-   Account/Opportunity currently pointing at the orphan row to the twin instead, then delete the
-   orphan. **`Department of the Interior` alone is blocking 203 Application records** — by far the
-   single highest-impact fix available in this whole list.
-2. **Confirm whether these are the same entity, just worded differently** (a prefix/wording
-   difference, not yet verified as true duplicates the way the 8 above are): `National Institute of
-   Standards and Technology` vs. `National Institute for Standards and Technology`; `Department of
-   Agriculture` vs. `U.S. Department of Agriculture`; `U.S. International Development Finance
-   Corporation` vs. `International Development Finance Corporation`; `Department of the Treasury` vs.
-   `Department of Treasury`. If confirmed, same merge/relink/delete treatment as #1.
-3. **`Office of Inspector General`** (blocks the `HHS-OIG` Partner Account and 3 Applications) — not a
-   simple merge. Salesforce already has two similarly-named Accounts, `Office of Inspector General`
-   and `Office of Inspector General - HHS`, but both are already claimed by *other* Airtable rows —
-   neither is available as an unclaimed match for this one. Needs a human decision: is this genuinely
-   HHS's Office of Inspector General (in which case it likely needs renaming to disambiguate from
-   whichever other agency's OIG already claimed the generic name), a duplicate of one of the two
-   already-claimed rows, or a real separate Account?
-4. **`Bureau of Consular Affairs`** — genuinely no Salesforce match found. Both of its 2 linked
-   Opportunities are already `Closed Won`, so lower urgency than everything else on this list, but
-   still needs a decision: new Account, or safe to leave unmigrated.
+   Counsel`, `Department of the Interior`→`Department of Interior`).
+2. ✅ **The 4 "same entity, worded differently" rows — DONE.** `National Institute of Standards and
+   Technology`, `Department of Agriculture`, `U.S. International Development Finance Corporation` and
+   `Department of the Treasury` are all merged. ⚠️ **One follow-on:** the Treasury merge left **two**
+   Airtable rows named `Department of Treasury` — see the name-collision item above. It is a small
+   fix worth 5 Opportunities.
+3. ✅ **`Office of Inspector General` — RESOLVED.** It now matches a Salesforce Account, so the
+   HHS-OIG Partner Account and its Applications are no longer blocked by it.
+4. 🔴 **`Bureau of Consular Affairs` — STILL OPEN, and now the only one left.** Genuinely no
+   Salesforce match. Both of its 2 linked Opportunities are already `Closed Won`, so this is the
+   lowest-urgency item on the list, but it still needs a decision: new Account, or safe to leave
+   unmigrated.
 
 **Not something the migration pipeline is working around.** Per an explicit decision (2026-08-13): the
 migration will not silently guess at or auto-merge Account matches, no matter how confident the guess.
@@ -1094,6 +1088,7 @@ to the full item above, which is kept in place rather than deleted.
 | 2026-08-13 | [Accounts: unmatched rows](#accounts-rows-that-dont-match-an-existing-salesforce-account--172--155) *(partial)* | Ongoing duplicate/merge work in Airtable | **Airtable data owners** | 172 → 155 unmatched, but the *downstream* effect is far larger: Applications blocked 359 → **22**, Opportunities 142 → **62**, Contacts with no agency 390 → **54**, Partner Accounts ~20 → **2**. |
 | 2026-08-13 | Migration pipeline (engineering, not an Airtable fix) | Contact ownership now inherits the Account owner; Contact sourcing folds in the Opportunity Contacts table; Partner Portal Team + Admin sourced from the new Issuer Strings table; Account hierarchy bootstrap | Engineering | **8,734 records migrated, up from 6,819 (+28%)**. Contact ownership went from 100% fallback to **1,870 real owners / 0 fallback**. |
 | **2026-08-14** | [Accounts: the 12 named duplicate rows](#accounts-rows-that-dont-match-an-existing-salesforce-account--172--155--154-but-see-below) *(the duplicate half of the item)* | All 8 "confirmed duplicates" **and** all 4 "needs confirmation" rows merged into their canonical twin; each twin verified present exactly once | **Airtable data owners** | The longest-standing item on this list. Applications blocked 22 → **13**, Application–Contact links 128 → **77**, Contacts with no agency 54 → **49**, Notes 21 → **7**. ⚠️ Two follow-ons opened: the `Department of Treasury` name collision, and 8 ambiguous generic office names. |
+| **2026-08-14** | [The 14 highest-impact Account rows](#follow-up-2026-08-13-the-14-highest-impact-account-rows--13-of-14-resolved-2026-08-14) | 13 of the 14 rows closed — 12 merged away and `Office of Inspector General` now matches | **Airtable data owners** | This was the main worklist on this document. `Department of the Interior` alone was worth **203 Applications**. **Only `Bureau of Consular Affairs` remains**, and both its Opportunities are already `Closed Won`. |
 | **2026-08-14** | [Partner Accounts: 5 rows with no working Account link](#partner-accounts-5-rows-have-no-working-link-to-an-account--resolved-2026-08-14) | All 4 unlinked rows linked; `USDT-SSP`'s double link resolved to one Account | **Airtable data owners** | 5 → **0**. Partner Accounts migrated 92 → **97**. |
 | **2026-08-14** | [Contacts: "Technical Emails" subscription type](#contacts-technical-emails-isnt-a-valid-subscription-type--resolved-2026-08-14) | Value removed from the Subscription Type field | **Airtable data owners** | 711 → **0**. Nothing dropped on load any more. |
 | **2026-08-14** | [Contacts: the same person entered multiple times](#contacts-the-same-person-is-entered-multiple-times--61--12) *(partial)* | Duplicate contact rows consolidated | **Airtable data owners** | Emails on 2+ rows **61 → 12** (-80%). Nothing was blocked either way, but the table now reflects the real number of people far more closely. |
