@@ -15,21 +15,48 @@ correlate Salesforce records back to their Airtable source.
 ## Environments (read this before running anything)
 
 **This is no longer a single-org setup.** Every script takes `-Environment Dev|QA|Full|Prod`
-(default `Dev`) and resolves the alias from the registry in `scripts/common/Common.Orgs.ps1`, which
+(default `Dev`) and resolves the alias from the registry in `scripts/powershell-scripts/Common.Orgs.ps1`, which
 `Common.ps1` dot-sources so every script gets it. **Never hard-code an org alias in a script again.**
 
-| `-Environment` | Alias | Sandbox | Instance URL | Purpose |
-| --- | --- | --- | --- | --- |
-| `Dev` (default) | `peodv8dvn` | PEOdV8DVn | `https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com` | Development and pipeline testing. Everything documented below was done here. |
-| `QA` | `peodv15dvn` | PEOdV15DVn | `https://gsa-peo--peodv15dvn.sandbox.my.salesforce.com` | Full end-to-end migration rehearsal |
-| `Full` | *not provisioned yet* | TBD | TBD | Operations team integration testing: scripts + change sets, immediately before production |
-| `Prod` | `gsa-peo` | — | *(not authorized here)* | Live GSA PEO org |
+The registry now carries **`InstanceUrl` and `LightningUrl` for every environment** (added
+2026-08-14) — the browser URL is printed in the pre-run banner so an operator can confirm by eye
+which org they are about to touch. It also carries **`AllowsAccountRebuild`**, see below.
+
+| `-Environment` | Alias | Sandbox | Instance URL | Browser URL | Accounts | Purpose |
+| --- | --- | --- | --- | --- | --- | --- |
+| `Dev` (default) | `peodv8dvn` | PEOdV8DVn | `https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com` | `https://gsa-peo--peodv8dvn.sandbox.lightning.force.com` | rebuilt | Development and pipeline testing. Everything documented below was done here. |
+| `QA` | `peodv15dvn` | PEOdV15DVn | `https://gsa-peo--peodv15dvn.sandbox.my.salesforce.com` | `https://gsa-peo--peodv15dvn.sandbox.lightning.force.com` | rebuilt | Full end-to-end migration rehearsal |
+| `Full` | *not provisioned yet* | TBD | TBD | TBD | **real** | Operations team integration testing: scripts + change sets, immediately before production |
+| `Prod` | `gsa-peo` | — | `https://gsa-peo.my.salesforce.com` | `https://gsa-peo.lightning.force.com` | **real** | Live GSA PEO org *(not authorized here)* |
 
 **An alias is the org's own sandbox name**, so it can be checked against the instance URL and cannot
 silently drift. `Assert-LdgcrmOrgTarget` runs at the start of every script and refuses to continue
 if the alias resolves to an org that disagrees with the registry — including sandbox-vs-production,
 which it reads from `Organization.IsSandbox` (`sf org display` doesn't report it, and `sf org list`
-reads a local cache, which is the thing being verified).
+reads a local cache, which is the thing being verified). **Production is now identity-checked too**
+(2026-08-14): it has no sandbox name, so until the registry recorded its URL it was the one
+environment verified only as "is not a sandbox". `Assert-LdgcrmOrgTarget` now compares the **My
+Domain label** — the first host segment, stable across `my.salesforce.com` / `lightning.force.com` /
+`file.force.com` — so an org on a different domain stops the run.
+
+### ⚠️ Accounts are rebuilt in Dev/QA ONLY — never in Full or Prod
+
+Decided 2026-08-14. `Test-LdgcrmAccountRebuildAllowed` (`Common.Orgs.ps1`) is the **single
+definition**, and three scripts consume it rather than each testing `-Environment` themselves:
+`Invoke-SandboxFactoryReset.ps1` filters `Account` out of its delete list (loudly — a silent
+removal would let an operator conclude the Accounts *were* reset), `Invoke-AccountBootstrap.ps1`
+refuses to start, and `Invoke-FullMigrationLoad.ps1` rejects `-BootstrapAccounts`.
+
+The reason is the same for both blocked environments: **a Full sandbox is a copy of production**, so
+its Accounts *are* the real records this migration reconciles onto. Deleting them would destroy the
+thing being tested and replace it with a stale export — a rehearsal passing against data that no
+longer resembles production is worse than no rehearsal. Every *other* object still resets normally
+in a Full sandbox; they carry `LDGCRM_External_ID__c` because this migration created them.
+
+`Invoke-AccountBootstrap.ps1`'s `-Environment` ValidateSet is now **`Dev|QA`** — Full and Prod are
+rejected at parameter-bind time, the same structural block the factory reset uses against
+production. Its `-ProductionConfirmation` parameter was removed: a flag whose only purpose is to
+approve something the script can no longer do reads as though a production path exists.
 
 **⚠️ `gsa-peo` used to mean the Dev sandbox and now means PRODUCTION** (changed 2026-08-13 — it was
 always the *production* org's name, while pointing at Dev). Any historical note, transcript, or
@@ -80,20 +107,48 @@ commands). This file focuses on conventions and architecture for working in the 
 
 ## Repository layout
 
+- `scripts/` — **THE OPERATIONS BUNDLE.** PowerShell automation, organized by purpose (`cleanup/`,
+  `powershell-scripts/`, `common/`), plus `docs/`, `data/`, `logs/`, `.env` and its own `.gitignore`.
+  Self-contained — see the next section. This is what ships. See "Scripts" below.
 - `sfdx/` — the Salesforce DX project (`sf` CLI). `force-app/main/default/` holds retrieved metadata,
   synced from an authoritative Salesforce Outbound Change Set (`LDGCRM_Sprint_1_12`) rather than
   hand-picked components. `manifest/package.xml` mirrors that scope for repeat syncs via
   `sf project retrieve start -x manifest/package.xml`.
-- `scripts/` — PowerShell automation, organized by purpose (`metadata/`, `cleanup/`, `data-migration/`,
-  `common/`). See "Scripts" below.
-- `logs/` — **gitignored** (except `.gitkeep`/`README.md`). Run output: PowerShell transcripts and CSV
-  exports (data dictionaries, cleanup exports/summaries), mirroring the `scripts/` categories.
-- `data/` — **gitignored** (except `.gitkeep`/`README.md`). `airtable-exports/` and `mappings/` are
-  placeholders for future Airtable source extracts and Data Loader field-mapping files.
+- `tools/` — **engineering-only**, added 2026-08-14. Scripts that read `sfdx/` or `docs/` and
+  therefore cannot live in the bundle: `metadata/` (Sync-Metadata, Get-LDGCRMDataDictionary,
+  Find-UnexposedLDGCRMFields), `Export-ReportPdf.ps1`, the superseded `Build-ProdAccountSeed.ps1`,
+  and `Export-OpsBundle.ps1`. They dot-source `tools/Common.Tools.ps1` (which defines `Get-RepoRoot`)
+  *and* the bundle's `Common.ps1` for logging/confirmation helpers.
+- `dist/` — **gitignored**. Where `Export-OpsBundle.ps1` writes the hand-off zip.
+- `scripts/logs/`, `scripts/data/` — **gitignored** (except `.gitkeep`/`README.md`), by
+  `scripts/.gitignore`, not the root one.
 
-`logs/` and `data/` are gitignored by default because their contents can carry PII from Login.gov
-applicants sourced via Airtable. Don't commit anything under those trees beyond `.gitkeep`/`README.md`
-without a specific reason.
+## ⚠️ `scripts/` is a SELF-CONTAINED BUNDLE — never resolve a path above its root
+
+Changed 2026-08-14. The GSA Salesforce Operations team runs this pipeline from **their own GitHub
+repo**, where it lands as a plain `/scripts` folder. So `data/`, `logs/`, `.env`, `.env.example` and
+the operator docs all moved *inside* `scripts/`, and everything resolves off **`Get-LdgcrmRoot`**
+(`scripts/powershell-scripts/Common.ps1`), which returns the bundle folder itself.
+
+**`Get-RepoRoot` was DELETED from the bundle**, not just unused. Left in place it would have kept
+resolving happily after the folder moved and quietly returned *Operations'* repo root — paths would
+still join, files would still be written, just into someone else's tree. A missing function fails on
+first call instead. It now lives only in `tools/Common.Tools.ps1`.
+
+The practical rule when adding a script: **if it needs `sfdx/` or `docs/`, it belongs in `tools/`.
+If it reads Airtable or writes to Salesforce, it belongs in the bundle and must use
+`Get-LdgcrmRoot`.** There is a structural test for this — nothing in the bundle may call
+`Get-RepoRoot`, and no dot-source may use `..\..`.
+
+**`scripts/.gitignore` is the authority for `data/`, `logs/` and `.env`** — deliberately not
+duplicated in the root `.gitignore`. Git applies a `.gitignore` to its own directory and below in
+*whatever repository contains it*, so the PII protection travels with the folder instead of being
+left behind. Those trees can carry PII from Login.gov applicants sourced via Airtable; if you add a
+new output location to the pipeline, add it to `scripts/.gitignore` **in the same change**.
+
+`tools/Export-OpsBundle.ps1` builds the zip: it excludes `.env`, `data/` and `logs/` contents (but
+ships their folders, `.gitkeep`s and READMEs), then **reads the finished archive back** and deletes
+it if anything unexpected is inside — the build and the check can only agree by both being right.
 
 ## Data model
 
@@ -153,12 +208,12 @@ grouped into matching **PermissionSetGroups** and assigned via the **Group**s `L
 `LDGCRM_Viewers`.
 
 Prefer reading `force-app/main/default/objects/` for field-level detail; use
-`scripts/metadata/Get-LDGCRMDataDictionary.ps1` when you want it flattened to CSV instead of XML.
+`tools/metadata/Get-LDGCRMDataDictionary.ps1` when you want it flattened to CSV instead of XML.
 
 ## Airtable API
 
-`scripts/data-migration/Get-AirtableExport.ps1` pulls current Airtable data straight from the REST API
-into `data/airtable-exports/<Table>.json` (one file per table, overwritten each run — see "Scripts"
+`scripts/powershell-scripts/Get-AirtableExport.ps1` pulls current Airtable data straight from the REST API
+into `scripts/data/airtable-exports/<Table>.json` (one file per table, overwritten each run — see "Scripts"
 below). This replaced an earlier manual CSV/XLSX export-zip workflow; don't recreate that structure —
 the JSON pull is the only source of truth for Airtable data in this repo now.
 
@@ -181,7 +236,7 @@ must be explicitly granted access to this base (PATs are scoped per-base/workspa
 Send it as `Authorization: Bearer <token>`. Locally it lives in the gitignored repo-root `.env` as
 `AIRTABLE_API_KEY` (named after the deprecated concept, but the value is a PAT) alongside
 `AIRTABLE_BASE_ID` (the `app...` string from the base's API docs page or its browser URL) — copy
-`.env.example` to start. `scripts/common/Common.ps1`'s `Import-DotEnv` loads `.env` into the process
+`.env.example` to start. `scripts/powershell-scripts/Common.ps1`'s `Import-DotEnv` loads `.env` into the process
 environment; nothing else in this repo reads it.
 
 **REST API shape:**
@@ -344,7 +399,7 @@ all** (34 people administering 68 Applications the Contacts table never links th
 Strings *creates associations*, it doesn't just set a flag — reading it as flag-only would lose the
 association entirely. Per the project owner: a Partner Portal Admin should *be* an Application Contact
 with the box checked. Provenance per flag lands in
-`logs/data-migration/ApplicationContact-admin-source-*.csv`. **The Applications table's own
+`scripts/logs/data-migration/ApplicationContact-admin-source-*.csv`. **The Applications table's own
 `Partner Portal Admin` column stays excluded** — it's a roll-up not positionally aligned with
 `Contacts Record ID` (lengths differ on 709 of 875 rows), so it would assign the flag at random.
 
@@ -429,7 +484,7 @@ Applications report 100% launch-complete purely because that field is empty.**
 
 **Current sandbox state (rebuilt 2026-08-13 — see `docs/engineering/ARCHITECTURE.md`'s "Production Account seed"
 section for the full rebuild):** the Account/Partner Account chain was deliberately hard-deleted
-(scoped, via `scripts/cleanup/Invoke-SandboxFactoryReset.ps1`) and rebuilt from a real production Account
+(scoped, via `scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1`) and rebuilt from a real production Account
 export to make reconciliation testing meaningful, rather than testing against arbitrary sandbox seed
 data. **Treat every count below as a moving target, not a fixed baseline** — it's shifted several
 times in a single day already. Current: 1,346 Accounts (1,342 inserted from the production export +
@@ -448,12 +503,12 @@ checked so far are duplicate rows *within Airtable itself* (e.g. `Army`/`Navy`/`
 already-linked `Department of the Army`/`Department of the Navy`/`Department of the Air Force`
 entries), not genuinely missing Accounts — see `docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md` for the
 full list and a human decision needed for each. `Build-AccountReconciliation.ps1`
-(`scripts/data-migration/`) automates this reconciliation — external ID, Market Segment, and Type
+(`scripts/powershell-scripts/`) automates this reconciliation — external ID, Market Segment, and Type
 backfill — read-only against Salesforce, writing an update CSV plus human-review CSVs for anything
 it can't confidently match; see `docs/engineering/ARCHITECTURE.md` for the full pipeline.
 
 **Load order** (parents before children/junctions — the reverse of the delete order in
-`scripts/cleanup/Invoke-SandboxFactoryReset.ps1`): **Market Segment (loaded by the pipeline as of
+`scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1`): **Market Segment (loaded by the pipeline as of
 2026-08-14 — `Build-MarketSegmentLoad.ps1`, step 1 of 12)** → Account → `LDGCRM_Partner_Account__c` →
 Contact → Opportunity → `LDGCRM_application__c` → `LDGCRM_Opportunity_Impediment__c` (needs
 `LDGCRM_Impediment__c` and Opportunity first) → `LDGCRM_Application_Contact__c` →
@@ -505,13 +560,32 @@ wrong thing:
   over an array whose elements lack the property yields `$null` per element, so `.Count` looks
   right and `[0]` is null. Inspect the actual shape (`$j[0].PSObject.Properties.Name`) before
   trusting a count — see [[powershell-array-return-gotchas]] and the `@()` convention.
+- **`return ,$Array` and a caller's `@()` are mutually exclusive — pick one.** The leading comma
+  exists to stop PowerShell unrolling a returned collection, and it is *required* when the callee
+  returns a `List<T>` the caller assigns bare (see `Read-ProdAccountExportGrid`). But combine it with
+  the repo's usual `@(...)` at the call site and you get a **one-element array containing the array**:
+  `.Count` becomes 1 and the real contents hide one level down. Caught by a test on
+  `Select-LdgcrmResettableObjects`, where a 4-item list silently became `Count=1`. Rule of thumb:
+  **plain array + caller wraps in `@()` → return it bare; `List<T>` the caller uses as an object →
+  return it with the comma.** State which contract a function has in its help block.
 - **A here-string (`@'…'@`) does not reliably bind as a single argument to a native command.**
   `git commit -m @'…'@` split on the apostrophe in "Airtable's" and turned the message body into
   pathspecs. For multi-line commit messages write the message to a file and use `git commit -F`.
+- **`Get-Content -Raw` WITHOUT `-Encoding` silently corrupts UTF-8 files that have no BOM.** PS 5.1
+  falls back to the system ANSI codepage (Windows-1252 here), so every em dash, arrow and ⚠ is
+  mis-decoded; writing the result back as UTF-8 bakes the damage in. This mangled 14 files in one
+  bulk find-and-replace on 2026-08-14 — and *only* the BOM-less ones, because `Get-Content` honours
+  a BOM when there is one, which is why the corruption looked random. **Any script that reads a file
+  and writes it back must pass `-Encoding UTF8` (or use `[System.IO.File]::ReadAllText` with an
+  explicit encoding).** Note this cuts both ways: `powershell.exe` also decodes a BOM-less `.ps1` as
+  ANSI, so a repair script containing the very characters it hunts for will not parse — write that
+  kind of tool in pure ASCII using regex `\u` escapes.
 
-Every script dot-sources `scripts/common/Common.ps1` and uses its helpers rather than writing output
+Every script dot-sources `scripts/powershell-scripts/Common.ps1` and uses its helpers rather than writing output
 next to the script or inventing new log locations:
-- `Get-RepoRoot` — resolves the repo root from the script's own location.
+- **`Get-LdgcrmRoot`** — the **bundle** root (`scripts/`), resolved from the script's own location.
+  Replaced `Get-RepoRoot` on 2026-08-14; see "`scripts/` is a SELF-CONTAINED BUNDLE" above. Anything
+  in `tools/` uses `Get-RepoRoot` from `tools/Common.Tools.ps1` instead.
 - `Get-LogDirectory -Category <metadata|cleanup|data-migration>` — ensures/returns the matching
   `logs/<category>/` folder.
 - `Start-ScriptLog -Category ... -ScriptName ...` — opens a transcript in that folder and returns a
@@ -519,16 +593,24 @@ next to the script or inventing new log locations:
   a `finally` block so the transcript closes even on early `exit`.
 
 Current scripts:
-- `scripts/metadata/Get-LDGCRMDataDictionary.ps1` — exports a full object/field data dictionary CSV
+- `tools/metadata/Get-LDGCRMDataDictionary.ps1` — exports a full object/field data dictionary CSV
   via `sf sobject describe`; discovers custom objects by Salesforce label under the `LDGCRM_` prefix.
-- `scripts/metadata/Sync-Metadata.ps1` — before retrieving, scans the sandbox for components whose
+- `tools/metadata/Sync-Metadata.ps1` — before retrieving, scans the sandbox for components whose
   name matches `LDGCRM_`/`LGDCRM_` but aren't yet in `sfdx/manifest/package.xml`, adds them
   automatically, and reports anything new that *doesn't* match the naming convention for manual
   review instead of guessing (this sandbox hosts unrelated apps like FCIC that share the same
-  metadata types — see `scripts/metadata/ldgcrm-manifest-ignore.json` for confirmed non-LDGCRM
+  metadata types — see `tools/metadata/ldgcrm-manifest-ignore.json` for confirmed non-LDGCRM
   components that should stop resurfacing in that report). Then runs `sf project retrieve start`
   against the manifest. `-WhatIf` reports only; `-SkipDiscovery` retrieves the manifest as-is.
-- `scripts/cleanup/Invoke-SandboxFactoryReset.ps1` — **the Sandbox Factory Reset**: returns a
+- `tools/Export-OpsBundle.ps1` — builds the hand-off zip from `scripts/`. Run `-WhatIf` first.
+- `tools/Test-BundleStructure.ps1` — **run this after touching anything under `scripts/`.** Touches
+  no org, so it is always safe. It checks the things that *cannot* be noticed by running the pipeline
+  normally here, because everything the bundle must not depend on is sitting one level up and
+  resolves fine: no bundle script calls `Get-RepoRoot`, no dot-source uses `..\..`, every data/log
+  path lands inside the bundle, `git check-ignore` actually ignores `.env`/`data/`/`logs/` (asked of
+  git, not read off the file — later negations can re-admit what an earlier rule excluded), the
+  registry is coherent, and the Dev/QA-only blocks still reject `Full`/`Prod` at bind time.
+- `scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1` — **the Sandbox Factory Reset**: returns a
   pre-production sandbox to a known starting state so a migration rehearsal always begins from the
   same baseline. **Interactive and destructive**: hard-deletes records by object (only rows where
   `LDGCRM_External_ID__c` is populated), after a typed `HARD DELETE` confirmation. Exports the
@@ -541,34 +623,58 @@ Current scripts:
   on a full reset, so its absence was invisible until a scoped run) and migrated **Notes**, which
   can't be scoped by external ID and are instead found by walking `ContentDocumentLink` from tagged
   parents *before* those parents are deleted — otherwise the notes survive orphaned in Files.
-  When the deletes finish it **offers to run
-  `Invoke-AccountBootstrap.ps1`** against the same environment, if `data/peo-prod-accounts-*.xls`
-  exists — because deleting is only half a rebuild (see the next bullet). `-BootstrapAccounts` /
-  `-SkipBootstrap` answer that prompt non-interactively.
-- `scripts/data-migration/Invoke-AccountBootstrap.ps1` — rebuilds an org's Account **names and
-  parent hierarchy** from the production export. Needed because the pipeline *reconciles onto*
-  existing Accounts rather than creating them, so a cleaned or freshly refreshed org gives the
-  downstream loads nothing to attach to. **Multi-pass by necessity**: `Account.ParentId` is a
-  self-lookup and the export names parents by name, so each layer can only be resolved after the one
-  above it exists. Idempotent; only ever fills in a *blank* `ParentId`; refuses to guess an ambiguous
-  parent (14 Account names are borne by 2+ distinct Accounts) and reports those instead. Run
-  `-PlanOnly` first. Supersedes `Build-ProdAccountSeed.ps1`, which seeded names only — and whose
-  name-dedupe is why 31 rows in the Dev sandbox can no longer be mapped to a hierarchy.
-- `scripts/data-migration/Get-AirtableExport.ps1` — pulls current data directly from the Airtable REST
-  API (one JSON file per table, paginated via `offset`) into `data/airtable-exports/<Table>.json`,
+  **In Dev/QA only**, when the deletes finish it **offers to run `Invoke-AccountBootstrap.ps1`**
+  against the same environment, if an export exists in `data/prod-accounts/` — because deleting is
+  only half a rebuild (see the next bullet). `-BootstrapAccounts` / `-SkipBootstrap` answer that
+  prompt non-interactively. In a Full sandbox `Account` is filtered out of the delete list entirely
+  and the bootstrap is not offered — see the Environments section.
+- `scripts/powershell-scripts/Invoke-AccountBootstrap.ps1` — **Dev/QA only** (ValidateSet, enforced at
+  bind time) — rebuilds an org's Account **names and parent hierarchy** from the production export.
+  Needed because the pipeline *reconciles onto* existing Accounts rather than creating them, so a
+  cleaned or freshly refreshed sandbox gives the downstream loads nothing to attach to. **Multi-pass
+  by necessity**: `Account.ParentId` is a self-lookup and the export names parents by name, so each
+  layer can only be resolved after the one above it exists. Idempotent; only ever fills in a *blank*
+  `ParentId`; refuses to guess an ambiguous parent (14 Account names are borne by 2+ distinct
+  Accounts) and reports those instead. Run `-PlanOnly` first. Supersedes
+  `tools/Build-ProdAccountSeed.ps1`, which seeded names only — and whose name-dedupe is why 31 rows
+  in the Dev sandbox can no longer be mapped to a hierarchy.
+
+  **The source export lives in `scripts/data/prod-accounts/` and its FORMAT IS SNIFFED, NOT ASSUMED**
+  (changed 2026-08-14). Its own folder, because the file no longer has a fixed name *or* a fixed
+  format: whoever re-exports the PEO Accounts report next may save it as `.xlsx` or `.csv`, and the
+  old "must be called `peo-prod-accounts-<date>.xls`" convention failed *silently* — the bootstrap
+  offer simply never appeared. Now the newest file in that folder wins (all candidates are printed),
+  and `Get-ProdAccountExportFormat` reads the first bytes to decide:
+  - **The `.xls` extension is already lying.** The file shipped as `peo-prod-accounts-2026-07-16.xls`
+    is an HTML `<table>` — what Salesforce's report "Export → Formatted Report" produces. Dispatching
+    on the extension would hand it to an Excel parser and fail on a file that parses fine.
+  - **A real `.xlsx` is read without Excel and without any module** — it is a ZIP of XML, and
+    `System.IO.Compression` ships with the .NET Framework PS 5.1 already runs on. Two traps handled:
+    the first sheet is resolved through `xl/_rels/workbook.xml.rels` (Excel does *not* renumber
+    `sheet1.xml` when tabs are reordered), and each cell is placed by decoding the **column letter**
+    in its `r` attribute — Excel omits empty cells entirely, so positional reading would silently
+    shift every column after a blank and *reparent Accounts without erroring*.
+  - **A genuine legacy binary `.xls` (OLE2) is refused with an instruction** to re-save as
+    `.xlsx`/`.csv`. Excel COM would work but would make Excel a prerequisite on an operator's
+    machine, which this pipeline does not get to assume.
+  All three paths feed one `Read-ProdAccountExportGrid` and the same column mapping, so only the
+  container varies. Ragged rows are read via `Get-GridCell` (indexing past a `string[]` throws in
+  PS 5.1) and the grid readers `return ,$List` to survive PowerShell's output unrolling.
+- `scripts/powershell-scripts/Get-AirtableExport.ps1` — pulls current data directly from the Airtable REST
+  API (one JSON file per table, paginated via `offset`) into `scripts/data/airtable-exports/<Table>.json`,
   **overwriting** the previous pull each run (a timestamped transcript + `pull-summary-<timestamp>.csv`
-  still land in `logs/data-migration/` via `Common.ps1`, so run history isn't lost, just the data
+  still land in `scripts/logs/data-migration/` via `Common.ps1`, so run history isn't lost, just the data
   itself isn't duplicated per run). See "Airtable API" above for auth/connection details. `-Tables`
   limits the pull to a subset; defaults to all ten tables in the "Airtable table → Salesforce object"
   mapping above.
-- `scripts/data-migration/Build-*.ps1` — one transform per object, each reading the Airtable JSON
+- `scripts/powershell-scripts/Build-*.ps1` — one transform per object, each reading the Airtable JSON
   (and, where it has lookups, querying gsa-peo read-only) and writing a load-ready CSV to
-  `data/salesforce-loads/` plus review CSVs to `logs/data-migration/`. Built so far:
+  `scripts/data/salesforce-loads/` plus review CSVs to `scripts/logs/data-migration/`. Built so far:
   `Build-AccountReconciliation.ps1`, `Build-PartnerAccountLoad.ps1`, `Build-ImpedimentLoad.ps1`,
   `Build-OpportunityLoad.ps1`, `Build-ApplicationLoad.ps1`, plus the one-off
   `Build-ProdAccountSeed.ps1`. **They never write to Salesforce** — that's `Invoke-SalesforceLoad.ps1`,
   a separate explicit step behind a typed `LOAD` confirmation.
-- `scripts/data-migration/Invoke-SalesforceLoad.ps1` — wraps `sf data upsert bulk` /
+- `scripts/powershell-scripts/Invoke-SalesforceLoad.ps1` — wraps `sf data upsert bulk` /
   `sf data update bulk` / `sf data import bulk` (`-Operation Upsert|Update|Insert`) against any
   object/CSV, with preflight counts and a typed confirmation gate.
 - **Built since:** `Build-ContactLoad.ps1`, both junctions (`Build-OpportunityImpedimentLoad.ps1`,
@@ -618,7 +724,7 @@ carry the number.
 
 Run from inside `sfdx/`:
 - `sf project retrieve start -x manifest/package.xml --target-org peodv8dvn` — pull metadata (or use
-  `scripts/metadata/Sync-Metadata.ps1` from the repo root, which wraps this with logging).
+  `tools/metadata/Sync-Metadata.ps1` from the repo root, which wraps this with logging).
 - `npm run lint` — ESLint over `aura`/`lwc` JS.
 - `npm test` / `npm run test:unit` — `sfdx-lwc-jest`; `test:unit:watch` and `test:unit:coverage` variants
   exist. To run a single test file: `npx sfdx-lwc-jest path/to/file.test.js`.
@@ -702,23 +808,34 @@ Run from inside `sfdx/`:
 
 ## Documentation layout
 
-`docs/` is split by **audience**, because they barely overlap. Put new documentation in the right
-one rather than growing this file or `docs/README.md`:
+Documentation is split by **audience**, because they barely overlap. Put new documentation in the
+right place rather than growing this file or `docs/README.md`:
 
 | Path | Audience | Contents |
 | --- | --- | --- |
 | `docs/PRODUCTION-READINESS.md` | **The project owner and whoever is building it, together** | **The north star** — seven gates between here and the production load, with an owner each |
-| `docs/operations/` | People **running** a migration, assuming no prior knowledge | `SETUP.md`, `RUNNING-A-LOAD.md`, `TROUBLESHOOTING.md`, `ROLLBACK.md`, `RELOAD-QA-CHECKLIST.md` |
+| **`scripts/README.md`** | People **running** a migration — the bundle's front door | Routes to the runbooks below; environments, layout, the two traps |
+| **`scripts/docs/`** | People **running** a migration, assuming no prior knowledge | `SETUP.md`, `RUNNING-A-LOAD.md`, `TROUBLESHOOTING.md`, `ROLLBACK.md`, `RELOAD-QA-CHECKLIST.md` |
 | `docs/engineering/` | People **changing** the pipeline | `ARCHITECTURE.md` (was `docs/README.md`), `TRANSFORMATION-RULES.md`, `BACKLOG.md`, `SALESFORCE-CHANGE-REQUESTS.md` |
 | `docs/data-quality/` | The **Airtable data owners** — not developers | `AIRTABLE-DATA-QUALITY-REQUESTS.md` |
 | `docs/*.html` | **Stakeholders** | The current dated status report. Never edit an old one to refresh it — generate a new dated one |
-| `logs/README.md` | Anyone reading run output | What each kind of run leaves behind |
+| `scripts/logs/README.md` | Anyone reading run output | What each kind of run leaves behind |
+
+**The operator docs moved from `scripts/docs/` into `scripts/docs/` on 2026-08-14**, because they
+have to travel with the code they describe — Operations gets the bundle, not this repository. Only
+the *engineering* audiences are left under `docs/`.
+
+That split has one consequence to respect: **a runtime message an operator will see must point at
+`docs/<file>.md` inside the bundle, never at `docs/engineering/` or `docs/data-quality/`**, which
+will not exist for them. Comments in script headers may still reference the engineering docs — those
+are read by people changing the pipeline, who have this repo. The five operator-facing pointers were
+re-aimed at `docs/SETUP.md` / `docs/TROUBLESHOOTING.md` in the same change.
 
 `docs/README.md` is an **index only** — it routes by audience and holds no content of its own.
 
 **Only the CURRENT stakeholder report is kept, and only its HTML** (changed 2026-08-13). The PDF is
-generated by `Export-ReportPdf.ps1` and is **gitignored** (`docs/*.pdf`) — it is build output whose
-source is already tracked, and it is not in a fresh clone, so render it before sending. Superseded
+generated by `tools/Export-ReportPdf.ps1` and is **gitignored** (`docs/*.pdf`) — it is build output
+whose source is already tracked, and it is not in a fresh clone, so render it before sending. Superseded
 reports are removed rather than retained: their numbers are wrong within hours, and a stale report in
 the repo is likelier to be re-sent by mistake than to be useful. Status over time belongs in
 `PRODUCTION-READINESS.md`, which is maintained rather than snapshotted.
@@ -732,7 +849,7 @@ the repo is likelier to be re-sent by mistake than to be useful. Status over tim
   **who fixed it**, effect). Resolved items are never removed: the Airtable data owners read this doc
   and have no other way to see their work landed, and deleting a closed item invites someone to
   re-raise it. 🟡 is a real state — say exactly which part is done and what remains.
-- `docs/operations/RELOAD-QA-CHECKLIST.md` — update the matching expectation **in the same change**.
+- `scripts/docs/RELOAD-QA-CHECKLIST.md` — update the matching expectation **in the same change**.
   A resolved item usually invalidates a row count, an "expect N skipped", a known-empty field, or
   makes an optional step mandatory. A checklist saying "expect 142 blocked" must not outlive the fix
   that unblocked them.
@@ -743,5 +860,5 @@ Project-specific skills live in `.claude/skills/` and load automatically when re
 - `sfdx-metadata-sync` — retrieving/deploying metadata, extending `sfdx/manifest/package.xml`.
 - `sfdx-sandbox-ops` — safety checklist for any destructive or bulk operation against a sandbox
   (confirm org, preflight counts, export-before-write, never bypass the typed confirmation gate).
-- `sfdx-data-migration` — conventions for the `scripts/data-migration/` scripts: where source and
+- `sfdx-data-migration` — conventions for the `scripts/powershell-scripts/` scripts: where source and
   mapping files live, upsert-on-external-ID, load ordering, dry-run-first.

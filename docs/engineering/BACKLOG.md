@@ -352,7 +352,7 @@ stops being a small final chunk. Settle item 2's spike before sizing this one.
 
 ## 4a. Rollback — BUILT 2026-08-13
 
-**Status: built** — `scripts/data-migration/Invoke-MigrationRollback.ps1`. The design below is what
+**Status: built** — `scripts/powershell-scripts/Invoke-MigrationRollback.ps1`. The design below is what
 it implements; read it before running the script, particularly "What it will never be able to do".
 
 **One gap had to close first, and it was invisible until someone tried to use the restore point.**
@@ -384,7 +384,7 @@ But the pipeline also **updates records it does not own**:
 Deleting a migrated record does not restore an updated one. Once those fields are overwritten the
 previous values are gone unless something wrote them down first — and until 2026-08-13 nothing did.
 `Invoke-FullMigrationLoad.ps1` now captures a **pre-image of every Account** plus baseline counts into
-`logs/data-migration/Invoke-FullMigrationLoad-<ts>/` before it writes anything. That file is the only thing that
+`scripts/logs/data-migration/Invoke-FullMigrationLoad-<ts>/` before it writes anything. That file is the only thing that
 makes an Account rollback possible at all.
 
 ### Why the factory reset is not the answer for production
@@ -418,11 +418,11 @@ think. `-IgnoreDrift` overrides it, deliberately awkwardly.
 
 ```powershell
 # Always dry-run first - writes the full plan, changes nothing
-powershell scripts/data-migration/Invoke-MigrationRollback.ps1 `
-    -Environment Dev -RunDirectory logs/data-migration/Invoke-FullMigrationLoad-<ts> -PlanOnly
+powershell scripts/powershell-scripts/Invoke-MigrationRollback.ps1 `
+    -Environment Dev -RunDirectory scripts/logs/data-migration/Invoke-FullMigrationLoad-<ts> -PlanOnly
 
-powershell scripts/data-migration/Invoke-MigrationRollback.ps1 `
-    -Environment Dev -RunDirectory logs/data-migration/Invoke-FullMigrationLoad-<ts> -Confirmation "ROLLBACK"
+powershell scripts/powershell-scripts/Invoke-MigrationRollback.ps1 `
+    -Environment Dev -RunDirectory scripts/logs/data-migration/Invoke-FullMigrationLoad-<ts> -Confirmation "ROLLBACK"
 ```
 
 ### What it will never be able to do — state this before anyone relies on it

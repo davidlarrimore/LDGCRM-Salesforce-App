@@ -5,7 +5,7 @@ description: Use when pulling Salesforce metadata from a GSA PEO org (Dev sandbo
 
 # Salesforce metadata sync
 
-This project has one SFDX project (`sfdx/`) and four registered environments (Dev/QA/Full/Prod — see `scripts/common/Common.Orgs.ps1`; the Dev sandbox alias is `peodv8dvn`). Metadata flows
+This project has one SFDX project (`sfdx/`) and four registered environments (Dev/QA/Full/Prod — see `scripts/powershell-scripts/Common.Orgs.ps1`; the Dev sandbox alias is `peodv8dvn`). Metadata flows
 both directions through the Salesforce CLI (`sf`) — retrieve from the sandbox into `sfdx/force-app`,
 or deploy local changes back out.
 
@@ -23,7 +23,7 @@ don't guess at a different org alias.
 Prefer the manifest-driven sync over ad hoc `--metadata` flags, so retrievals stay repeatable:
 
 ```powershell
-powershell scripts/metadata/Sync-Metadata.ps1
+powershell tools/metadata/Sync-Metadata.ps1
 ```
 
 This runs `sf project retrieve start -x manifest/package.xml --target-org peodv8dvn` from `sfdx/` and
@@ -101,7 +101,7 @@ For a full object/field data dictionary (types, required-ness, relationships), u
 export instead of reading raw metadata XML:
 
 ```powershell
-powershell scripts/metadata/Get-LDGCRMDataDictionary.ps1
+powershell tools/metadata/Get-LDGCRMDataDictionary.ps1
 ```
 
 Output CSV lands in `logs/metadata/` (gitignored — it's a full sandbox schema dump, not secret, but

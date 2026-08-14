@@ -85,7 +85,7 @@ still migrates on the next run. The [Resolved log](#-resolved-log) at the bottom
 — every closure in date order.
 
 Progress against a specific load attempt is tracked separately, in
-[`docs/operations/RELOAD-QA-CHECKLIST.md`](../operations/RELOAD-QA-CHECKLIST.md). **The two are kept
+[`scripts/docs/RELOAD-QA-CHECKLIST.md`](../operations/RELOAD-QA-CHECKLIST.md). **The two are kept
 in step:** when an item here is resolved, the corresponding expectation in that checklist (row counts,
 "expect N skipped", known-empty fields) is updated in the same change, so a checklist that says
 "expect 142 blocked" never outlives the fix that unblocked them.
@@ -112,7 +112,7 @@ What the remaining 155 are still blocking, measured on this reload (all sharply 
 | Contacts (no agency) | 390 | **54** |
 
 Airtable has 747 Account rows; Salesforce has 584 tagged. Matching is by ID first, then exact name.
-Full list: `logs/data-migration/Account-reconciliation-unmatched-*.csv` (ask engineering for the
+Full list: `scripts/logs/data-migration/Account-reconciliation-unmatched-*.csv` (ask engineering for the
 latest one).
 
 One concrete example: **`Depart of Homeland Security`** looks like a typo'd duplicate of an Account
@@ -290,7 +290,7 @@ longer in that state. Nothing further needed.
 **One remains, and it's the easy one:** a single **`Launch Deck URL` of 275 characters** — a Google
 redirect wrapper around a Drive link, where the underlying Drive URL would fit comfortably. Replacing
 it with the plain Drive link closes this item entirely. (The other 8 rows still in
-`logs/data-migration/Application-overlength-*.csv` are the long *partner-portal team names*, tracked
+`scripts/logs/data-migration/Application-overlength-*.csv` are the long *partner-portal team names*, tracked
 separately under Issuer Strings above — not Application data.)
 
 ### Applications: 1 row has a mistyped go-live year (`ECOMP`) — ✅ RESOLVED 2026-08-13
@@ -486,7 +486,7 @@ are two separate Applications sharing the **same** issuer string
 than two real ones — worth confirming, since it isn't something the missing team value explains.
 
 Both lists are also produced as a CSV on every run —
-`logs/data-migration/Application-portal-team-review-*.csv`, with an `Issue` column marking each row
+`scripts/logs/data-migration/Application-portal-team-review-*.csv`, with an `Issue` column marking each row
 `CONFLICT` (the 9) or `INCOMPLETE` (the 18).
 
 **The root fix, if it's ever on the table:** because the team belongs to the Application, storing it
@@ -561,7 +561,7 @@ lost. That's checked on every run and will be reported if it ever stops being tr
    every application on that contact row at once), but that's your call, not ours.
 
 Full per-flag detail, including which source asserted each one, is in
-`logs/data-migration/ApplicationContact-admin-source-*.csv`.
+`scripts/logs/data-migration/ApplicationContact-admin-source-*.csv`.
 
 ### Issuer Strings: 6 partner-portal team names are too long for Salesforce — ✅ RESOLVED 2026-08-14
 
@@ -624,7 +624,7 @@ This also means they pick up a Market Segment automatically (Salesforce derives 
 Salesforce Account (the issue at the top of this document). Progress on the Account duplicates has cut
 this by more than half. **The remaining 62 will migrate automatically once those Accounts are
 resolved**, with no work needed on the Opportunity records themselves. Current list:
-`logs/data-migration/Opportunity-skipped-*.csv`.
+`scripts/logs/data-migration/Opportunity-skipped-*.csv`.
 
 ### Opportunities: 729 records have no estimated go-live date — ✅ RESOLVED 2026-08-13
 
@@ -843,7 +843,7 @@ Account column of its own, and adding it rescued 399 contacts that would otherwi
 along with 435 of their Opportunity contact-role records.
 
 A further 38 are matched by email domain where every other contact on that `.gov` domain belongs to
-the same agency (listed in `logs/data-migration/Contact-domain-inferred-account-*.csv` — these are
+the same agency (listed in `scripts/logs/data-migration/Contact-domain-inferred-account-*.csv` — these are
 inferred, not recorded, and are worth a spot-check).
 
 **That leaves 54** (was 390) with no agency at all. As predicted, they traced back to the
@@ -851,7 +851,7 @@ unmatched-Account problem at the top of this document, and fixing those Accounts
 automatically with no work on the Contact records.
 
 **What we need:** still nothing separate — closing out the remaining Account duplicates recovers most
-of the last 54. Current list: `logs/data-migration/Contact-no-account-*.csv`.
+of the last 54. Current list: `scripts/logs/data-migration/Contact-no-account-*.csv`.
 
 ### Impediments: what does the impediment named "None" mean?
 
@@ -880,7 +880,7 @@ the `None` placeholder impediment, which the migration excludes.
 The same opportunity appears in **both** the "Opportunities blocked" and "Opportunities requested"
 lists for the same impediment. Salesforce stores a single severity per link, so it can't be both; we
 record these as **Blocker** (the more severe reading). The 7 remaining are genuine and listed in
-`logs/data-migration/OpportunityImpediment-severity-conflict-*.csv`.
+`scripts/logs/data-migration/OpportunityImpediment-severity-conflict-*.csv`.
 
 **What we need:** confirm whether "blocked" or "requested" is correct for those 7, and ideally avoid
 putting the same opportunity in both lists going forward. **Note this closes only if the `None`

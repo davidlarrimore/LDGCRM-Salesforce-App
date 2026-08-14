@@ -1,0 +1,47 @@
+[
+    {
+        "type": "FlexiPage",
+        "name": "FCIC_Case_Record_Page_LoginGov",
+        "reason": "FCIC app record page, not part of LDGCRM"
+    },
+    {
+        "type": "FlexiPage",
+        "name": "USWDS_Lightning_Community_themeLayout_Login",
+        "reason": "Experience Cloud community theme layout, unrelated to LDGCRM"
+    },
+    {
+        "type": "FlexiPage",
+        "name": "LDGCRM_Dev_Admin_UtilityBar",
+        "reason": "Intentionally removed from the LDGCRM app and this repo (see commit 4b8195b)"
+    },
+    {
+        "type": "Flow",
+        "name": "LDGCRM_Screen_Flow_Developer_Data_Delete_Flow",
+        "reason": "OURS, but deliberately Dev-only - NOT an unrelated-app component like the rest of this file. A screen flow whose whole job is to bulk-delete Account, Partner Account, Application, Application Contact, Market Segment, Opportunity and Opportunity Impediment records. It stays Active in the Dev sandbox as a developer convenience; it must never be promoted. Removed from manifest/package.xml and force-app so it cannot be swept into a change set regenerated from the manifest, and listed here so Sync-Metadata.ps1 does not re-add it. Its ABSENCE from QA/Full/Prod is the expected state - finding it in a non-Dev org is a failure, not a note."
+    },
+    {
+        "type": "Layout",
+        "name": "Case-Login%2Egov",
+        "reason": "Case layout for Login.gov customer support, not the LDGCRM CRM app"
+    },
+    {
+        "type": "Layout",
+        "name": "Knowledge__kav-Login%2Egov Layout",
+        "reason": "Knowledge article layout, not part of the LDGCRM data model"
+    },
+    {
+        "type": "Layout",
+        "name": "LoginAnomalyEventStore-Login Anomaly Event Store Layout",
+        "reason": "Security event object, unrelated to LDGCRM"
+    },
+    {
+        "type": "Layout",
+        "name": "Login_History__c-Login History Layout",
+        "reason": "Legacy object, not part of the LDGCRM data model"
+    },
+    {
+        "type": "Layout",
+        "name": "Survey_Report_Cards__c-Login%2Egov TTS Transactional Survey",
+        "reason": "TTS survey feature, unrelated to LDGCRM"
+    }
+]

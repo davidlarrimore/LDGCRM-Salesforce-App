@@ -30,7 +30,7 @@ wrong in this migration:
 
 1. **A column's name can lie about its content.** Accounts' `States + DC/PR` sounds like it holds a
    state name; it's actually a boolean checkbox. Always open the actual JSON in
-   `data/airtable-exports/` and look at real values before assuming.
+   `scripts/data/airtable-exports/` and look at real values before assuming.
 2. **Salesforce's picklist metadata can lie about what's actually stored.** `Account.Type`'s
    `Federal` record type declares `"Federal Agency"` as a value, but 530 of 588 existing gsa-peo
    Accounts actually use the plain string `"Federal"` (the field isn't restricted, so old loads
@@ -122,7 +122,7 @@ it. Every `Build-*.ps1` script's lookup columns should use this `__r.LDGCRM_Exte
 When a transform script includes an explicit value-mapping table (like Impediment's `$CategoryMap`),
 treat any value that doesn't match the map as a signal to stop and ask a human, not something to
 silently blank out and move on from unnoticed — every script here logs unmapped/unmatched values to
-a review CSV in `logs/data-migration/` rather than dropping them silently.
+a review CSV in `scripts/logs/data-migration/` rather than dropping them silently.
 
 ---
 
@@ -243,7 +243,7 @@ itself. Three guards, each of which the raw version fails:
 3. **Minimum supporting evidence** (`-DomainInferenceMinSupport`, default 3). At 1, `usda.gov` would
    claim 19 contacts on the strength of a *single* known example, and `usdoj.gov` 7 on one.
 
-Every inferred link is written to `logs/data-migration/Contact-domain-inferred-account-<ts>.csv`.
+Every inferred link is written to `scripts/logs/data-migration/Contact-domain-inferred-account-<ts>.csv`.
 `-DisableDomainInference` turns the whole path off.
 
 **It is barely worth having, and that is worth recording.** Before path 3 existed it would have
@@ -1319,7 +1319,7 @@ They agree on **882** pairs. Each sees some the other doesn't — **117** Roles-
 Issuer-Strings-only. **The flag is their UNION**, not their intersection: both are authored data, and
 dropping a flag because the other source is silent would discard real information on the strength of
 an inference. Provenance for every flag is written to
-`logs/data-migration/ApplicationContact-admin-source-*.csv` (`BOTH` / `Contacts.Roles only` /
+`scripts/logs/data-migration/ApplicationContact-admin-source-*.csv` (`BOTH` / `Contacts.Roles only` /
 `Issuer Strings only`), because after a union nobody can otherwise answer "why is this person an
 admin?".
 
@@ -1449,7 +1449,7 @@ Two groups are deliberately **not** merged:
 script.** That is deliberate: the Application-Contact junction chunk must map *every* Airtable
 Contact record ID onto whichever Contact actually got created. If it re-derived the grouping itself
 the two implementations could drift and the junction would point at Contacts that don't exist. The
-script also emits `data/salesforce-loads/Contact-identity-map.csv` (every source record ID → its
+script also emits `scripts/data/salesforce-loads/Contact-identity-map.csv` (every source record ID → its
 surviving Contact) as a direct input to that chunk.
 
 ### `LastName` is required and mostly absent — a documented waterfall

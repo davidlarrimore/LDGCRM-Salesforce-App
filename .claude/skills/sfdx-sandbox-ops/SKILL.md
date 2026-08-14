@@ -1,6 +1,6 @@
 ---
 name: sfdx-sandbox-ops
-description: Safety checklist for running or modifying any script that deletes, hard-deletes, or bulk-modifies records in a GSA PEO org (Dev sandbox by default) (e.g. scripts/cleanup/Invoke-SandboxFactoryReset.ps1, future data-migration loads).
+description: Safety checklist for running or modifying any script that deletes, hard-deletes, or bulk-modifies records in a GSA PEO org (Dev sandbox by default) (e.g. scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1, future data-migration loads).
 ---
 
 # Destructive org operations (Dev/QA/Full/Prod)
@@ -12,7 +12,7 @@ it with real caution, not sandbox-so-it-doesn't-matter carelessness.
 ## Pick the environment explicitly
 
 Scripts take `-Environment Dev|QA|Full|Prod` (default `Dev`) and resolve the alias from
-`scripts/common/Common.Orgs.ps1`. Never pass a bare `--target-org`/`-OrgAlias` to reach a registered
+`scripts/powershell-scripts/Common.Orgs.ps1`. Never pass a bare `--target-org`/`-OrgAlias` to reach a registered
 environment — that skips the registry's identity checks.
 
 **`gsa-peo` means PRODUCTION** as of 2026-08-13; it used to be the alias for the Dev sandbox
@@ -39,13 +39,13 @@ production use, and adding a way to approve it only creates a way to approve it 
    an alias you haven't just confirmed.
 2. **Preflight with a read-only count first.** Show the user how many records will be affected
    (`SELECT COUNT() FROM <Object> WHERE ...`) before anything is deleted or modified —
-   `scripts/cleanup/Invoke-SandboxFactoryReset.ps1` already does this; keep the pattern in any new script.
+   `scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1` already does this; keep the pattern in any new script.
 3. **Export before delete/modify.** Write the affected record IDs to a CSV in `logs/<category>/`
    before the destructive step runs, so there's an audit trail even though the folder is gitignored.
 
 ## The confirmation gate is typed, not a switch
 
-Every destructive/write script gates on `Assert-LdgcrmTypedConfirmation` (`scripts/common/Common.ps1`):
+Every destructive/write script gates on `Assert-LdgcrmTypedConfirmation` (`scripts/powershell-scripts/Common.ps1`):
 interactive by default, and passable non-interactively **by supplying the same token the prompt would
 ask a human to type**.
 
@@ -86,7 +86,7 @@ dependencies in the data model — don't reorder it without checking those depen
 
 ## Applies to future data-migration scripts too
 
-Anything added under `scripts/data-migration/` that upserts, updates, or deletes at scale should
+Anything added under `scripts/powershell-scripts/` that upserts, updates, or deletes at scale should
 follow the same pattern: confirm org, preflight count, export-before-write, explicit typed
-confirmation for anything irreversible, and logging via `scripts/common/Common.ps1` into
-`logs/data-migration/`.
+confirmation for anything irreversible, and logging via `scripts/powershell-scripts/Common.ps1` into
+`scripts/logs/data-migration/`.

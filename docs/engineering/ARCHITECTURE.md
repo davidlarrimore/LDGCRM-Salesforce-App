@@ -1,25 +1,60 @@
-﻿# Migration pipeline architecture
+# Migration pipeline architecture
 
 > **Who this is for:** engineers changing how the migration works — adding an object, altering a
 > transform, or working out why the pipeline is built the way it is.
 >
 > **If you just need to RUN a load, you're in the wrong place.** Go to
-> [../operations/RUNNING-A-LOAD.md](../operations/RUNNING-A-LOAD.md), which assumes no prior
-> knowledge of this project.
+> [../../scripts/docs/RUNNING-A-LOAD.md](../../scripts/docs/RUNNING-A-LOAD.md), which assumes no
+> prior knowledge of this project.
 >
-> **New here?** Read [../operations/SETUP.md](../operations/SETUP.md) first for what this project is
-> and how the two systems connect. Then come back.
+> **New here?** Read [../../scripts/docs/SETUP.md](../../scripts/docs/SETUP.md) first for what this
+> project is and how the two systems connect. Then come back.
 
-`scripts/data-migration/` holds the scripts that move Login.gov applicant data from Airtable into a
+## ⚠️ `scripts/` is a self-contained bundle (2026-08-14)
+
+Read this before adding a script or a file path anywhere in `scripts/`.
+
+The GSA Salesforce Operations team runs this pipeline from **their own GitHub repository**, where it
+lands as a plain `/scripts` folder. Nothing else from this repo goes with it. So `data/`, `logs/`,
+`.env`, `.env.example` and the operator runbooks all live *inside* `scripts/`, and every path
+resolves off **`Get-LdgcrmRoot`** (`scripts/powershell-scripts/Common.ps1`) — the bundle folder itself.
+
+**`Get-RepoRoot` no longer exists in the bundle.** It was deleted rather than left unused: it would
+have kept resolving perfectly well after the folder moved, and quietly returned *Operations'*
+repository root. Paths would still join and files would still be written — into someone else's tree.
+A missing function fails on the first call instead. It now lives in `tools/Common.Tools.ps1`.
+
+| If your script… | It belongs in | And uses |
+| --- | --- | --- |
+| reads Airtable, or reads/writes Salesforce | `scripts/` | `Get-LdgcrmRoot` |
+| reads `sfdx/` or `docs/` | `tools/` | `Get-RepoRoot` (from `tools/Common.Tools.ps1`) |
+
+`tools/` is also the policy boundary, not just a technical one: metadata moves between orgs by
+**change set only**, so Operations has no use for a retrieve or deploy script and shipping them one
+would invite exactly what the policy forbids.
+
+Two supporting pieces:
+
+- **`scripts/.gitignore`** is the authority for `data/`, `logs/` and `.env` — deliberately *not*
+  duplicated in the root `.gitignore`. Git applies a `.gitignore` to its own directory and below in
+  whatever repository contains it, so the PII protection travels with the folder rather than being
+  left behind. **Add any new output location there in the same change that creates it.**
+- **`tools/Export-OpsBundle.ps1`** builds the hand-off zip. It excludes `.env`, `data/` and `logs/`
+  contents (shipping their folders, `.gitkeep`s and READMEs), then **reads the finished archive back**
+  and deletes it if anything unexpected is inside — the build and the check can only agree by both
+  being right, which is the only way to be sure a credential or a PII extract has not been published
+  to a repository this project does not control.
+
+`scripts/powershell-scripts/` holds the scripts that move Login.gov applicant data from Airtable into a
 GSA PEO Salesforce org — the Dev sandbox today, QA and a Full sandbox next, production last. See
 [Environments and org aliases](#environments-and-org-aliases) for how a script is pointed at one.
 The pipeline has four stages that run in order:
 
 1. **Pull** — `Get-AirtableExport.ps1` pulls current data from the Airtable REST API into
-   `data/airtable-exports/<Table>.json`. Already built. See the root `CLAUDE.md` ("Airtable API")
+   `scripts/data/airtable-exports/<Table>.json`. Already built. See the root `CLAUDE.md` ("Airtable API")
    for auth/connection details.
 2. **Prep / transform** — `Build-*.ps1` scripts read the Airtable JSON and the current state of
-   `gsa-peo`, and write CSVs into `data/salesforce-loads/` ready for a Bulk API upsert/update. This
+   `gsa-peo`, and write CSVs into `scripts/data/salesforce-loads/` ready for a Bulk API upsert/update. This
    is what's being built out now (see "Build status" below).
 3. **Load** — `Invoke-SalesforceLoad.ps1` wraps `sf data upsert bulk` / `sf data update bulk`
    (Bulk API 2.0) against those CSVs. **Decided 2026-08-12, not the headless Data Loader CLI
@@ -44,7 +79,7 @@ The pipeline has four stages that run in order:
 ## Environments and org aliases
 
 Every script takes `-Environment Dev|QA|Full|Prod` (default **Dev**) and resolves the alias from the
-registry in [`scripts/common/Common.Orgs.ps1`](../../scripts/common/Common.Orgs.ps1). No script
+registry in [`scripts/powershell-scripts/Common.Orgs.ps1`](../../scripts/powershell-scripts/Common.Orgs.ps1). No script
 hard-codes an alias any more.
 
 | `-Environment` | Alias | Sandbox name | Instance URL | Purpose |
@@ -90,7 +125,7 @@ sf data query --target-org peodv15dvn --query "SELECT Name, IsSandbox FROM Organ
 
 # 3. Prove the registry agrees, before running anything real. This is the same
 #    check every script runs at startup, and it fails loudly on a mismatch.
-powershell -Command ". ./scripts/common/Common.ps1; Assert-LdgcrmOrgTarget -Environment QA"
+powershell -Command ". ./scripts/powershell-scripts/Common.ps1; Assert-LdgcrmOrgTarget -Environment QA"
 ```
 
 For the **Full sandbox**, whose name isn't known yet, also fill in `Alias` and `SandboxName` for the
@@ -122,7 +157,7 @@ production because it has no path to production — see the next section.
 
 ## Sandbox Factory Reset
 
-`scripts/cleanup/Invoke-SandboxFactoryReset.ps1` returns a pre-production sandbox to a known starting
+`scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1` returns a pre-production sandbox to a known starting
 state, so a migration rehearsal begins from the same baseline every time. It does two things in one
 run:
 
@@ -134,8 +169,8 @@ run:
    answers yes up front; `-SkipBootstrap` suppresses the prompt.
 
 ```powershell
-powershell -File scripts/cleanup/Invoke-SandboxFactoryReset.ps1 -Environment Dev
-powershell -File scripts/cleanup/Invoke-SandboxFactoryReset.ps1 -Environment QA -BootstrapAccounts
+powershell -File scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1 -Environment Dev
+powershell -File scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1 -Environment QA -BootstrapAccounts
 ```
 
 ### It cannot run against production — by construction, not by policy
@@ -175,7 +210,7 @@ Flows depend on them, and nothing in the migration recreates them.
 ## Rebuilding an org's Account tree (the bootstrap)
 
 `Invoke-AccountBootstrap.ps1` rebuilds an org's Account names **and parent hierarchy** from a
-production Account export (`data/peo-prod-accounts-<yyyy-MM-dd>.xls`). It supersedes
+production Account export (`scripts/data/prod-accounts/`). It supersedes
 `Build-ProdAccountSeed.ps1`, which seeded names only.
 
 **Why any of this is needed:** Account is the one object the migration does *not* create.
@@ -190,11 +225,11 @@ The tree is built outward from the roots — insert, re-query, resolve the next 
 changes nothing. Four levels deep in the current export.
 
 ```powershell
-# Always dry-run first: read-only, writes the pass plan to logs/data-migration/
-powershell scripts/data-migration/Invoke-AccountBootstrap.ps1 -Environment QA -PlanOnly
+# Always dry-run first: read-only, writes the pass plan to scripts/logs/data-migration/
+powershell scripts/powershell-scripts/Invoke-AccountBootstrap.ps1 -Environment QA -PlanOnly
 
 # Apply it (typed BOOTSTRAP confirmation)
-powershell scripts/data-migration/Invoke-AccountBootstrap.ps1 -Environment QA
+powershell scripts/powershell-scripts/Invoke-AccountBootstrap.ps1 -Environment QA
 ```
 
 It is idempotent — it inserts only what's missing by name and only ever *fills in* a blank
@@ -269,7 +304,7 @@ process end to end:
    what the real production reconciliation pass will look like, not a sandbox-only approximation.
 
 **Full rebuild completed 2026-08-13**, after the user asked to first hard-delete the Dev sandbox's
-existing test-created Account/Partner Account data (via `scripts/cleanup/Invoke-SandboxFactoryReset.ps1`,
+existing test-created Account/Partner Account data (via `scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1`,
 then named `cleanup-gsa-peo.ps1`, scoped to just those two objects with its `-ObjectsCsv` override —
 see that script's own docs) rather than layer the seed on top of it, for a genuinely clean test:
 - Cleanup: 584 of 585 external-ID-tagged Accounts deleted, all 74 external-ID-tagged Partner Accounts
@@ -316,7 +351,7 @@ verified any other way.
 written for the data owner, not developers — see
 [`AIRTABLE-DATA-QUALITY-REQUESTS.md`](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md).** Every `Build-*.ps1`
 script's skipped/unmapped review CSVs should feed into this list as they're found, not just sit in
-`logs/data-migration/` unnoticed.
+`scripts/logs/data-migration/` unnoticed.
 
 **For the stakeholder-facing status report — written for the Login.gov Partnerships lead, not for
 engineers — see
@@ -331,7 +366,7 @@ snapshotted.
 
 **Send the PDF, not the HTML.** Google Drive won't render a standalone `.html` file — it displays the
 raw markup — so the HTML is only useful opened directly in a browser. Regenerate the PDF with
-`scripts/data-migration/Export-ReportPdf.ps1` after editing the HTML; it renders through headless
+`tools/Export-ReportPdf.ps1` after editing the HTML; it renders through headless
 Chrome and verifies the page count, because a failed render still writes a valid-looking one-page
 file.
 
@@ -435,14 +470,14 @@ Airtable pull of 2026-08-12.
 | `Common.LoadReport.ps1` | Load — builds the per-run report (`SUMMARY.txt` + `load-summary.csv`/`errors.csv`/`findings.csv`) | Built 2026-08-13. See "Reading a run" below. |
 | `Build-NotesLoad.ps1` | Notes — prep `ContentNote`/`ContentDocumentLink` for freeform columns, last chunk | Built 2026-08-13. ~537 notes ready; ~59 placeholder values (`None`/`N/A`) skipped, ~200 waiting on a parent the Account data-quality issue withheld. Diffs against what is already attached, which is what makes a re-run safe. |
 | `Invoke-NotesLoad.ps1` | Notes — load. **The one chunk with its own loader**, not `Invoke-SalesforceLoad.ps1` | Built 2026-08-13. Attaching a note is three steps against two objects (insert `ContentNote` → read back each `ContentDocumentId` → insert `ContentDocumentLink`), and `ContentNote` has no external ID, so created note Ids are written to disk before anything else is attempted. Has an access preflight for the org's unmanaged `ContentDocumentLinkTrigger`, whose kill switch is inert. |
-| `Build-ProdAccountSeed.ps1` | Bootstrap — production Account **name** seeding, not a regular pipeline chunk | **Superseded 2026-08-13** by `Invoke-AccountBootstrap.ps1`. Still runs (now via the shared parser). Its name-dedupe is what left 31 rows unmappable for the hierarchy pass — see "Rebuilding an org's Account tree". |
+| `tools/Build-ProdAccountSeed.ps1` | Bootstrap — production Account **name** seeding, not a regular pipeline chunk | **Superseded 2026-08-13** by `Invoke-AccountBootstrap.ps1`, and **moved to `tools/` on 2026-08-14** — kept for provenance, not shipped to Operations. Still runs (now via the shared parser). Its name-dedupe is what left 31 rows unmappable for the hierarchy pass — see "Rebuilding an org's Account tree". |
 | `Invoke-MigrationRollback.ps1` | Rollback — undo ONE `Invoke-FullMigrationLoad.ps1` run from its restore point | Built 2026-08-13. Takes a `full-load-<ts>/` run directory, not a list of objects. Deletes only what that run *created* — external IDs tagged in the org now minus those tagged before the run, measured on both sides rather than read from the load CSVs — and **restores** the Account pre-image rather than deleting, because the migration updates Accounts it does not own. Refuses to run against a run directory with no `external-ids/` folder, and stops if the org has drifted from that run's post-load counts (`-IgnoreDrift` overrides). Typed `ROLLBACK` gate. **A best-effort tidy-up, not a safety net** — see `BACKLOG.md` §4a for what it can never undo. |
-| `Invoke-AccountBootstrap.ps1` | Bootstrap — production Account **names + parent hierarchy**, multi-pass, any environment | Built 2026-08-13. Dry-run against Dev: 1,360 planned Accounts, 0 to insert (already seeded), 1,087 parent links to set, 31 unmappable + 1 unresolvable parent + 1 conflict reported. **Not yet applied** — awaiting a live run. |
+| `Invoke-AccountBootstrap.ps1` | Bootstrap — production Account **names + parent hierarchy**, multi-pass. **Dev/QA only as of 2026-08-14** | Built 2026-08-13. `-Environment` is now `Dev\|QA` — Full and Prod are rejected at parameter-bind time, because a Full sandbox is a copy of production whose Accounts are the real records the migration reconciles onto. `-ProductionConfirmation` was removed with them. Source export moved to `scripts/data/prod-accounts/` and its **format is sniffed, not assumed** — HTML-table-`.xls`, real `.xlsx` (read via `System.IO.Compression`, no Excel needed), or `.csv`. |
 
 ## Load order
 
 Parents before children/junctions (the reverse of the delete order in
-`scripts/cleanup/Invoke-SandboxFactoryReset.ps1`). In an org that has just been cleaned or refreshed, the
+`scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1`). In an org that has just been cleaned or refreshed, the
 Account step means running `Invoke-AccountBootstrap.ps1` first — reconciliation has nothing to match
 against otherwise:
 
@@ -476,7 +511,7 @@ in the same file — **it does not**: the same 2026-08-13 load failed 68 rows wi
 ID ... not found ... in entity LDGCRM_application__c`, referencing parent Applications that were
 present in the very same CSV. `Build-ApplicationLoad.ps1` therefore keeps this column out of the main
 file and **writes a separate second-pass file automatically** (built 2026-08-13):
-`data/salesforce-loads/LDGCRM_application__c-broker-parent-upsert.csv`, carrying just
+`scripts/data/salesforce-loads/LDGCRM_application__c-broker-parent-upsert.csv`, carrying just
 `LDGCRM_External_ID__c` + `LDGCRM_Broker_App_Parent__r.LDGCRM_External_ID__c`.
 
 **There is no second transform script to run** — that was the point. Only the *load* is a separate
@@ -528,7 +563,7 @@ pass, and that pass should be generated by the same script rather than left to a
 **Everything one run produces goes in one directory**, `logs/<category>/<ScriptName>-<timestamp>/`,
 and `Invoke-FullMigrationLoad.ps1` writes **`SUMMARY.txt`** into it and prints it at the end of the
 transcript. That is the one artifact answering "how did the load go, and was anything in it new?".
-`logs/README.md` describes the file layout; this section covers why it is built the way it is.
+`scripts/logs/README.md` describes the file layout; this section covers why it is built the way it is.
 
 ### One directory per run (2026-08-13)
 
@@ -536,7 +571,7 @@ Each script used to write its transcript and review CSVs loose into `logs/<categ
 its own typed folder — `full-load-<ts>/`, `notes-load-<ts>/`, `bulk-results/<obj>-<ts>/`,
 `rollback-<ts>/`, `account-bootstrap-<ts>/`. One logical load therefore scattered output across four
 folder shapes plus ~30 loose files, correlated only by a timestamp — and since **each child script
-stamped its own**, the timestamps didn't even match. `logs/data-migration/` reached 330 loose CSVs
+stamped its own**, the timestamps didn't even match. `scripts/logs/data-migration/` reached 330 loose CSVs
 across ~40 runs.
 
 The mechanism is deliberately one small change in `Common.ps1` rather than an edit to every script:
@@ -623,30 +658,30 @@ validation — not this — remains the thing that decides whether a run passed.
 
 ```powershell
 # From the repo root:
-scripts\data-migration\Get-AirtableExport.ps1
-scripts\data-migration\Build-AccountReconciliation.ps1
-scripts\data-migration\Build-ImpedimentLoad.ps1
-scripts\data-migration\Build-PartnerAccountLoad.ps1
-scripts\data-migration\Build-OpportunityLoad.ps1
-scripts\data-migration\Build-ContactLoad.ps1
-scripts\data-migration\Build-ApplicationLoad.ps1
-scripts\data-migration\Build-ApplicationContactLoad.ps1
-scripts\data-migration\Build-OpportunityImpedimentLoad.ps1
+scripts\powershell-scripts\Get-AirtableExport.ps1
+scripts\powershell-scripts\Build-AccountReconciliation.ps1
+scripts\powershell-scripts\Build-ImpedimentLoad.ps1
+scripts\powershell-scripts\Build-PartnerAccountLoad.ps1
+scripts\powershell-scripts\Build-OpportunityLoad.ps1
+scripts\powershell-scripts\Build-ContactLoad.ps1
+scripts\powershell-scripts\Build-ApplicationLoad.ps1
+scripts\powershell-scripts\Build-ApplicationContactLoad.ps1
+scripts\powershell-scripts\Build-OpportunityImpedimentLoad.ps1
 
 # Actually load a prepped CSV into gsa-peo (prompts "Type LOAD to continue"):
-scripts\data-migration\Invoke-SalesforceLoad.ps1 `
+scripts\powershell-scripts\Invoke-SalesforceLoad.ps1 `
     -ObjectApiName "LDGCRM_Impediment__c" `
     -CsvFile "data\salesforce-loads\LDGCRM_Impediment__c-upsert.csv"
 
 # Account uses -Operation Update (Id-keyed) instead of the Upsert default:
-scripts\data-migration\Invoke-SalesforceLoad.ps1 `
+scripts\powershell-scripts\Invoke-SalesforceLoad.ps1 `
     -ObjectApiName "Account" `
     -CsvFile "data\salesforce-loads\Account-update.csv" `
     -Operation Update
 
 # Partner Account is Master-Detail to Account - load Account first, or its
 # parent lookup won't resolve:
-scripts\data-migration\Invoke-SalesforceLoad.ps1 `
+scripts\powershell-scripts\Invoke-SalesforceLoad.ps1 `
     -ObjectApiName "LDGCRM_Partner_Account__c" `
     -CsvFile "data\salesforce-loads\LDGCRM_Partner_Account__c-upsert.csv"
 
@@ -655,7 +690,7 @@ scripts\data-migration\Invoke-SalesforceLoad.ps1 `
 # first and skips rows whose parent doesn't exist yet, so it's safe to run at
 # any point; re-run it after fixing Airtable data or loading Opportunity to
 # pick up whatever newly resolves:
-scripts\data-migration\Invoke-SalesforceLoad.ps1 `
+scripts\powershell-scripts\Invoke-SalesforceLoad.ps1 `
     -ObjectApiName "LDGCRM_application__c" `
     -CsvFile "data\salesforce-loads\LDGCRM_application__c-upsert.csv"
 ```
@@ -680,7 +715,7 @@ The FCIC app ships a supported kill switch — a `TriggerControls__c` custom set
 first — so `Invoke-SalesforceLoad.ps1` uses it via `-DisableTriggerControl`:
 
 ```powershell
-scripts\data-migration\Invoke-SalesforceLoad.ps1 `
+scripts\powershell-scripts\Invoke-SalesforceLoad.ps1 `
     -ObjectApiName "Contact" `
     -CsvFile "data\salesforce-loads\Contact-upsert.csv" `
     -DisableTriggerControl "Contact"
@@ -710,27 +745,27 @@ cannot inspect.
 `Build-AccountReconciliation.ps1` is read-only against Salesforce (a single SOQL query) and only
 writes local files:
 
-- `data/salesforce-loads/Account-update.csv` — matched rows (`Id`, `LDGCRM_External_ID__c`,
+- `scripts/data/salesforce-loads/Account-update.csv` — matched rows (`Id`, `LDGCRM_External_ID__c`,
   `LDGCRM_Market_Segment__r.LDGCRM_External_ID__c`, `Type`) ready for a Data Loader **update** (not
   upsert) once Stage 3 exists.
-- `logs/data-migration/Account-reconciliation-unmatched-<timestamp>.csv` — Airtable rows with no
+- `scripts/logs/data-migration/Account-reconciliation-unmatched-<timestamp>.csv` — Airtable rows with no
   confident Salesforce match, for human review.
-- `logs/data-migration/Account-reconciliation-ambiguous-<timestamp>.csv` — Airtable rows matching
+- `scripts/logs/data-migration/Account-reconciliation-ambiguous-<timestamp>.csv` — Airtable rows matching
   more than one unclaimed Salesforce Account by name, for human review.
 
 `Build-ImpedimentLoad.ps1` doesn't touch Salesforce at all (Impediment has no lookups to other
 objects, so there's nothing to reconcile) and writes:
 
-- `data/salesforce-loads/LDGCRM_Impediment__c-upsert.csv` — external-ID-keyed rows ready for a
+- `scripts/data/salesforce-loads/LDGCRM_Impediment__c-upsert.csv` — external-ID-keyed rows ready for a
   Data Loader upsert. Excludes `LDGCRM_Blocked_Revenue__c` (a roll-up Summary field Salesforce
   computes from `LDGCRM_Opportunity_Impediment__c` — writes to it are rejected) and maps
   Airtable's free-text `Category` column onto `LDGCRM_Category__c`'s restricted 3-value picklist
   via an explicit table in the script, since two of the three Airtable strings don't match the
   Salesforce values verbatim (`"Relationship Issue"` → `"Relationship issue"`, `"Issue on their
   end"` → `"Issue on partner end"`).
-- `logs/data-migration/Impediment-skipped-<timestamp>.csv` — Airtable rows with no `Name` (2 of
+- `scripts/logs/data-migration/Impediment-skipped-<timestamp>.csv` — Airtable rows with no `Name` (2 of
   41, both otherwise-empty placeholder rows), skipped rather than loaded with a placeholder.
-- `logs/data-migration/Impediment-unmapped-category-<timestamp>.csv` — rows whose Category value
+- `scripts/logs/data-migration/Impediment-unmapped-category-<timestamp>.csv` — rows whose Category value
   doesn't match the script's mapping table; loaded anyway with Category left blank rather than
   blocked, but flagged for human review.
 
@@ -738,32 +773,32 @@ objects, so there's nothing to reconcile) and writes:
 records — see `TRANSFORMATION-RULES.md` for why that lookup can't use the usual external-ID
 passthrough) and writes:
 
-- `data/salesforce-loads/LDGCRM_Partner_Account__c-upsert.csv` — external-ID-keyed rows. Requires
+- `scripts/data/salesforce-loads/LDGCRM_Partner_Account__c-upsert.csv` — external-ID-keyed rows. Requires
   `Account-update.csv` already loaded first (`LDGCRM_Account__c` is Master-Detail to Account).
-- `logs/data-migration/PartnerAccount-skipped-<timestamp>.csv` — rows with no parent Account, or
+- `scripts/logs/data-migration/PartnerAccount-skipped-<timestamp>.csv` — rows with no parent Account, or
   more than one (Master-Detail only supports one parent).
-- `logs/data-migration/PartnerAccount-unmapped-owner-<timestamp>.csv` — rows whose owner email
+- `scripts/logs/data-migration/PartnerAccount-unmapped-owner-<timestamp>.csv` — rows whose owner email
   matches no Salesforce User; loaded anyway with Owner left blank.
 
 `Build-ApplicationLoad.ps1` queries Salesforce twice — for the Partner Accounts and Opportunities
 that actually exist — so it can skip rows that would be guaranteed load failures instead of
 submitting them (the first load attempt submitted 442 such rows and got 442 errors back). It writes:
 
-- `data/salesforce-loads/LDGCRM_application__c-upsert.csv` — external-ID-keyed rows whose parent
+- `scripts/data/salesforce-loads/LDGCRM_application__c-upsert.csv` — external-ID-keyed rows whose parent
   Partner Account is confirmed present in the org. Deliberately does **not** include
   `LDGCRM_Broker_App_Parent__c` — that goes in the auto-generated second-pass file below.
-- `data/salesforce-loads/LDGCRM_application__c-broker-parent-upsert.csv` — the **second pass**
+- `scripts/data/salesforce-loads/LDGCRM_application__c-broker-parent-upsert.csv` — the **second pass**
   (63 rows), written automatically. Load it *after* the main Application file; see "Load order".
-- `logs/data-migration/Application-broker-parent-skipped-<timestamp>.csv` — Broker App Parent links
+- `scripts/logs/data-migration/Application-broker-parent-skipped-<timestamp>.csv` — Broker App Parent links
   not emitted: one side withheld by the Account data-quality issue, or a self-reference.
-- `logs/data-migration/Application-skipped-<timestamp>.csv` — rows skipped for a missing required
+- `scripts/logs/data-migration/Application-skipped-<timestamp>.csv` — rows skipped for a missing required
   Partner Account, split by reason: no Partner Account linked in Airtable at all, vs. linked but not
   loaded in the org (the latter almost always traces to an unresolved Account — see
   `AIRTABLE-DATA-QUALITY-REQUESTS.md`).
-- `logs/data-migration/Application-overlength-<timestamp>.csv` — values Salesforce can't store as-is:
+- `scripts/logs/data-migration/Application-overlength-<timestamp>.csv` — values Salesforce can't store as-is:
   Names over 80 chars (truncated), URLs over 255 chars (blanked), and implausible dates (blanked).
   All three are platform limits, not fixable field metadata.
-- `logs/data-migration/Application-unmapped-rampup-<timestamp>.csv` — rows whose Ramp Up Approach
+- `scripts/logs/data-migration/Application-unmapped-rampup-<timestamp>.csv` — rows whose Ramp Up Approach
   value doesn't map; loaded anyway with the field blank.
 
 Re-running it is the intended way to pick up newly-fixed data: rows skipped for an unresolved parent,
@@ -774,29 +809,29 @@ the blank-Opportunity-link count from 92 to 7 with no edits.
 `Build-ContactLoad.ps1` queries Salesforce (record types, existing Contacts, Accounts, Partner
 Accounts) and writes:
 
-- `data/salesforce-loads/Contact-upsert.csv` — one row per **merged** Contact, not per Airtable row.
-- `data/salesforce-loads/Contact-identity-map.csv` — **an input to the Application-Contact junction
+- `scripts/data/salesforce-loads/Contact-upsert.csv` — one row per **merged** Contact, not per Airtable row.
+- `scripts/data/salesforce-loads/Contact-identity-map.csv` — **an input to the Application-Contact junction
   chunk, not a review file.** Maps every Airtable Contact record ID to the Contact that survived the
   merge. The junction chunk must use this rather than re-deriving the grouping, or the two can drift.
-- `logs/data-migration/Contact-name-review-<ts>.csv` — every Contact whose name was recovered from an
+- `scripts/logs/data-migration/Contact-name-review-<ts>.csv` — every Contact whose name was recovered from an
   existing Salesforce Contact or replaced with its email address as a placeholder.
-- `logs/data-migration/Contact-no-account-<ts>.csv` — Contacts with no resolvable Account (each one
+- `scripts/logs/data-migration/Contact-no-account-<ts>.csv` — Contacts with no resolvable Account (each one
   would spawn a junk FCIC Account if the trigger weren't bypassed).
-- `logs/data-migration/Contact-value-review-<ts>.csv` — dropped `Subscription Type` values.
+- `scripts/logs/data-migration/Contact-value-review-<ts>.csv` — dropped `Subscription Type` values.
 
 `Build-OpportunityLoad.ps1` queries Salesforce for the Login_gov RecordTypeId and the reconciled
 Account set (read-only), then writes:
 
-- `data/salesforce-loads/Opportunity-upsert.csv` — external-ID-keyed rows. **Requires
+- `scripts/data/salesforce-loads/Opportunity-upsert.csv` — external-ID-keyed rows. **Requires
   `Account-update.csv` loaded first**; rows whose Account isn't reconciled are skipped, not blanked,
   because an unresolvable lookup fails the whole row.
-- `logs/data-migration/Opportunity-skipped-<timestamp>.csv` — split by reason: no Status (StageName is
+- `scripts/logs/data-migration/Opportunity-skipped-<timestamp>.csv` — split by reason: no Status (StageName is
   required with no default), no Account link in Airtable, or Account not reconciled in the org.
-- `logs/data-migration/Opportunity-closedate-fallback-<timestamp>.csv` — **read this one.** Salesforce
+- `scripts/logs/data-migration/Opportunity-closedate-fallback-<timestamp>.csv` — **read this one.** Salesforce
   requires `CloseDate` but only 199 of 928 rows have a real `Est. Go Live`, so the rest fall back to
   the last status-change date, then the created date. Every fallback row is listed here with the field
   used, so a synthesized date is never mistaken for a forecast.
-- `logs/data-migration/Opportunity-value-review-<timestamp>.csv` — values blanked or dropped
+- `scripts/logs/data-migration/Opportunity-value-review-<timestamp>.csv` — values blanked or dropped
   (non-URL text in Url fields, over-length URLs, unmappable Focus Level or Demographic values).
 
 See the full mapping table and current sandbox-state notes in the root `CLAUDE.md` under

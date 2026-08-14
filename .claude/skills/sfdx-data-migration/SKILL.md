@@ -5,7 +5,7 @@ description: Use when building or running Data Loader / sf-CLI-based migration s
 
 # Airtable → Salesforce data migration
 
-`scripts/data-migration/` holds `Get-AirtableExport.ps1` (pulls source data straight from the Airtable
+`scripts/powershell-scripts/` holds `Get-AirtableExport.ps1` (pulls source data straight from the Airtable
 REST API — see CLAUDE.md's "Scripts" section) plus, eventually, the upsert/load scripts that move that
 data into a GSA PEO org. This skill is the convention to follow when adding those.
 
@@ -13,16 +13,17 @@ data into a GSA PEO org. This skill is the convention to follow when adding thos
 
 - **Source extracts:** `data/airtable-exports/<Table>.json` (gitignored — PII), written by
   `Get-AirtableExport.ps1` and overwritten each run — always current Airtable state, not a history.
-- **Field mappings:** `data/mappings/` (gitignored) — Data Loader `.sdl` files or equivalent
+- **Field mappings:** in the `Build-*.ps1` transforms themselves — there is no separate mapping file.
+  (`data/mappings/` was removed 2026-08-14: a Data Loader GUI leftover, always empty, never read.)
   object/field mapping docs.
-- **Scripts:** `scripts/data-migration/*.ps1`.
-- **Run output:** `logs/data-migration/` (gitignored), via `scripts/common/Common.ps1`.
+- **Scripts:** `scripts/powershell-scripts/*.ps1`.
+- **Run output:** `scripts/logs/data-migration/` (gitignored), via `scripts/powershell-scripts/Common.ps1`.
 
 ## Required conventions for new scripts
 
 1. **Dot-source the shared helpers**, same as every other script in this repo:
    ```powershell
-   . (Join-Path $PSScriptRoot "..\common\Common.ps1")
+   . (Join-Path $PSScriptRoot "Common.ps1")
    $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "<Name>"
    # ... work ...
    # in a finally block:
@@ -39,7 +40,7 @@ data into a GSA PEO org. This skill is the convention to follow when adding thos
 4. **Load order follows the data model's dependencies** — parents before children/junctions:
    Account / `LDGCRM_Partner_account__c` before `LDGCRM_Application__c`, Contact before
    `LDGCRM_Application_Contact__c`, Opportunity before `LDGCRM_Opportunity_Impediment__c`, etc. This
-   is the reverse of the delete order in `scripts/cleanup/Invoke-SandboxFactoryReset.ps1` — that script's object
+   is the reverse of the delete order in `scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1` — that script's object
    list is a ready reference for the dependency order either direction.
 5. **Dry run before a full load.** Validate mapping and row counts against a small batch (or a
    CSV-only export step) before loading everything — Bulk API loads at scale are hard to partially

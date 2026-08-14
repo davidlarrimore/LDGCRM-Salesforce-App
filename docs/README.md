@@ -6,7 +6,7 @@
 an owner each. Open it first when picking this project up after time away — it is the only page that
 tracks the programme rather than a run, an object, or a script.
 
-Individual loads write their own report to `logs/data-migration/<run>/SUMMARY.txt`, which is
+Individual loads write their own report to `scripts/logs/data-migration/<run>/SUMMARY.txt`, which is
 gitignored and disposable. That tells you what happened once; this tells you where things stand.
 
 ---
@@ -19,18 +19,23 @@ does not need the Airtable token setup.
 
 ---
 
-## I need to *run* a migration → [`operations/`](operations/)
+## I need to *run* a migration → [`../scripts/`](../scripts/)
+
+**These docs moved out of `docs/` on 2026-08-14.** They now live in
+[`../scripts/docs/`](../scripts/docs/), beside the code they describe, because the GSA Salesforce
+Operations team takes `scripts/` into their own repository and the runbooks have to travel with it.
+Start at **[`../scripts/README.md`](../scripts/README.md)**, the bundle's own front door.
 
 For anyone loading data into a Salesforce org — including people who have never seen this project.
 Read in this order:
 
 | Document | What it covers |
 | --- | --- |
-| **[operations/SETUP.md](operations/SETUP.md)** | **Start here.** What this project is, the tooling, connecting to a Salesforce org, getting an Airtable token, filling in `.env` |
-| **[operations/RUNNING-A-LOAD.md](operations/RUNNING-A-LOAD.md)** | The main guide. Pull → transform → load, the step order and why it matters, approving a load, resuming a failure, verifying the result |
-| [operations/TROUBLESHOOTING.md](operations/TROUBLESHOOTING.md) | Every failure this pipeline has actually produced, what the error really means, and how to read the logs |
-| [operations/ROLLBACK.md](operations/ROLLBACK.md) | Undoing a load — and what it can never undo |
-| [operations/RELOAD-QA-CHECKLIST.md](operations/RELOAD-QA-CHECKLIST.md) | Full wipe-and-reload of a sandbox, with verification at every stage |
+| **[../scripts/docs/SETUP.md](../scripts/docs/SETUP.md)** | **Start here.** What this project is, the tooling, connecting to a Salesforce org, getting an Airtable token, filling in `.env` |
+| **[../scripts/docs/RUNNING-A-LOAD.md](../scripts/docs/RUNNING-A-LOAD.md)** | The main guide. Pull → transform → load, the step order and why it matters, approving a load, resuming a failure, verifying the result |
+| [../scripts/docs/TROUBLESHOOTING.md](../scripts/docs/TROUBLESHOOTING.md) | Every failure this pipeline has actually produced, what the error really means, and how to read the logs |
+| [../scripts/docs/ROLLBACK.md](../scripts/docs/ROLLBACK.md) | Undoing a load — and what it can never undo |
+| [../scripts/docs/RELOAD-QA-CHECKLIST.md](../scripts/docs/RELOAD-QA-CHECKLIST.md) | Full wipe-and-reload of a sandbox, with verification at every stage |
 
 > **Two things worth knowing before you touch anything.**
 >
@@ -72,8 +77,8 @@ written for the people who own the Airtable base, not for engineers. Every item 
 > load is blocked by a *field setting* rather than by the data, it belongs there — the pipeline
 > cannot route around it, because metadata moves by change set only.
 
-Every transform's review CSVs feed this list. Findings sitting unread in `logs/` are exactly what it
-exists to prevent — see [logs/README.md](../logs/README.md).
+Every transform's review CSVs feed this list. Findings sitting unread in `scripts/logs/` are exactly
+what it exists to prevent — see [../scripts/logs/README.md](../scripts/logs/README.md).
 
 Keep it to things that unblock records. Zero-impact curiosities dilute it and make the real asks
 easier to ignore.
@@ -90,7 +95,7 @@ easier to ignore.
 Render it before sending:
 
 ```powershell
-scripts\data-migration\Export-ReportPdf.ps1 -HtmlPath docs\migration-load-report-2026-08-14.html
+tools\Export-ReportPdf.ps1 -HtmlPath docs\migration-load-report-2026-08-14.html
 ```
 
 **Send the PDF, not the HTML.** Google Drive renders a standalone `.html` as raw markup.
@@ -115,7 +120,8 @@ report to refresh it; generate a new dated one.
 | --- | --- |
 | [`../README.md`](../README.md) | Repo front door — what this is, and the quick start |
 | [`../CLAUDE.md`](../CLAUDE.md) | Conventions and architecture notes for AI coding assistants |
-| [`../logs/README.md`](../logs/README.md) | What every run leaves behind and how to read it |
-| [`../data/README.md`](../data/README.md) | Airtable exports and load-ready CSVs |
-| `../scripts/` | The automation itself, organised by purpose |
+| [`../scripts/README.md`](../scripts/README.md) | **The Operations bundle's own front door** — start here to run a load |
+| [`../scripts/logs/README.md`](../scripts/logs/README.md) | What every run leaves behind and how to read it |
+| [`../scripts/data/README.md`](../scripts/data/README.md) | Airtable exports, the production Account export, and load-ready CSVs |
+| `../tools/` | Engineering-only scripts — metadata sync, the report PDF, the bundle packager |
 | `../sfdx/` | The Salesforce DX project — retrieved metadata |

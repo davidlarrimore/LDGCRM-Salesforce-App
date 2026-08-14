@@ -1,0 +1,73 @@
+# ============================================================
+# Login.gov CRM migration pipeline - ignore rules
+# ============================================================
+# THIS FILE MUST TRAVEL WITH THIS FOLDER. It is not a duplicate of the
+# engineering repo's root .gitignore - it is the copy that keeps working after
+# this folder is dropped into the GSA Salesforce Operations repository, where
+# that root .gitignore does not exist.
+#
+# Git applies a .gitignore to the directory containing it and everything below,
+# in whatever repository that directory happens to sit in. So these rules hold
+# in the engineering repo today and in the Operations repo tomorrow, with no
+# action required from whoever does the move.
+#
+# WHAT IS BEING PROTECTED. Running this pipeline writes real Login.gov partner
+# and applicant data to disk: names, email addresses, agency contacts, partner
+# notes. It lands in data/ (pulled from Airtable, and staged for the Bulk API)
+# and in logs/ (transcripts, review CSVs, and the Bulk API's own failure rows,
+# which echo the full record payload). NONE of it may be committed - to this
+# repository or to any other.
+#
+# If you are adding a new output location to the pipeline, add it here in the
+# same change. An output folder that nobody thought about is how PII gets
+# committed.
+
+# ------------------------------------------------------------
+# Credentials
+# ------------------------------------------------------------
+# .env holds the Airtable Personal Access Token. .env.example holds no secrets
+# and is the template operators copy, so it is the one file here that IS
+# tracked - see docs/SETUP.md.
+.env
+.env.*
+!.env.example
+
+# ------------------------------------------------------------
+# Run output - transcripts, review CSVs, summaries, restore points
+# ------------------------------------------------------------
+# Folder structure is kept (via .gitkeep) so a fresh clone can run without
+# creating directories by hand; the contents are not.
+logs/**
+!logs/**/
+!logs/**/.gitkeep
+!logs/**/README.md
+
+# ------------------------------------------------------------
+# Data - Airtable extracts, load-ready CSVs, the production Account export
+# ------------------------------------------------------------
+data/**
+!data/**/
+!data/**/.gitkeep
+!data/**/README.md
+
+# ------------------------------------------------------------
+# Salesforce CLI bulk job result files
+# ------------------------------------------------------------
+# `sf data bulk results` writes these into the CURRENT WORKING DIRECTORY rather
+# than anywhere this pipeline chooses, so they can appear next to the scripts
+# themselves. They contain full record payloads.
+750*-success-records.csv
+750*-failed-records.csv
+
+# Salesforce CLI local state, if `sf` is ever run from inside this folder.
+.sf/
+.sfdx/
+**/*.sfdx-token
+
+# ------------------------------------------------------------
+# OS and editor junk
+# ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini

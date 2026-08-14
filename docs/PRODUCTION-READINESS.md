@@ -5,7 +5,7 @@
 > page to open first when picking up this project after time away.
 >
 > **This is not a run log.** Individual loads write their own report to
-> `logs/data-migration/<run>/SUMMARY.txt`, which is gitignored and disposable. This file is source
+> `scripts/logs/data-migration/<run>/SUMMARY.txt`, which is gitignored and disposable. This file is source
 > controlled *because* those are not: run output tells you what happened once, this tells you where
 > the programme is.
 
@@ -40,7 +40,7 @@ closed until it has been demonstrated, not merely built.
 | 3 | Salesforce config changes landed | 🟢 **Done 2026-08-14** — CR-1 and CR-2 fixed, CR-3 accepted as-is | Salesforce config owner |
 | 4 | A full rehearsal in **QA**, end to end | 🟢 **Done 2026-08-14** — 8,740 records, 0 unexpected failures | Engineering |
 | 5 | Airtable data quality at an accepted level | 🟡 **Improving** — 9 items closed 2026-08-13 | Airtable data owners |
-| 6 | The **Full** sandbox exists and Operations rehearse in it | 🔴 **Not provisioned** | GSA IT / Operations |
+| 6 | The **Full** sandbox exists and Operations rehearse in it | 🔴 **Not provisioned.** Hand-off *packaging* is done (2026-08-14) — `scripts/` is a self-contained bundle, proven by running it from an unrelated directory | GSA IT / Operations |
 | 7 | Production authorized, scheduled, supervised | 🔴 **Not started** | Project owner + GSA IT |
 
 Detail on each below. **Gates 2, 3, 5 and 6 are not engineering work** — the pipeline cannot move
@@ -198,15 +198,37 @@ quality is now dominated by two things: **Account matching** and **contact names
 
 `Full` is the org where **GSA IT Operations** rehearse the migration themselves, running the scripts
 and applying the change sets, immediately before production. It does not exist yet: the
-`-Environment Full` entry in `scripts/common/Common.Orgs.ps1` has no alias or instance URL.
+`-Environment Full` entry in `scripts/powershell-scripts/Common.Orgs.ps1` has no alias or instance URL.
 
 **Why it is a separate gate from QA.** QA proves the *pipeline* works in a second org. Full proves
 the *hand-off* works — that someone who did not build this can run it from the documentation. The
 Operations team have `sf` and Windows PowerShell and nothing else guaranteed, which is why this repo
 is PowerShell-only.
 
+### The hand-off packaging is done (2026-08-14)
+
+Operations will take the pipeline into **their own GitHub repository** as a `/scripts` folder, so
+`scripts/` was restructured to be self-contained: `data/`, `logs/`, the operator runbooks and the
+credential template all live inside it, and every path resolves off the bundle root rather than this
+repository's. `tools/Export-OpsBundle.ps1` builds the zip and verifies it by reading the archive
+back; `tools/Test-BundleStructure.ps1` guards against the folder quietly regaining an outward
+dependency. Proven by extracting the zip to an unrelated directory and running it there.
+
+Two consequences that matter for this gate specifically:
+
+- **Accounts are never deleted or rebuilt in a Full sandbox.** It is a copy of production, so its
+  Accounts *are* the records the migration reconciles onto — rebuilding them from a stale export
+  would invalidate the rehearsal. Enforced in code, in one place, across all three scripts that
+  could do it. Every other object still resets normally, so the rehearsal is otherwise unchanged.
+  `RELOAD-QA-CHECKLIST.md` carries the "skip these steps in Full" note.
+- **Two things must be handed over out-of-band**, because neither is in the repo: the production
+  Account export (gitignored, and only needed if Operations also rehearse in a *developer* sandbox),
+  and Airtable Personal Access Token access, which requires an admin account on the base.
+
 **Needed:** the sandbox provisioned, then authorized per the runbook in
-[engineering/ARCHITECTURE.md](engineering/ARCHITECTURE.md) ("Environments and org aliases").
+[engineering/ARCHITECTURE.md](engineering/ARCHITECTURE.md) ("Environments and org aliases") — which
+means filling in `Alias`, `SandboxName`, `InstanceUrl` and `LightningUrl` for `Full` in the registry.
+Nothing else in the pipeline needs to change.
 
 ---
 
