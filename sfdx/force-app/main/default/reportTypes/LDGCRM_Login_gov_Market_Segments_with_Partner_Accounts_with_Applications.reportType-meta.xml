@@ -770,6 +770,11 @@
             <field>LDGCRM_Market_Segment__c</field>
             <table>LDGCRM_Market_Segment__c.LGDCRM_Accounts__r.Partner_Accounts__r.Applications3__r</table>
         </columns>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>LDGCRM_Support_Information__c</field>
+            <table>LDGCRM_Market_Segment__c.LGDCRM_Accounts__r.Partner_Accounts__r.Applications3__r</table>
+        </columns>
         <masterLabel>Applications</masterLabel>
     </sections>
 </ReportType>

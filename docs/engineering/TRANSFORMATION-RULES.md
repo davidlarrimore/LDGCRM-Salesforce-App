@@ -994,6 +994,30 @@ would read as an Airtable data problem rather than an out-of-date file on disk. 
 general pattern for any transform whose source column changed type: **make the old shape a loud
 failure, not a silent zero.**
 
+### ⚠️ `LDGCRM_Tehnical_Checklist_URL__c` — the API name is misspelled, and the label is not
+
+**Do not "correct" this to `Technical` in a transform.** The Salesforce API name really is
+`LDGCRM_Tehnical_Checklist_URL__c`, missing the second `c`, while its **label reads
+"Technical Checklist URL" correctly**. That mismatch is the whole hazard: everything a human sees is
+spelled right, so the typo looks like a bug in the script rather than in the field, and "fixing" it
+produces `INVALID_FIELD` on every row.
+
+**History that matters for anyone reading old commits or an old change set:** the field was renamed on
+2026-08-14 from **`LDGRM_`** to **`LDGCRM_`**. The *prefix* was wrong, which mattered because the
+prefix is this org's ownership signal — an `LDGRM_` field reads as belonging to nobody, or to another
+app. The misspelling in the body was **not** corrected at the same time, so the field is half-fixed.
+`git log` will show 11 metadata files changing name references in one go; that is the rename, not
+drift.
+
+Mapped from Airtable's `Technical Checklist URL` (Opportunities table) through the shared
+`Resolve-OpportunityUrl` helper, so it gets the same treatment as the other three URL fields:
+non-URL text is left blank and reported rather than written into a `Url`-typed field, and anything
+over the platform's 255-char cap is blanked rather than truncated. **31 Airtable rows carry a value,
+25 of which are real URLs**; the other 6 are placeholder text and are reported.
+
+It was not mapped at all before the rename — neither written nor listed as excluded, which is how it
+went unnoticed.
+
 ### A metadata fix that WAS ours to make (unlike Name/Url)
 
 `LDGCRM_App_Description__c` was `TextArea` with no `<length>` — the 255-char trap, hit for the third

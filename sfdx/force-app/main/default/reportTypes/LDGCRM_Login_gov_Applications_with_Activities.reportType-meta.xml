@@ -320,6 +320,11 @@
             <field>LDGCRM_Market_Segment__c</field>
             <table>LDGCRM_application__c</table>
         </columns>
+        <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>LDGCRM_Support_Information__c</field>
+            <table>LDGCRM_application__c</table>
+        </columns>
         <masterLabel>Applications</masterLabel>
     </sections>
     <sections>

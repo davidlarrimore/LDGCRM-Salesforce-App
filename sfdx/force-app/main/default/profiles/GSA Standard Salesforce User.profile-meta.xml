@@ -873,6 +873,11 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
+        <editable>false</editable>
+        <field>LDGCRM_application__c.LDGCRM_Support_Information__c</field>
+        <readable>false</readable>
+    </fieldPermissions>
+    <fieldPermissions>
         <editable>true</editable>
         <field>LDGCRM_application__c.LDGCRM_URL__c</field>
         <readable>true</readable>
@@ -1184,7 +1189,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Opportunity.LDGRM_Tehnical_Checklist_URL__c</field>
+        <field>Opportunity.LDGCRM_Tehnical_Checklist_URL__c</field>
         <readable>false</readable>
     </fieldPermissions>
     <fieldPermissions>

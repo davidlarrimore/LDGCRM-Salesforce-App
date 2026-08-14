@@ -31,7 +31,7 @@ optionality, contact merging and Partner Portal Admin sourcing — **please don'
 | # | Item | Rows | What it costs | Whose call |
 | --- | --- | --- | --- | --- |
 | 1 | [Accounts with no Salesforce match](#1-accounts-with-no-salesforce-match--154-rows) | **154** | ~193 records across 5 objects | **Salesforce**, with 2 small Airtable fixes |
-| 2 | [Owners with no active Salesforce login](#2-owners-with-no-active-salesforce-login--247-people) | **247 people** | ownership is inherited, not authored | **Salesforce / business** |
+| 2 | [Owners with no active Salesforce login](#2-owners-with-no-active-salesforce-login--4-people-247-opportunities) | **4 people** | 247 Opportunities get an inherited owner instead of their real one | **Salesforce / business** |
 | 3 | [Help-desk names became people](#3-seven-help-desk-names-became-people--7-contacts) | **7** | 7 contacts look like staff | **Airtable** |
 | 4 | [Emails in the Name field](#4-three-contacts-are-named-after-an-email-address--3-rows) | **3** | 3 contacts named after an address | **Airtable** |
 | 5 | [Small tidy-ups](#5-small-tidy-ups) | various | nothing | **Airtable** |
@@ -99,30 +99,50 @@ Blocks 1 Partner Account, 2 Applications and 2 Opportunities. Both Opportunities
 
 ---
 
-## 2. Owners with no active Salesforce login — 247 people
+## 2. Owners with no active Salesforce login — 4 people, 247 Opportunities
 
-Records are assigned to their real owner where that person has an active Salesforce user. **247
-distinct owner emails do not resolve.**
+**This is the highest-value item on the list, and it is four user records.**
 
-Nothing is lost or blocked — as of 2026-08-14 those records inherit **the parent Account's owner**
-rather than a generic stand-in. But that has a consequence worth stating plainly: **265 Opportunities
-now inherit `SystemUser DataLoader`**, a bulk-load service account that owns 48% of production
-Accounts. Their ownership *looks* real and isn't. Because these objects use **owner-based sharing**,
-ownership also decides who can see them.
+Records go to their real owner where that person has an active Salesforce user. Where they don't,
+the record inherits **the parent Account's owner** instead. Nothing is lost or blocked — but an
+inherited owner *looks* like authored ownership and isn't, and because these objects use
+**owner-based sharing**, ownership also decides who can see the record.
 
-Two distinct situations needing different answers:
+**327 Opportunities currently inherit rather than being assigned. 247 of those — 76% — trace to just
+four people:**
 
-- **No Salesforce user at all:** `elizabeth.mays@gsa.gov`, `tony.parrilla@gsa.gov`,
-  `sierra.stewart@gsa.gov`, `robert.owens@gsa.gov`, `nour.aldimashki@gsa.gov`,
-  `goutham.kommanaboyina@gsa.gov`, `brianna.naolu@gsa.gov`.
-- **User exists but is deactivated:** `gabriel.vorleto@gsa.gov`, `trish.nguyen@gsa.gov`,
-  `diondra.humphries@gsa.gov`, `becky.badalato@gsa.gov`, `hanna.kim@gsa.gov`,
-  `matt.pritchard@gsa.gov`, `ambuj.neupane@gsa.gov`. Salesforce won't assign records to a deactivated
-  user, so these behave the same as missing.
+| Person | Opportunities | Situation |
+| --- | --- | --- |
+| `elizabeth.mays@gsa.gov` | **146** | no Salesforce user at all |
+| `gabriel.vorleto@gsa.gov` | **78** | user exists but is **deactivated** |
+| `tony.parrilla@gsa.gov` | 15 | no Salesforce user at all |
+| `sierra.stewart@gsa.gov` | 8 | no Salesforce user at all |
+
+**Creating or reactivating those four accounts moves 247 Opportunities to their real owner** and stops
+inheritance firing for them entirely. The remaining **80** have no owner recorded in Airtable at all,
+so inheritance is the only option there.
+
+### Why the inherited owner is usually a service account
+
+Because that is what owns the Account in production — **`SystemUser DataLoader` owns 651 of the 1,342
+production Accounts (48%)**, and `SNA MSadi` owns another 607 (44%). This migration never sets Account
+ownership; Airtable has no Account owner column and the Accounts pre-date the migration. So the
+inherited owner is simply whatever the Account already had.
+
+*(In the Dev sandbox this reads worse than reality: 72 Accounts show the person who ran the rebuild,
+because only 5 of the export's 14 owner names match an active user there. In production those belong
+to `SNA MSadi`.)*
+
+**Other people whose records also fall back**, on Partner Accounts and Meetings rather than
+Opportunities: `robert.owens@gsa.gov`, `nour.aldimashki@gsa.gov`, `goutham.kommanaboyina@gsa.gov`,
+`brianna.naolu@gsa.gov` (no user), and `trish.nguyen@gsa.gov`, `diondra.humphries@gsa.gov`,
+`becky.badalato@gsa.gov`, `hanna.kim@gsa.gov`, `matt.pritchard@gsa.gov`, `ambuj.neupane@gsa.gov`
+(deactivated). Salesforce will not assign a record to a deactivated user, so those behave exactly the
+same as missing.
 
 **What we need:** for each person, either confirm they're current staff who need an active login, or
-name who their records should be reassigned to. **This is the only thing that turns inherited
-ownership back into authored ownership.**
+name who their records should be reassigned to. **Start with the four in the table — they are 76% of
+the problem.**
 
 *(Sandbox observation — confirm against production before acting.)*
 Lists: `Opportunity-unresolved-owner-*.csv`, `PartnerAccount-unmapped-owner-*.csv`.

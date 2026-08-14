@@ -672,10 +672,6 @@
     <picklistValues>
         <picklist>LDGCRM_Level_of_Priority__c</picklist>
         <values>
-            <fullName>Strategic</fullName>
-            <default>false</default>
-        </values>
-        <values>
             <fullName>High Volume</fullName>
             <default>false</default>
         </values>
@@ -685,6 +681,10 @@
         </values>
         <values>
             <fullName>Leadership Escalation</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Strategic</fullName>
             <default>false</default>
         </values>
     </picklistValues>
