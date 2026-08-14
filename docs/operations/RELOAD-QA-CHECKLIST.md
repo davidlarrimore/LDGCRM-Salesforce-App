@@ -460,13 +460,19 @@ Market Segment (already loaded - do not touch)
 - [ ] Run `Build-PartnerAccountLoad.ps1`. Expect **94 ready, 5 skipped**. Load: **92 succeed, 2 fail** (2026-08-13 reload; was ~74/~20 — the Account work fixed the rest).
 - [ ] Load (upsert). Expect ~74 succeed, ~20 fail — all tracing to parent Accounts among the 169
       unmatched. Same failures as previous runs = correct, not a regression.
-- [ ] ⚠️ **THE ORCHESTRATOR WILL STOP HERE, EVERY TIME, AND THAT IS NOT A BUG TO FIX BY RETRYING.**
-      `Invoke-SalesforceLoad.ps1` exits non-zero on *any* Bulk failure, and this step's correct
-      outcome includes ~20 failures — so `Invoke-FullMigrationLoad.ps1` records
-      `PartnerAccount ... LOAD FAILED (exit 1)` and halts, even though the step did exactly what it
-      should. Confirmed on 2026-08-13.
+- [ ] ✅ **FIXED 2026-08-13 — the orchestrator no longer stops here.** It used to halt every time:
+      `Invoke-SalesforceLoad.ps1` exited non-zero on *any* Bulk failure, and this step's correct
+      outcome includes some failures, so a correct run was indistinguishable from a broken one and
+      cost a manual diagnosis and resume. It now **classifies** failures against a per-object list of
+      known causes (`ExpectedFailures` in the orchestrator's step table) and reports
+      `PartnerAccount ... PARTIAL (expected failures)` while carrying on.
 
-      **Verify it's the expected failure, then resume past it** — do not re-run PartnerAccount:
+      Expect to see a `FAILURE CLASSIFICATION` block showing all failures matched and the count
+      within the allowance — `max(20 rows, 5% of the batch)`. It still halts if **any** failure
+      doesn't match a known cause, or if the count exceeds the allowance.
+
+      *The manual verification below is no longer required, but is kept because it is still the way
+      to check the failures are the ones you think they are:*
       ```powershell
       # 74 tagged + 2 pre-existing = 76 means the step succeeded as designed
       sf data query -q "SELECT COUNT() FROM LDGCRM_Partner_Account__c WHERE LDGCRM_External_ID__c != null" --target-org <alias>

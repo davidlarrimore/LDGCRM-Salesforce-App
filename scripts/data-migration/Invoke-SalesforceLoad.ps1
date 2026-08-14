@@ -65,7 +65,29 @@ param(
         the duration of this load, then switch back on. See the big
         "TRIGGER BYPASS" comment block below before using it.
     #>
-    [string]$DisableTriggerControl = ""
+    [string]$DisableTriggerControl = "",
+
+    <#
+        EXPECTED-PARTIAL HANDLING (added 2026-08-13). See the block below.
+
+        Substrings that mark a row failure as a KNOWN, ACCEPTED outcome for this
+        object. A failure whose error contains any of these is "expected"; any
+        other failure is a real one and still fails the load.
+
+        Deliberately per-object and supplied by the caller, not a global list
+        baked in here: DUPLICATES_DETECTED is the documented correct outcome on
+        Contact and would be a brand-new problem on Application.
+    #>
+    [string[]]$ExpectedFailurePatterns = @(),
+
+    # Ceiling on expected failures, as a fraction of the submitted rows. Even a
+    # known cause at unusual volume means something changed upstream.
+    [double]$ExpectedFailureMaxFraction = 0.05,
+
+    # Absolute floor for that ceiling, so a small batch is not failed by
+    # arithmetic (2 of 94 is 2.1% and fine; 2 of 20 would be 10% and is also
+    # fine). Effective allowance = max(this, fraction x rows).
+    [int]$ExpectedFailureMinCount = 20
 )
 
 $ErrorActionPreference = "Stop"
@@ -157,20 +179,73 @@ function Set-TriggerControlState {
 function Invoke-SalesforceCliJson {
     param(
         [Parameter(Mandatory = $true)]
-        [string[]]$Arguments
+        [string[]]$Arguments,
+
+        # When set, a non-zero exit is RETURNED rather than thrown, so the
+        # caller can inspect the result. Used only for the bulk load itself -
+        # see Get-BulkFailureDetail for why.
+        [switch]$TolerateNonZeroExit
     )
 
     Write-Host ""
     Write-Host "sf $($Arguments -join ' ')" -ForegroundColor DarkGray
 
     $RawResult = & sf @Arguments --json
+    $ExitCode = $LASTEXITCODE
 
-    if ($LASTEXITCODE -ne 0) {
+    if ($ExitCode -ne 0 -and -not $TolerateNonZeroExit) {
         Write-Host $RawResult -ForegroundColor Red
-        throw "Salesforce CLI command failed with exit code $LASTEXITCODE."
+        throw "Salesforce CLI command failed with exit code $ExitCode."
     }
 
-    return $RawResult | ConvertFrom-Json
+    $Parsed = $null
+    try { $Parsed = $RawResult | ConvertFrom-Json } catch { $Parsed = $null }
+
+    if ($null -eq $Parsed) {
+        Write-Host $RawResult -ForegroundColor Red
+        throw "Could not parse the Salesforce CLI response (exit $ExitCode)."
+    }
+
+    return [PSCustomObject]@{ ExitCode = $ExitCode; Result = $Parsed }
+}
+
+function Get-BulkFailureDetail {
+    <#
+        Returns the per-row failures for a finished Bulk job.
+
+        WHY THIS IS A SEPARATE CALL. When any row fails, `sf data upsert bulk`
+        exits 1 and its JSON carries the job id but NOT the row errors - so the
+        only way to find out WHY rows failed is to ask for the results
+        afterwards. Without this the script could only report "it failed",
+        which is exactly the ambiguity this whole feature exists to remove.
+
+        `sf data bulk results` writes <jobid>-failed-records.csv into the CURRENT
+        DIRECTORY. That file contains full record payloads - applicant names and
+        emails - so it is written to a run-scoped folder under logs/ (gitignored)
+        rather than left in the repo root, where it would be one `git add -A`
+        away from being committed.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$JobId,
+        [Parameter(Mandatory = $true)][string]$Org,
+        [Parameter(Mandatory = $true)][string]$OutputDirectory
+    )
+
+    New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+
+    $Previous = Get-Location
+    try {
+        Set-Location -LiteralPath $OutputDirectory
+        & sf data bulk results --job-id $JobId --target-org $Org | Out-Null
+    }
+    finally {
+        Set-Location $Previous
+    }
+
+    $FailedFile = Join-Path $OutputDirectory "$JobId-failed-records.csv"
+    if (-not (Test-Path -LiteralPath $FailedFile)) { return @() }
+
+    return @(Import-Csv -LiteralPath $FailedFile)
 }
 
 try {
@@ -216,7 +291,7 @@ $CurrentCountResult = Invoke-SalesforceCliJson -Arguments @(
     "--api-version", $ApiVersion,
     "--query", "SELECT COUNT() FROM $ObjectApiName"
 )
-$CurrentCount = [int]$CurrentCountResult.result.totalSize
+$CurrentCount = [int]$CurrentCountResult.Result.result.totalSize
 
 Write-Host ""
 Write-Host ("{0,-35} {1,10:N0}" -f "Rows in CSV", $Rows.Count)
@@ -303,7 +378,12 @@ if ($Operation -eq "Upsert") {
     $LoadArguments += @("--external-id", $ExternalIdField)
 }
 
-$LoadResult = Invoke-SalesforceCliJson -Arguments $LoadArguments
+# TolerateNonZeroExit: `sf data upsert bulk` exits 1 if ANY row fails, and for
+# several objects a handful of failures is the documented correct outcome. The
+# script must survive the exit to read WHY they failed - classification happens
+# below, and a genuinely bad load still exits non-zero from there.
+$LoadInvocation = Invoke-SalesforceCliJson -Arguments $LoadArguments -TolerateNonZeroExit
+$LoadResult = $LoadInvocation.Result
 $LoadResult | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $ResultFile -Encoding UTF8
 
 # ============================================================
@@ -317,29 +397,140 @@ Write-Host "============================================================" -Foreg
 Write-Host ""
 
 $JobInfo = $LoadResult.result.jobInfo
+$JobId = $null
+$Processed = $null
+$Failed = $null
 
 if ($JobInfo) {
     # Shape used by `sf data upsert bulk`.
-    Write-Host ("{0,-35} {1}" -f "Job ID", $JobInfo.id)
+    $JobId = $JobInfo.id
+    $Processed = [int]$JobInfo.numberRecordsProcessed
+    $Failed = [int]$JobInfo.numberRecordsFailed
+    Write-Host ("{0,-35} {1}" -f "Job ID", $JobId)
     Write-Host ("{0,-35} {1}" -f "State", $JobInfo.state)
-    Write-Host ("{0,-35} {1:N0}" -f "Records processed", $JobInfo.numberRecordsProcessed)
-    Write-Host ("{0,-35} {1:N0}" -f "Records failed", $JobInfo.numberRecordsFailed)
+    Write-Host ("{0,-35} {1:N0}" -f "Records processed", $Processed)
+    Write-Host ("{0,-35} {1:N0}" -f "Records failed", $Failed)
 }
 elseif ($null -ne $LoadResult.result.processedRecords) {
     # Flat shape used by `sf data update bulk`.
-    Write-Host ("{0,-35} {1}" -f "Job ID", $LoadResult.result.jobId)
-    Write-Host ("{0,-35} {1:N0}" -f "Records processed", $LoadResult.result.processedRecords)
+    $JobId = $LoadResult.result.jobId
+    $Processed = [int]$LoadResult.result.processedRecords
+    $Failed = [int]$LoadResult.result.failedRecords
+    Write-Host ("{0,-35} {1}" -f "Job ID", $JobId)
+    Write-Host ("{0,-35} {1:N0}" -f "Records processed", $Processed)
     Write-Host ("{0,-35} {1:N0}" -f "Records successful", $LoadResult.result.successfulRecords)
-    Write-Host ("{0,-35} {1:N0}" -f "Records failed", $LoadResult.result.failedRecords)
+    Write-Host ("{0,-35} {1:N0}" -f "Records failed", $Failed)
 }
 else {
-    Write-Host "Full result written to:" -ForegroundColor Cyan
-    Write-Host $ResultFile
+    # Error shape: counts are absent, but the job id is present and is what
+    # lets us go and ask for the failures.
+    $JobId = $LoadResult.data.jobId
+    Write-Host ("{0,-35} {1}" -f "Job ID", $JobId)
+    Write-Host ("{0,-35} {1}" -f "CLI message", $LoadResult.message)
 }
 
 Write-Host ""
 Write-Host "Full job result:" -ForegroundColor Cyan
 Write-Host $ResultFile
+
+# ============================================================
+# EXPECTED-PARTIAL CLASSIFICATION
+# ============================================================
+# A load that reports failures is not automatically a broken load. Several
+# objects have known failures as their CORRECT outcome - Partner Accounts whose
+# parent Account is one of the unmatched Airtable rows, Contacts caught by the
+# org's first+last-name duplicate rule. Before this, any failure exited non-zero
+# and the orchestrator halted, so a correct run looked identical to a broken one
+# and cost a manual diagnosis every time (twice in the 2026-08-13 reload).
+#
+# The rules, decided 2026-08-13:
+#   1. A failure is EXPECTED only if its error matches one of this object's
+#      -ExpectedFailurePatterns. Per-object on purpose.
+#   2. Anything unmatched is a REAL failure -> non-zero exit, as before.
+#   3. Expected failures are still capped at max(MinCount, Fraction x rows) -
+#      a known cause at unusual volume means something upstream changed.
+$LoadFailed = $false
+$ExpectedPartial = $false
+
+if ($LoadInvocation.ExitCode -ne 0) {
+    if (-not $JobId) {
+        Write-Host ""
+        Write-Host "The load failed and no job id was returned, so the failures cannot be" -ForegroundColor Red
+        Write-Host "classified. Treating as a real failure." -ForegroundColor Red
+        $LoadFailed = $true
+    }
+    else {
+        $FailureDirectory = Join-Path (Get-LogDirectory -Category "data-migration") "bulk-results\$ObjectApiName-$Timestamp"
+        $FailedRows = @(Get-BulkFailureDetail -JobId $JobId -Org $OrgAlias -OutputDirectory $FailureDirectory)
+
+        if ($null -eq $Failed -or $Failed -eq 0) { $Failed = $FailedRows.Count }
+
+        $Unexpected = @($FailedRows | Where-Object {
+            $Message = "$($_.sf__Error)"
+            $Match = $false
+            foreach ($Pattern in $ExpectedFailurePatterns) {
+                if ($Pattern -and $Message -like "*$Pattern*") { $Match = $true; break }
+            }
+            -not $Match
+        })
+
+        $Allowance = [Math]::Max($ExpectedFailureMinCount, [int][Math]::Ceiling($Rows.Count * $ExpectedFailureMaxFraction))
+
+        Write-Host ""
+        Write-Host "------------------------------------------------------------"
+        Write-Host " FAILURE CLASSIFICATION"
+        Write-Host "------------------------------------------------------------"
+        Write-Host ("  {0,-33} {1:N0}" -f "Rows submitted", $Rows.Count)
+        Write-Host ("  {0,-33} {1:N0}" -f "Rows failed", $FailedRows.Count)
+        Write-Host ("  {0,-33} {1:N0}" -f "  ...matching a known cause", ($FailedRows.Count - $Unexpected.Count))
+        Write-Host ("  {0,-33} {1:N0}" -f "  ...UNEXPECTED", $Unexpected.Count)
+        Write-Host ("  {0,-33} {1:N0}" -f "Allowance for expected failures", $Allowance)
+        Write-Host ("  Detail: {0}" -f $FailureDirectory)
+
+        if ($ExpectedFailurePatterns.Count -eq 0) {
+            Write-Host ""
+            Write-Host "  No expected-failure patterns are configured for $ObjectApiName," -ForegroundColor Red
+            Write-Host "  so every failure counts as real." -ForegroundColor Red
+            $LoadFailed = $true
+        }
+        elseif ($Unexpected.Count -gt 0) {
+            Write-Host ""
+            Write-Host "  $($Unexpected.Count) failure(s) do NOT match any known cause for this object." -ForegroundColor Red
+            Write-Host "  That is a real failure, not an expected partial. First few:" -ForegroundColor Red
+            $Unexpected | Select-Object -First 3 | ForEach-Object {
+                Write-Host ("    {0}" -f ("$($_.sf__Error)" -replace '\s+', ' ')) -ForegroundColor Red
+            }
+            $LoadFailed = $true
+        }
+        elseif ($FailedRows.Count -gt $Allowance) {
+            Write-Host ""
+            Write-Host "  All failures match a known cause, but $($FailedRows.Count) exceeds the allowance of $Allowance." -ForegroundColor Red
+            Write-Host "  A known cause at unusual volume means something upstream changed - stopping." -ForegroundColor Red
+            $LoadFailed = $true
+        }
+        else {
+            Write-Host ""
+            Write-Host "  EXPECTED PARTIAL - every failure matches a known cause for this object," -ForegroundColor Yellow
+            Write-Host "  and the count is within the allowance. This is a correct outcome." -ForegroundColor Yellow
+            Write-Host "  $($Rows.Count - $FailedRows.Count) of $($Rows.Count) row(s) loaded." -ForegroundColor Green
+            $ExpectedPartial = $true
+        }
+    }
+}
+
+if ($LoadFailed) {
+    throw "Load of $ObjectApiName failed. See the classification above."
+}
+
+# EXIT 2 = "loaded, with expected partial failures". A distinct code rather than
+# 0, so a caller can tell a clean load from a partial one without parsing text -
+# Invoke-FullMigrationLoad.ps1 maps it to PARTIAL and carries on. It is NOT a
+# failure: the orchestrator's own exit code stays 0 when partials are all it saw
+# (decided 2026-08-13), because a non-zero overall result is precisely what made
+# a correct run look broken.
+if ($ExpectedPartial) {
+    exit 2
+}
 
 }
 finally {

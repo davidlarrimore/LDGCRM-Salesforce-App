@@ -58,13 +58,40 @@ Import-Csv 750cq00000C3JNNAA3-failed-records.csv | Group-Object sf__Error |
 
 ---
 
-## A step reports "LOAD FAILED" but the counts look right
+## A step reports "PARTIAL (expected failures)"
 
-**Usually expected.** `Invoke-SalesforceLoad.ps1` exits non-zero if *any* row fails, and some steps
-have known failures as their correct outcome — most notably `PartnerAccount`, where ~20 of 94 rows
-fail because their parent Account is one of the unmatched Airtable rows.
+**That is a success, not a failure — no action needed.** Added 2026-08-13.
 
-Confirm it's the known cause, then resume past the step rather than re-running it:
+Some steps have known row failures as their *correct* outcome: `PartnerAccount` rows whose parent
+Account is one of the unmatched Airtable rows, `Contact` rows caught by the org's first+last-name
+duplicate rule. The loader now classifies every failure against a per-object list of known causes
+(`ExpectedFailures` in `Invoke-FullMigrationLoad.ps1`'s step table) and prints a
+`FAILURE CLASSIFICATION` block:
+
+```
+  Rows submitted                    1,882
+  Rows failed                       12
+    ...matching a known cause       12
+    ...UNEXPECTED                   0
+  Allowance for expected failures   95
+```
+
+All matched and within allowance → the step reports `PARTIAL`, exits 2, and **the sequence
+continues**. Per-row detail lands in `logs/data-migration/bulk-results/<object>-<timestamp>/`.
+
+It still stops if **any** failure doesn't match a known cause, or if the count exceeds
+`max(20 rows, 5% of the batch)` — a known cause at unusual volume means something upstream changed.
+
+---
+
+## A step reports "LOAD FAILED" and you think the counts look right
+
+Before 2026-08-13 this was usually expected; it now means the failures **did not** match that
+object's known causes, or exceeded the allowance. Read the `FAILURE CLASSIFICATION` block — it prints
+the first few unmatched errors verbatim.
+
+If the cause is legitimately new-but-acceptable, add it to that step's `ExpectedFailures` rather than
+retrying blindly. To check the failures are the ones you think they are:
 
 ```powershell
 # Which planned rows didn't land, and do they all trace to an untagged parent Account?

@@ -114,6 +114,12 @@ $RunStart = Get-Date
 #   Loader      Standard (Invoke-SalesforceLoad.ps1) | Notes (Invoke-NotesLoad.ps1)
 #   TriggerOff  TriggerControls__c record to disable for the load
 #   Why         one line explaining the position, printed in the plan
+#   ExpectedFailures
+#               error substrings that mark a row failure as a KNOWN, ACCEPTED
+#               outcome for this object. Anything else is a real failure and
+#               still halts. Kept here, next to the object, rather than inside
+#               the loader - the policy is per-object and reviewable in one
+#               place. See the classification block in Invoke-SalesforceLoad.ps1.
 $Steps = @(
     [ordered]@{
         Name = "Impediment"; Build = "Build-ImpedimentLoad.ps1"
@@ -129,11 +135,20 @@ $Steps = @(
         Name = "PartnerAccount"; Build = "Build-PartnerAccountLoad.ps1"
         Object = "LDGCRM_Partner_Account__c"; Csv = "LDGCRM_Partner_Account__c-upsert.csv"
         Why = "Master-Detail child of Account - needs Account reconciled first."
+        # Parent Account is one of the unmatched Airtable rows. Documented in
+        # AIRTABLE-DATA-QUALITY-REQUESTS.md; 2 of 94 on the 2026-08-13 reload,
+        # ~20 of 94 before the Account work.
+        ExpectedFailures = @("Foreign key external ID")
     }
     [ordered]@{
         Name = "Contact"; Build = "Build-ContactLoad.ps1"
         Object = "Contact"; Csv = "Contact-upsert.csv"; TriggerOff = "Contact"
         Why = "Disables FCIC's Contact trigger, which creates a junk Account per blank AccountId."
+        # The org's first+last-name duplicate rule. Not in this repo's metadata
+        # (the manifest is app-scoped), so it is invisible to any amount of
+        # reading force-app. Catches the same person under two email addresses -
+        # 12 of 1,882 on the 2026-08-13 reload.
+        ExpectedFailures = @("DUPLICATES_DETECTED")
     }
     [ordered]@{
         Name = "Opportunity"; Build = "Build-OpportunityLoad.ps1"
@@ -667,6 +682,9 @@ $Results = [System.Collections.Generic.List[object]]::new()
 $LoadDir = Get-SalesforceLoadDirectory
 $Position = 0
 $Failed = $false
+# Set when a step loaded with expected partial failures. Reported prominently,
+# but deliberately does NOT make the run exit non-zero - see the summary.
+$Partial = $false
 
 foreach ($Step in $Selected) {
     $Position++
@@ -779,7 +797,23 @@ foreach ($Step in $Selected) {
         if ($Confirmation) { $LoadArgs += @("-Confirmation", $Confirmation) }
         if ($ProductionConfirmation) { $LoadArgs += @("-ProductionConfirmation", $ProductionConfirmation) }
 
+        $ExpectedFailures = @(Get-StepProperty -Step $Step -Key "ExpectedFailures" -Default @())
+        foreach ($Pattern in $ExpectedFailures) {
+            $LoadArgs += @("-ExpectedFailurePatterns", $Pattern)
+        }
+
         $LoadCode = Invoke-ChildScript -ScriptPath (Join-Path $PSScriptRoot "Invoke-SalesforceLoad.ps1") -Arguments $LoadArgs
+    }
+
+    # Exit 2 = loaded, with failures that all match this object's known causes
+    # and sit within the allowance. A correct outcome, so the sequence CONTINUES -
+    # this is the whole point of the expected-partial work. Before it, the run
+    # halted here and an operator had to diagnose and resume by hand; that
+    # happened twice in the 2026-08-13 reload, both times on a correct load.
+    if ($LoadCode -eq 2) {
+        $Results.Add([PSCustomObject]@{ Step = $Step.Name; Rows = $RowCount; Result = "PARTIAL (expected failures)" })
+        $Partial = $true
+        continue
     }
 
     if ($LoadCode -ne 0) {
@@ -800,10 +834,22 @@ Write-Host "============================================================" -Foreg
 Write-Host ""
 Write-Host ("  {0,-24} {1,8} {2}" -f "STEP", "ROWS", "RESULT")
 foreach ($Result in $Results) {
-    $Colour = if ($Result.Result -like "*FAILED*") { "Red" } elseif ($Result.Result -eq "loaded") { "Green" } else { "Gray" }
+    $Colour = if ($Result.Result -like "*FAILED*") { "Red" }
+              elseif ($Result.Result -like "PARTIAL*") { "Yellow" }
+              elseif ($Result.Result -eq "loaded") { "Green" }
+              else { "Gray" }
     Write-Host ("  {0,-24} {1,8:N0} {2}" -f $Result.Step, $Result.Rows, $Result.Result) -ForegroundColor $Colour
 }
 Write-Host ""
+
+if ($Partial) {
+    Write-Host "PARTIAL steps loaded successfully with SOME rows rejected, and every" -ForegroundColor Yellow
+    Write-Host "rejection matched a known cause for that object (parent Account not" -ForegroundColor Yellow
+    Write-Host "reconciled, org duplicate rule). That is the documented correct outcome," -ForegroundColor Yellow
+    Write-Host "not a failure - the sequence continued rather than stopping." -ForegroundColor Yellow
+    Write-Host "Per-row detail: logs/data-migration/bulk-results/<object>-<timestamp>/" -ForegroundColor DarkGray
+    Write-Host ""
+}
 
 if ($Failed) {
     $LastStep = $Results[$Results.Count - 1].Step
