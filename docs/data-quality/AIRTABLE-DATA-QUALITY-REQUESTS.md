@@ -87,9 +87,9 @@ that exact name, under different parent agencies. The migration will not guess b
 | `Office of the Deputy Secretary` | Department of State | HUD, Labor — **not** State |
 | `Office of the Inspector General` | Department of Agriculture | DoD, DoT, OPM, SSA — **not** USDA |
 
-**Six of these eight are being fixed on our side, not yours.** Your `Parent` column already says
-which agency each belongs to, and we are teaching the migration to match on **name + parent** rather
-than name alone. That resolves the first three rows above.
+**Six of these eight are fixed on our side, not yours.** Your `Parent` column already says which
+agency each office belongs to, and the migration now matches on **name + parent agency** rather than
+name alone — so the first three rows above resolve without anyone choosing between candidates.
 
 **Two things we still need from you:**
 
