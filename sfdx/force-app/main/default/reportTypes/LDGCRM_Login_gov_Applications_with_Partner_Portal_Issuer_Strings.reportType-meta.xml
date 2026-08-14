@@ -128,11 +128,6 @@
         </columns>
         <columns>
             <checkedByDefault>false</checkedByDefault>
-            <field>LDGCRM_PP_Issuer_Strings__c</field>
-            <table>LDGCRM_application__c</table>
-        </columns>
-        <columns>
-            <checkedByDefault>false</checkedByDefault>
             <field>LDGCRM_Finalized_Application_Details__c</field>
             <table>LDGCRM_application__c</table>
         </columns>
@@ -299,11 +294,6 @@
         <columns>
             <checkedByDefault>false</checkedByDefault>
             <field>LDGCRM_Annual_Revenue_Amount__c</field>
-            <table>LDGCRM_application__c</table>
-        </columns>
-        <columns>
-            <checkedByDefault>false</checkedByDefault>
-            <field>LDGCRM_Estimated_Go_Live_Date__c</field>
             <table>LDGCRM_application__c</table>
         </columns>
         <columns>

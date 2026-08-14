@@ -75,7 +75,7 @@ setting.
 
 ---
 
-## CR-2 — Retire `LDGCRM_PP_Issuer_Strings__c` — 🟡 FORMULA DONE, references still to clear
+## CR-2 — Retire `LDGCRM_PP_Issuer_Strings__c` — ✅ RESOLVED 2026-08-14
 
 > ### The approach changed on 2026-08-14, and it is cheaper than what is specified below
 >
@@ -97,17 +97,47 @@ setting.
 > **✅ Done and verified 2026-08-14:** ceiling moved 78 → 89, all 681 Applications with a Team UUID
 > score the item, 0 without one can reach 100%.
 >
-> **Still to do before the field can be deleted** — Salesforce blocks the delete while any of these
-> reference it:
+> ### ✅ The field is deleted (2026-08-14)
 >
-> | Reference | Count | Owner |
+> Deleted by CLI destructive deploy — the one sanctioned deploy from this repo. **Salesforce cascaded
+> every remaining reference itself**, so none of the cleanup below needed doing by hand:
+>
+> | Reference | Count | Outcome |
 > | --- | --- | --- |
-> | Page layout `LDGCRM_application__c-Application Layout` | 1 | Config owner |
-> | Permission sets — FLS (`..._Team_Member_CRE`, `..._Viewer_R`, `..._Production_Support_CRED`) | 3 | Config owner |
-> | Report types — one is **named** `LDGCRM_Login_gov_Applications_with_Partner_Portal_Issuer_Strings`, so consider renaming rather than only dropping the column | 4 | Config owner |
-> | Then: delete the field | — | **This repo may do this by CLI** — deletion is the one sanctioned deploy |
+> | Page layout `LDGCRM_application__c-Application Layout` | 1 | Removed automatically |
+> | Permission sets — FLS | 3 | Removed automatically |
+> | Report types | 4 | Column removed automatically |
+> | The field itself | 1 | Deleted (`deleted=True`, 1 component, 0 errors) |
 >
-> Records holding data: **1**, a pre-existing test record. No migration data is lost.
+> Only a **formula** reference hard-blocks a field delete, and that had already been cleared by
+> re-pointing the checklist item. Everything else Salesforce tidies up on its own — 78 lines removed
+> across 8 files on the follow-up retrieve.
+>
+> Records holding data: **1**, a pre-existing test record. No migration data lost. Verified after:
+> Level 1 ceiling still 89, still 681 Applications with a Team UUID.
+>
+> ⚠️ **One report type is still NAMED after the field** —
+> `LDGCRM_Login_gov_Applications_with_Partner_Portal_Issuer_Strings`. Its column is gone but the name
+> now misleads. Renaming is cosmetic and was left alone.
+>
+> #### ⚠️ `--metadata-dir` silently ignores a destructive manifest
+>
+> The first attempt used `sf project deploy start --metadata-dir <dir>` with
+> `destructiveChangesPostDeploy.xml` beside `package.xml`. It reported **"Succeeded"** — and deployed
+> **0 components**, deleting nothing. A success with nothing done, which is exactly the failure mode
+> that looks fine in a transcript.
+>
+> Destructive changes need the explicit flags:
+>
+> ```
+> sf project deploy start --manifest package.xml `
+>     --post-destructive-changes destructiveChangesPostDeploy.xml `
+>     --target-org <alias> --test-level NoTestRun
+> ```
+>
+> **Check `numberComponentsDeployed` and `deleted=True` on the component, not just the status.**
+> `sf project deploy report --job-id <id>` shows both. `sf sobject describe` also served a stale
+> cached answer here — the Tooling API (`FieldDefinition`) gave the truthful one.
 
 <details><summary>Original specification (superseded — kept for the record)</summary>
 

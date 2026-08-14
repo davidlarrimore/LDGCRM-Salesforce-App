@@ -681,11 +681,6 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>false</editable>
-        <field>LDGCRM_application__c.LDGCRM_Estimated_Go_Live_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
         <editable>true</editable>
         <field>LDGCRM_application__c.LDGCRM_External_ID__c</field>
         <readable>true</readable>
@@ -833,11 +828,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>LDGCRM_application__c.LDGCRM_P3_Team_UUID__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

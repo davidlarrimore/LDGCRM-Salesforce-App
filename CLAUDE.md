@@ -396,16 +396,24 @@ portal team**, 0 failures. The widening to 255 also cleared the 6 over-long team
 **`#N/A` is transformed to blank** (`Get-CleanIssuerStringValue`), and **issuer strings / team name /
 team UUID are OPTIONAL by business rule (2026-08-14)** — a missing value is an accepted outcome, not
 a data-quality ask. The 9 Applications whose issuer strings name two teams stay blank deliberately.
-**`LDGCRM_PP_Issuer_Strings__c` is DEPRECATED and being retired** (user-confirmed 2026-08-13) — never
-migrated, and removing it is not a plain delete: `LDGCRM_Level_1_Complete_Pct__c` counts it as 1 of 9
-checklist items, and `LDGCRM_Launch_Checklist_Completion__c` hard-codes that 9 as a weight, so
-dropping one item silently moves a second metric.
+**`LDGCRM_PP_Issuer_Strings__c` was DELETED 2026-08-14** — never migrated. It could not be a plain
+delete because `LDGCRM_Level_1_Complete_Pct__c` counted it as 1 of 9 checklist items and
+`LDGCRM_Launch_Checklist_Completion__c` hard-codes that 9 as a weight, so dropping the item would
+have silently moved a second metric. **Resolved by re-pointing the checklist item at
+`LDGCRM_P3_Team_UUID__c` rather than removing it** — denominator stays 9, the second formula needed
+no change, and the item keeps its meaning. Ceiling moved 78 → 89.
+
+**A field delete only hard-blocks on a FORMULA reference.** Layout, permission-set FLS and
+report-type columns are cascaded away by Salesforce automatically — 78 lines across 8 files here.
+And **`sf project deploy start --metadata-dir` silently ignores a destructive manifest**: it reported
+"Succeeded" having deployed 0 components. Use `--manifest` + `--post-destructive-changes`, and check
+`numberComponentsDeployed` / `deleted=True`, not just the status. `sf sobject describe` also served a
+stale cached answer; the Tooling API's `FieldDefinition` gave the truthful one.
 
 **Salesforce config changes the pipeline cannot make live in
 `docs/engineering/SALESFORCE-CHANGE-REQUESTS.md`** — the config-owner counterpart to the Airtable
-data-quality doc. **CR-1 resolved 2026-08-14; CR-2 is half done** — its formula change landed the same day (the Level 1 checklist item now scores `LDGCRM_P3_Team_UUID__c` instead of the deprecated field, denominator unchanged at 9), leaving only the layout/permission-set/report-type references to clear before the field can be deleted. Remaining: finishing
-`LDGCRM_PP_Issuer_Strings__c` with its two dependent formulas (CR-2), and a live reporting defect
-found on 2026-08-13 (CR-3) — **a blank `Launch Level` falls through the `CASE` in
+data-quality doc. **CR-1 and CR-2 both resolved 2026-08-14** — the Level 1 checklist item now scores `LDGCRM_P3_Team_UUID__c` (denominator unchanged at 9) and `LDGCRM_PP_Issuer_Strings__c` has been deleted; Salesforce cascaded the layout/permission-set/report-type cleanup. One remains:
+a live reporting defect found on 2026-08-13 (CR-3) — **a blank `Launch Level` falls through the `CASE` in
 `LDGCRM_Launch_Checklist_Completion__c` to its else value of `1`, so 607 of 1,026 migrated
 Applications report 100% launch-complete purely because that field is empty.**
 

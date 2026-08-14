@@ -68,10 +68,6 @@
                 <field>LDGCRM_Partner_Account__c</field>
             </layoutItems>
             <layoutItems>
-                <behavior>Required</behavior>
-                <field>LDGCRM_PP_Issuer_Strings__c</field>
-            </layoutItems>
-            <layoutItems>
                 <behavior>Edit</behavior>
                 <field>LDGCRM_Finalized_Application_Details__c</field>
             </layoutItems>
@@ -202,10 +198,6 @@
             <layoutItems>
                 <behavior>Readonly</behavior>
                 <field>LDGCRM_Annual_Revenue_Amount__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Readonly</behavior>
-                <field>LDGCRM_Estimated_Go_Live_Date__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Readonly</behavior>
