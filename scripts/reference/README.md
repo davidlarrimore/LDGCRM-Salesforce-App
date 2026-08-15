@@ -65,6 +65,18 @@ for its `ExpectedInSalesforce` value.
 Seeded 2026-08-15 from the `Pod Opportunity Lead` (Opportunities) and `Account Owner` (Partner
 Accounts) collaborator columns — the only two Airtable fields that feed record ownership.
 
+**Completed 2026-08-15 by Erin Duffy**, who answered all 15 outstanding names in one pass. The file
+now stands at **15 `yes`, 2 `no`, 0 `unknown`** — so pre-flight's "still marked unknown" warning
+should not appear again, and if it does, someone has added a row without asking the business for its
+value. The two rows Erin did not cover were already settled and were left alone:
+`gabriel.vorleto@gsa.gov` (`no`, confirmed by the project owner) and `peter.marks@gsa.gov` (`yes`,
+the fallback owner).
+
+⚠️ **A complete roster is not the same as a clean one.** Every `yes` is now an assertion the pipeline
+will test at the first `Full` or `Prod` pre-flight, and each one that turns out to have no active
+Salesforce User becomes a named provisioning gap. **Expect that list to be non-empty** — the roster
+having no blanks left is what makes those gaps visible, not evidence there are none.
+
 **Record counts are deliberately not stored here.** They move with every Airtable pull, and a tracked
 file carrying stale numbers is worse than one carrying none. Pre-flight prints the current count next
 to each name, read live from the Airtable export.

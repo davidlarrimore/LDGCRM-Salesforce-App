@@ -1,18 +1,18 @@
 Email,Name,ExpectedInSalesforce,Notes
-daniel.ruggiero@gsa.gov,Daniel Ruggiero,unknown,
-elizabeth.mays@gsa.gov,Elizabeth Mays,unknown,Largest single owner. No Salesforce user has ever existed - unlike the deactivated names there is no signal either way.
-melissa.sowerwine@gsa.gov,Melissa Sowerwine,unknown,
-gabriel.vorleto@gsa.gov,Gabriel Vorleto,no,Confirmed 2026-08-15 (project owner) - no longer with the team. Fallback owner is the correct outcome.
-gabriel.yunusa@gsa.gov,Omodayo Yunusa,unknown,Airtable email is gabriel.yunusa; display name is Omodayo Yunusa.
-ryan.sonnenbrot@gsa.gov,Ryan Von Sonnenbrot,unknown,
-tony.parrilla@gsa.gov,Tony Parrilla,unknown,Filed out-of-office in Airtable through 2026-07-22, so likely current staff.
-shaunte.brown@gsa.gov,Shaunte Brown,unknown,Partner Accounts only - owns no Opportunities.
-trevor.sinclair@gsa.gov,Trevor Sinclair,unknown,
-william.baur@gsa.gov,William Baur,unknown,
-sierra.stewart@gsa.gov,Sierra Stewart,unknown,
-erin.duffy@gsa.gov,Erin Duffy,unknown,
+daniel.ruggiero@gsa.gov,Daniel Ruggiero,yes,Confirmed by Erin Duffy 2026-08-15.
+elizabeth.mays@gsa.gov,Elizabeth Mays,yes,Confirmed by Erin Duffy 2026-08-15. Largest single owner. Re-checked 2026-08-15 in Dev and QA by address AND by surname - no Salesforce User exists under any spelling (the Mays users present are Franklin/Shanna/Valerie who are different people). This is a genuine provisioning gap not an address mismatch. Provision her before the Full rehearsal or her records all land on the fallback owner.
+melissa.sowerwine@gsa.gov,Melissa Sowerwine,yes,Confirmed by Erin Duffy 2026-08-15.
+gabriel.vorleto@gsa.gov,Gabriel Vorleto,no,Confirmed 2026-08-15 (project owner) - no longer with the team. Fallback owner is the correct outcome. Not named in Erin's 2026-08-15 list.
+gabriel.yunusa@gsa.gov,Omodayo Yunusa,yes,Confirmed by Erin Duffy 2026-08-15. Airtable email is gabriel.yunusa; display name is Omodayo Yunusa.
+ryan.sonnenbrot@gsa.gov,Ryan Von Sonnenbrot,yes,Confirmed by Erin Duffy 2026-08-15.
+tony.parrilla@gsa.gov,Tony Parrilla,yes,Confirmed by Erin Duffy 2026-08-15. ADDRESS MISMATCH - Salesforce has him as antonio.parrilla@gsa.gov so the Airtable address will never match and pre-flight reports him ABSENT when he in fact has an account. Also UserType=CsnOnly (Chatter Free) in Dev and QA so he cannot own records regardless; fixing the address alone will not stop the fallback.
+shaunte.brown@gsa.gov,Shaunte Brown,yes,Confirmed by Erin Duffy 2026-08-15. Partner Accounts only - owns no Opportunities. Active in Dev and QA but UserType=CsnOnly (Chatter Free) which cannot own records at all - she falls back by design and her profile must change before she can own anything. This is the case that cost 150 Applications in 2026-08-13; see Resolve-SalesforceOwnerIds.
+trevor.sinclair@gsa.gov,Trevor Sinclair,yes,Confirmed by Erin Duffy 2026-08-15.
+william.baur@gsa.gov,William Baur,yes,Confirmed by Erin Duffy 2026-08-15.
+sierra.stewart@gsa.gov,Sierra Stewart,no,Confirmed by Erin Duffy 2026-08-15 - not getting an account. Fallback owner is the correct outcome.
+erin.duffy@gsa.gov,Erin Duffy,yes,Confirmed by Erin Duffy 2026-08-15.
 peter.marks@gsa.gov,Peter Marks,yes,THE FALLBACK OWNER. Must exist and be active in every target org - the load hard-fails at pre-flight otherwise. Do not set this to no.
-katie.slover@gsa.gov,Katie Slover,unknown,
-saher.javid@gsa.gov,Saher Javid,unknown,Partner Accounts only - owns no Opportunities.
-erika.brooks@gsa.gov,Erika Brooks,unknown,
-adrian.morton@gsa.gov,Adrian Morton,unknown,Filed out-of-office in Airtable through 2026-08-25, so likely current staff.
+katie.slover@gsa.gov,Katie Slover,yes,Confirmed by Erin Duffy 2026-08-15.
+saher.javid@gsa.gov,Saher Javid,yes,Confirmed by Erin Duffy 2026-08-15. Partner Accounts only - owns no Opportunities.
+erika.brooks@gsa.gov,Erika Brooks,yes,Confirmed by Erin Duffy 2026-08-15.
+adrian.morton@gsa.gov,Adrian Morton,yes,Confirmed by Erin Duffy 2026-08-15.
