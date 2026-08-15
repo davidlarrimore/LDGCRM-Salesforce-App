@@ -91,6 +91,25 @@ under *Department of Agriculture*. Salesforce has offices of those names, but no
 agencies. These belong with the 154 above — either an Account needs creating, or the `Parent` is
 wrong.
 
+### 1e. `AmeriCorps` and `National Geospatial-Intelligence Agency` — the `Parent` value is wrong *(Airtable fix)*
+
+**New on 2026-08-15, and caused by a fix on our side, not by you.** Salesforce previously held one
+Account of each name; it now holds the two that production actually defines. That is more correct, but
+it means the name alone no longer identifies the record, so the migration falls back to your `Parent`
+column — and in both cases it doesn't match either candidate:
+
+| Airtable row | Airtable says the parent is | The two Salesforce Accounts actually sit under |
+| --- | --- | --- |
+| `National Geospatial-Intelligence Agency` | `Under Secretary of Defense Intelligence` | Defense Intelligence Agency · Department of Defense |
+| `AmeriCorps` | `AmeriCorps` — **itself** | *(no parent set)* · Department of Labor |
+
+`AmeriCorps` naming itself as its own parent is almost certainly the error. For the NGA row, either
+the office under `Under Secretary of Defense Intelligence` needs creating in Salesforce, or the
+`Parent` should name one of the two agencies above.
+
+**What it's costing:** 1 Partner Account (`AC`) and 1 (`USDI-NGA`) fail to load, plus whatever hangs
+off them. Both return automatically on the next run once the `Parent` is corrected.
+
 ### 1d. `Bureau of Consular Affairs` — no Salesforce match, and never had one
 
 Blocks 1 Partner Account, 2 Applications and 2 Opportunities. Both Opportunities are already
