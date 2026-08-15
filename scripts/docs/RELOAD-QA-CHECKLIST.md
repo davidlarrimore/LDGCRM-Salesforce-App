@@ -303,6 +303,19 @@ records but sacrifices the non-revert property on re-runs. That is a real tradeo
         reference when re-baselining: Accounts 747, Partner Accounts 99, Applications 1,056,
         Contacts 1,535, Opportunities 904, Opportunity Contacts 520, Impediments 40, Market Segments
         7, Meetings 1,848, **Issuer Strings 901**.
+- [ ] **`Full`/`Prod` only — read the OWNER ROSTER block in pre-flight.** It compares
+      `reference/salesforce-user-roster.csv` against the target org and reports anyone the business
+      marked `ExpectedInSalesforce=yes` who has **no active Salesforce User**. Their records still
+      load, onto the fallback owner — **this check changes no behaviour and never blocks.**
+
+      It exists because the fallback is correct for someone who has *left* and wrong for someone who
+      is current staff but was never provisioned, and **the two are indistinguishable in the run
+      output.** The roster is where the business states which is which.
+
+      Also reports owners present in Airtable but absent from the roster, so the file cannot silently
+      go stale. **Deliberately skipped in Dev/QA** — there is no expectation the Partnerships team
+      have logins in a developer sandbox (only 12 of 17 resolve in Dev), so running it there would
+      print warnings on every run until nobody read them.
 - [ ] Confirm `logs/` and `data/` are still gitignored — both carry applicant PII.
 
 ---

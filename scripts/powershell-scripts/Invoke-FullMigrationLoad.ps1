@@ -651,6 +651,129 @@ function Invoke-PreflightChecks {
                                "Dev-only. Investigate how it reached this org; do not simply deactivate it.")
     }
 
+    <#
+        7. RECORD OWNERS THE BUSINESS EXPECTS TO EXIST (added 2026-08-15).
+
+        WHAT THIS IS NOT: it is not an ownership rule and it cannot change one.
+        A record still goes to its Airtable owner where that person resolves to
+        an active User, and to the fallback owner where they do not, exactly as
+        before. Nothing below reassigns anything or stops a load.
+
+        WHAT IT IS FOR: making a silent outcome a stated one, BEFORE the load
+        rather than after. The fallback is deliberate and correct for someone
+        who has left the team - that needs no action and should not be reported
+        as a problem. It is NOT correct for someone who is current staff and
+        simply never got provisioned; those records land on the fallback owner
+        looking exactly like the intended case, and nothing in the run output
+        distinguishes them. reference/salesforce-user-roster.csv is where the
+        business states which is which, so this check can tell them apart.
+
+        WARNING, NEVER BLOCKING. The load's behaviour is correct in both cases,
+        so refusing to run would be stopping a working pipeline over a staffing
+        question.
+
+        FULL AND PROD ONLY. Dev and QA are developer sandboxes seeded from
+        partial refreshes and carry no expectation that the Partnerships team
+        have logins at all - the project owner confirmed on 2026-08-15 that
+        there is no guarantee these users exist there. Running it anyway would
+        print a page of warnings on every development run, which is how a check
+        stops being read.
+    #>
+    if ($Env -eq "Full" -or $Env -eq "Prod") {
+        $RosterPath = Join-Path (Get-LdgcrmRoot) "reference\salesforce-user-roster.csv"
+
+        if (-not (Test-Path -LiteralPath $RosterPath)) {
+            $Findings.Warning += ("No owner roster at $RosterPath, so nothing can distinguish 'left the team' " +
+                                  "from 'never provisioned' when a record lands on the fallback owner. See " +
+                                  "reference/README.md.")
+            Write-Host "  Owner roster           not found - skipping" -ForegroundColor Yellow
+        }
+        else {
+            $Roster = @(Import-Csv -LiteralPath $RosterPath)
+
+            # Live counts come from the export, never from the roster - a tracked
+            # file carrying record counts is stale the next time Airtable is pulled.
+            $OwnerCounts = @{}
+            foreach ($Pair in @(
+                @{ File = "Opportunities.json";    Field = "Pod Opportunity Lead" },
+                @{ File = "Partner Accounts.json"; Field = "Account Owner" })) {
+
+                $Path = Join-Path $ExportDir $Pair.File
+                if (-not (Test-Path -LiteralPath $Path)) { continue }
+
+                $Parsed = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+                foreach ($Rec in @($Parsed)) {
+                    $Collab = $Rec.fields.($Pair.Field)
+                    if (-not $Collab -or -not $Collab.email) { continue }
+                    $Key = ([string]$Collab.email).Trim().ToLower()
+                    if (-not $OwnerCounts.ContainsKey($Key)) { $OwnerCounts[$Key] = 0 }
+                    $OwnerCounts[$Key] = $OwnerCounts[$Key] + 1
+                }
+            }
+
+            $RosterEmails = @($Roster | ForEach-Object { ([string]$_.Email).Trim().ToLower() } |
+                              Where-Object { $_ } | Sort-Object -Unique)
+            $Active = @{}
+            if ($RosterEmails.Count -gt 0) {
+                $Lookup = Resolve-SalesforceOwnerIds -Emails $RosterEmails -OrgAlias $Org -ApiVersion $Version
+                $Active = $Lookup.IdByEmail
+            }
+
+            $MissingButExpected = New-Object System.Collections.Generic.List[object]
+            $Unstated           = New-Object System.Collections.Generic.List[object]
+            $PresentCount       = 0
+            $CorrectlyAbsent    = 0
+
+            foreach ($R in $Roster) {
+                $Key = ([string]$R.Email).Trim().ToLower()
+                if (-not $Key) { continue }
+                $Expected = ([string]$R.ExpectedInSalesforce).Trim().ToLower()
+                $Has      = $Active.ContainsKey($Key)
+                $Records  = 0
+                if ($OwnerCounts.ContainsKey($Key)) { $Records = $OwnerCounts[$Key] }
+
+                if ($Expected -eq "yes" -and -not $Has) {
+                    $MissingButExpected.Add([pscustomobject]@{ Email = $Key; Name = $R.Name; Records = $Records })
+                }
+                elseif ($Expected -eq "yes") { $PresentCount++ }
+                elseif ($Expected -eq "no")  { if (-not $Has) { $CorrectlyAbsent++ } }
+                else { $Unstated.Add([pscustomobject]@{ Email = $Key; Name = $R.Name; Records = $Records }) }
+            }
+
+            # Airtable owners nobody has put in the roster yet. Without this the
+            # file silently goes stale as the Partnerships team changes.
+            $NotInRoster = @($OwnerCounts.Keys | Where-Object { $RosterEmails -notcontains $_ })
+
+            Write-Host ("  Owner roster           {0} named, {1} confirmed present" -f $Roster.Count, $PresentCount)
+
+            foreach ($M in ($MissingButExpected | Sort-Object Records -Descending)) {
+                $Findings.Warning += ("Owner '$($M.Email)' is marked ExpectedInSalesforce=yes in the roster but has no " +
+                                      "ACTIVE Salesforce User in $Env. Their $($M.Records) record(s) will load onto the " +
+                                      "fallback owner. Nothing breaks - but if they are current staff this is a " +
+                                      "provisioning gap, and it is invisible once the load has run.")
+                Write-Host ("                         EXPECTED BUT ABSENT: {0} ({1} records)" -f $M.Email, $M.Records) -ForegroundColor Yellow
+            }
+
+            if ($CorrectlyAbsent -gt 0) {
+                Write-Host ("                         {0} absent as expected (marked 'no') - fallback owner is correct" -f $CorrectlyAbsent) -ForegroundColor DarkGray
+            }
+
+            if ($Unstated.Count -gt 0) {
+                $Findings.Warning += ("$($Unstated.Count) owner(s) in the roster have ExpectedInSalesforce=unknown, so a " +
+                                      "record landing on the fallback owner cannot be read as either correct or a gap. " +
+                                      "Ask the business to complete reference/salesforce-user-roster.csv.")
+                Write-Host ("                         {0} still marked 'unknown'" -f $Unstated.Count) -ForegroundColor DarkGray
+            }
+
+            foreach ($N in ($NotInRoster | Sort-Object)) {
+                $Findings.Warning += ("Airtable owner '$N' is not listed in reference/salesforce-user-roster.csv. Add the " +
+                                      "row and ask the business whether they get a Salesforce account, or their records " +
+                                      "will land on the fallback owner with nobody having said whether that is right.")
+                Write-Host ("                         NOT IN ROSTER: {0}" -f $N) -ForegroundColor Yellow
+            }
+        }
+    }
+
     return $Findings
 }
 

@@ -200,11 +200,23 @@ there is nothing to fix and nothing to track. Confirmed 2026-08-15 (project owne
 and `gabriel.vorleto@gsa.gov` are no longer with the team** — both correctly resolved to Peter Marks,
 and neither is an issue.
 
-### The only thing still worth asking
+### This now has a home: the owner roster
+
+**Added 2026-08-15.** Rather than re-litigating this list every load, the answer lives in
+**`scripts/reference/salesforce-user-roster.csv`** — one row per record owner, with a single
+business-owned column, `ExpectedInSalesforce` (`yes` / `no` / `unknown`).
+
+**It changes no behaviour.** Records still go to their Airtable owner where that person resolves to an
+active User, and to Peter Marks where they don't — automatically, as designed. The roster exists only
+because the fallback is *correct* for someone who has left and *a provisioning gap* for someone who is
+current staff, and **nothing in the run output tells those apart.** Pre-flight reads it in `Full` and
+`Prod` only, reports the mismatches, and **never blocks**.
+
+All 17 owners are seeded. `peter.marks` is `yes` (he is the fallback and the load hard-fails without
+him) and `gabriel.vorleto` is `no`. **The remaining 15 are `unknown` and need the business's answer.**
 
 For each name below: **is this person current staff?** If yes, an active Salesforce login routes their
-records to them. If they have left, **no action — Peter Marks is correct** and the name can be deleted
-from this list.
+records to them. If they have left, **no action — Peter Marks is correct.**
 
 | Person | Opportunities | Salesforce user | Status |
 | --- | --- | --- | --- |

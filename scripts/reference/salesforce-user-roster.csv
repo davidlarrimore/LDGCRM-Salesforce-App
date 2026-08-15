@@ -1,0 +1,18 @@
+Email,Name,ExpectedInSalesforce,Notes
+daniel.ruggiero@gsa.gov,Daniel Ruggiero,unknown,
+elizabeth.mays@gsa.gov,Elizabeth Mays,unknown,Largest single owner. No Salesforce user has ever existed - unlike the deactivated names there is no signal either way.
+melissa.sowerwine@gsa.gov,Melissa Sowerwine,unknown,
+gabriel.vorleto@gsa.gov,Gabriel Vorleto,no,Confirmed 2026-08-15 (project owner) - no longer with the team. Fallback owner is the correct outcome.
+gabriel.yunusa@gsa.gov,Omodayo Yunusa,unknown,Airtable email is gabriel.yunusa; display name is Omodayo Yunusa.
+ryan.sonnenbrot@gsa.gov,Ryan Von Sonnenbrot,unknown,
+tony.parrilla@gsa.gov,Tony Parrilla,unknown,Filed out-of-office in Airtable through 2026-07-22, so likely current staff.
+shaunte.brown@gsa.gov,Shaunte Brown,unknown,Partner Accounts only - owns no Opportunities.
+trevor.sinclair@gsa.gov,Trevor Sinclair,unknown,
+william.baur@gsa.gov,William Baur,unknown,
+sierra.stewart@gsa.gov,Sierra Stewart,unknown,
+erin.duffy@gsa.gov,Erin Duffy,unknown,
+peter.marks@gsa.gov,Peter Marks,yes,THE FALLBACK OWNER. Must exist and be active in every target org - the load hard-fails at pre-flight otherwise. Do not set this to no.
+katie.slover@gsa.gov,Katie Slover,unknown,
+saher.javid@gsa.gov,Saher Javid,unknown,Partner Accounts only - owns no Opportunities.
+erika.brooks@gsa.gov,Erika Brooks,unknown,
+adrian.morton@gsa.gov,Adrian Morton,unknown,Filed out-of-office in Airtable through 2026-08-25, so likely current staff.
