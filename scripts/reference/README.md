@@ -49,8 +49,33 @@ the org being loaded?**
 
 ### Where it is checked, and where it is not
 
-Pre-flight reads this **only for `-Environment Full` and `Prod`**, and it is a **warning, never a
-block**.
+Pre-flight reads this **only for `-Environment Full` and `Prod`**. Almost everything it finds is a
+**warning**, because the load's behaviour is correct either way — but **one case blocks**.
+
+| What pre-flight finds | Result |
+| --- | --- |
+| Marked `yes`, **no** Salesforce User at that address or under that name | ⚠️ Warning — a provisioning gap someone can still fix |
+| Marked `yes`, User exists **under a different email address** | 🛑 **BLOCKS** |
+| Marked `yes`, User exists at that address on a licence that **cannot own records** (Chatter Free / portal) | 🛑 **BLOCKS** |
+| Marked `no`, absent | ✅ Confirmed quietly — the fallback owner is the intended outcome |
+
+**Why present-but-unusable blocks and an absence does not.** Someone with no account is a legitimate
+state, and the fallback is correct — whether they should have one is a staffing question only the
+business can answer, so stopping the load would achieve nothing. Someone who *already exists* but
+whom the pipeline cannot assign to is different: their records should reach them, and something
+small and fixable is in the way — a spelling, or a licence. Left as warnings, both sit in the report
+looking exactly like the legitimate absence printed directly above them.
+
+Decided 2026-08-15, after `tony.parrilla@gsa.gov` (correct, per the business) turned out to be
+`antonio.parrilla@gsa.gov` in Salesforce, on a Chatter Free licence — one person hitting both cases
+at once.
+
+**The Salesforce User is what gets corrected** — its address, or its licence — not the roster and
+not Airtable, and never an alias map inside the pipeline, which would hide the mismatch instead of
+resolving it. See `docs/engineering/BACKLOG.md` §8.
+
+⚠️ **This is Full and Prod only. Dev and QA are unaffected** — they discard such owners as missing
+and assign the fallback owner, exactly as before. See the next section for why.
 
 It is deliberately skipped for **Dev and QA**: those are developer sandboxes seeded from partial
 refreshes, so there is no expectation that the Partnerships team have logins there at all. Checking

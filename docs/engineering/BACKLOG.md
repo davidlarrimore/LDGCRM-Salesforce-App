@@ -562,7 +562,7 @@ list handed to whoever builds the change set.
 
 ---
 
-## 8. Airtable owner emails that do not match the Salesforce User — 🔴 open question
+## 8. Owners the pipeline cannot assign to — ✅ DECIDED AND ENFORCED 2026-08-15
 
 **Raised 2026-08-15.** The ownership resolver joins an Airtable collaborator's **email** to
 `User.Email` (and its sandbox `.invalid` form). Where the two spellings differ the person is
@@ -579,31 +579,53 @@ owner, correctly, and nothing says why.
 The `.invalid` suffix is **not** the issue — the resolver already queries both forms. It is `tony`
 versus `antonio`, and his whole Salesforce identity uses the formal spelling.
 
-**This is probably not bad data.** GSA commonly issues a `firstname.lastname` alias alongside the
-formal address, so both are plausibly his. That makes it a **join-key mismatch**, not a data error,
-which is why it is filed here as a question rather than in the Airtable data-quality document.
+### The decision
 
-### What we do not know yet
+**`tony.parrilla@gsa.gov` is the correct address** (project owner, 2026-08-15). Airtable is right and
+**Salesforce is what must change** — its `User.Email` gets corrected, not the roster, not Airtable.
 
-- **Whether it holds in Full or Prod.** The only evidence is from Dev, and Dev/QA are partial
-  refreshes that carry no expectation these logins exist — a missing or differently-spelled user
-  there is expected and is *not* a finding (project owner, 2026-08-15). Falling back is the correct
-  outcome in a sandbox.
-- **Whether it would even help.** In Dev he is `UserType = CsnOnly` (Chatter Free), which cannot own
-  records at all, so a perfect email match would still fall back. Fixing the address changes nothing
-  until the licence type does.
-- **How many others are affected.** Only Parrilla has been checked. A name-based sweep of every
-  Airtable collaborator against `User.Name` would find the rest, but display names are a weak join
-  (`Resolve-SalesforceOwnerIdsByName` documents why) so it can only produce candidates for a human.
+### What pre-flight now does — check 7, Full and Prod only
+
+An owner marked `ExpectedInSalesforce=yes` whom the resolver cannot use is now sorted into three
+outcomes instead of one undifferentiated "absent":
+
+| Finding | Result |
+| --- | --- |
+| No User at that address **or** under that name | ⚠️ Warning — a provisioning gap only the business can close |
+| User exists **under a different email** | 🛑 **Blocks** |
+| User exists at the right address on a licence that **cannot own records** | 🛑 **Blocks** |
+
+**Why present-but-unusable blocks while an absence does not.** An absence is a staffing question, and
+the fallback is the correct outcome. A person who already exists but cannot be assigned to is a
+defect: their records should reach them and something small and fixable — a spelling, or a licence —
+is in the way. As warnings, both were indistinguishable from the legitimate absence printed directly
+above them in the same report.
+
+**Dev and QA are deliberately exempt**, because the whole roster check is inside the Full/Prod gate.
+They discard such owners as missing and assign the fallback owner, exactly as before (project owner,
+2026-08-15: *"Development or QA would discard them as being missing and auto assign Peter Marks"*).
+Those orgs are partial refreshes that carry no expectation these logins exist at all.
+
+### Two mechanics worth keeping
+
+- **The name probe is not filtered to `UserType = 'Standard'`,** unlike `Resolve-SalesforceOwnerIds`.
+  That filter is right for deciding who may *own* a record and wrong for deciding whether a person
+  *exists* — with it, Parrilla (active, Chatter Free, different address) reported as simply absent,
+  which is the exact confusion this was built to remove.
+- **The sandbox `.invalid` suffix is stripped before comparing addresses.** A Full sandbox appends it
+  to every `User.Email`, so a raw compare would flag *every* roster owner as a mismatch and the check
+  would mean nothing.
+- The name join stays weak on purpose: a display name is not an identifier, so a name matching 2+
+  active Users only warns. Exactly one match is what blocks.
 
 ### Do not fix it with an alias table
 
 The tempting shortcut is an email-alias map in the pipeline. That hides the mismatch instead of
 resolving it, and it is the pattern this project has already ruled out for Airtable data problems.
-The fix is to make one side agree with the other — ask the business which address is his, then
-correct the Airtable collaborator to whatever Salesforce holds.
 
-**Next step:** check his record in the Full sandbox once it exists, at the same time as the roster's
-other two open cases (Elizabeth Mays, absent; Shaunte Brown, Chatter Free). All three are the same
-question — *does this person own their records in production?* — and pre-flight check 7 answers all
-of them in one pass. Nothing to do until then.
+### Still unknown
+
+**How many others are affected.** Only Parrilla has been checked by hand; pre-flight will now find
+the rest on the first Full or Prod run rather than anyone sweeping for them. Verified against Dev's
+data: of the three roster owners the resolver cannot use, it correctly separates Elizabeth Mays
+(absent, warn) from Tony Parrilla (wrong email, block) and Shaunte Brown (Chatter Free, block).

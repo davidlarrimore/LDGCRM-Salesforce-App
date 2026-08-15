@@ -910,9 +910,23 @@ function Invoke-PreflightChecks {
         distinguishes them. reference/salesforce-user-roster.csv is where the
         business states which is which, so this check can tell them apart.
 
-        WARNING, NEVER BLOCKING. The load's behaviour is correct in both cases,
-        so refusing to run would be stopping a working pipeline over a staffing
-        question.
+        AN ABSENT OWNER NEVER BLOCKS. The load's behaviour is correct, so
+        refusing to run would be stopping a working pipeline over a staffing
+        question that only the business can answer.
+
+        A PRESENT-BUT-UNUSABLE OWNER DOES BLOCK (added 2026-08-15), in Full and
+        Prod only - which is automatic, since this whole check is inside the
+        Full/Prod gate. Dev and QA discard these owners as missing and assign
+        the fallback, exactly as before. Two cases:
+
+          - the User exists under a DIFFERENT email address;
+          - the User exists at the right address on a licence that cannot own
+            a record (Chatter Free / portal).
+
+        Neither is a staffing question. In both the person already exists and
+        their records should reach them; something small and fixable stands in
+        the way. Left as warnings they are indistinguishable from the legitimate
+        absence printed directly above them in the same report.
 
         FULL AND PROD ONLY. Dev and QA are developer sandboxes seeded from
         partial refreshes and carry no expectation that the Partnerships team
@@ -982,18 +996,146 @@ function Invoke-PreflightChecks {
                 else { $Unstated.Add([pscustomobject]@{ Email = $Key; Name = $R.Name; Records = $Records }) }
             }
 
+            <#
+                ABSENT is not the same failure as PRESENT UNDER A DIFFERENT
+                EMAIL, and until 2026-08-15 this check could not tell them
+                apart - both simply fell back to the default owner.
+
+                The distinction the project owner drew: someone with no account
+                is a legitimate state, and falling back is correct. Someone who
+                HAS an account that the join misses is a defect - their records
+                should have reached them and silently did not, the org is
+                already correct, and only the address is wrong. That is fixable
+                and therefore blocking.
+
+                The known case is Tony Parrilla: Airtable has
+                tony.parrilla@gsa.gov, which the project owner confirmed on
+                2026-08-15 is the CORRECT address, while Dev holds his identity
+                as antonio.parrilla@gsa.gov. Salesforce is what must change.
+
+                DEV AND QA ARE UNAFFECTED - this whole block is already inside
+                the Full/Prod gate, so a mismatch in a developer sandbox stays
+                what it has always been: expected, and fine.
+
+                THE NAME JOIN IS WEAK ON PURPOSE. A display name is not an
+                identifier (Resolve-SalesforceOwnerIdsByName documents two real
+                collisions in this org), so a name matching 2+ active Users
+                only WARNS. Exactly one match is what blocks.
+            #>
+            $WrongEmail    = New-Object System.Collections.Generic.List[object]
+            $NameAmbiguous = New-Object System.Collections.Generic.List[object]
+
+            $ProbeNames = @($MissingButExpected | ForEach-Object { ([string]$_.Name).Trim() } |
+                            Where-Object { $_ } | Sort-Object -Unique)
+
+            if ($ProbeNames.Count -gt 0) {
+                # Escape apostrophes - "O'Brien" would otherwise break the SOQL.
+                $NameList = "'" + (@($ProbeNames | ForEach-Object { $_ -replace "'", "\'" }) -join "','") + "'"
+
+                # DELIBERATELY NOT FILTERED TO UserType = 'Standard', unlike
+                # Resolve-SalesforceOwnerIds. That filter is right for deciding
+                # who may OWN a record and wrong for deciding whether a person
+                # EXISTS. Filtering here would have reported Tony Parrilla -
+                # active, Chatter Free, different address - as simply absent,
+                # which is the exact confusion this block exists to remove.
+                $ByName = @(Invoke-SalesforceQuery `
+                    -Soql ("SELECT Name, Email, UserType FROM User WHERE IsActive = true " +
+                           "AND Name IN ($NameList)") `
+                    -OrgAlias $Org -ApiVersion $Version)
+
+                $UsersByName = @{}
+                foreach ($U in $ByName) {
+                    $N = ([string]$U.Name).Trim()
+                    if (-not $UsersByName.ContainsKey($N)) {
+                        $UsersByName[$N] = New-Object System.Collections.Generic.List[object]
+                    }
+                    $UsersByName[$N].Add($U)
+                }
+
+                $StillMissing = New-Object System.Collections.Generic.List[object]
+
+                foreach ($M in $MissingButExpected) {
+                    $N = ([string]$M.Name).Trim()
+                    if (-not $N -or -not $UsersByName.ContainsKey($N)) { $StillMissing.Add($M); continue }
+
+                    $Candidates = @($UsersByName[$N])
+
+                    if ($Candidates.Count -ne 1) {
+                        $NameAmbiguous.Add([pscustomobject]@{
+                            Email = $M.Email; Name = $M.Name; Records = $M.Records; Count = $Candidates.Count })
+                        continue
+                    }
+
+                    # STRIP THE SANDBOX SUFFIX BEFORE COMPARING. A Full sandbox
+                    # appends ".invalid" to every User.Email, so a raw compare
+                    # would report EVERY roster owner as a mismatch there - the
+                    # check would fire on all of them and mean nothing.
+                    $Actual = ([string]$Candidates[0].Email).Trim().ToLower() -replace '\.invalid$', ''
+
+                    # Same address means the address is not the problem, so the
+                    # resolver rejected them for the only other reason it can:
+                    # a licence that cannot own a record. Treated exactly like
+                    # an absence - the load falls back either way - but the
+                    # licence is named, because "no active user" sent someone
+                    # hunting for an account that was there all along.
+                    if ($Actual -eq $M.Email) {
+                        $M | Add-Member -NotePropertyName LicenceType -NotePropertyValue ([string]$Candidates[0].UserType) -Force
+                        $StillMissing.Add($M)
+                        continue
+                    }
+
+                    $WrongEmail.Add([pscustomobject]@{
+                        Email = $M.Email; Name = $M.Name; Records = $M.Records; ActualEmail = $Actual })
+                }
+
+                $MissingButExpected = $StillMissing
+            }
+
             # Airtable owners nobody has put in the roster yet. Without this the
             # file silently goes stale as the Partnerships team changes.
             $NotInRoster = @($OwnerCounts.Keys | Where-Object { $RosterEmails -notcontains $_ })
 
             Write-Host ("  Owner roster           {0} named, {1} confirmed present" -f $Roster.Count, $PresentCount)
 
+            foreach ($W in ($WrongEmail | Sort-Object Records -Descending)) {
+                $Findings.Blocking += ("Owner '$($W.Email)' has an ACTIVE Salesforce User in $Env - '$($W.Name)' - but " +
+                                       "under a DIFFERENT address: '$($W.ActualEmail)'. The ownership join is on email, " +
+                                       "so their $($W.Records) record(s) would load onto the fallback owner as though " +
+                                       "they had no account at all. The roster address is the correct one; correct the " +
+                                       "Salesforce User's Email to '$($W.Email)' and re-run. Do NOT add an alias map to " +
+                                       "the pipeline - see docs/engineering/BACKLOG.md section 8.")
+                Write-Host ("                         WRONG EMAIL: {0} is '{1}' in {2} ({3} records)" -f `
+                            $W.Email, $W.ActualEmail, $Env, $W.Records) -ForegroundColor Red
+            }
+
+            foreach ($A in ($NameAmbiguous | Sort-Object Records -Descending)) {
+                $Findings.Warning += ("Owner '$($A.Email)' has no ACTIVE Salesforce User at that address in $Env, and " +
+                                      "$($A.Count) active Users share the name '$($A.Name)' - so this cannot be called " +
+                                      "a wrong address rather than an absence without a human looking. Their " +
+                                      "$($A.Records) record(s) will load onto the fallback owner.")
+                Write-Host ("                         NAME AMBIGUOUS: {0} ({1} users named '{2}')" -f `
+                            $A.Email, $A.Count, $A.Name) -ForegroundColor Yellow
+            }
+
             foreach ($M in ($MissingButExpected | Sort-Object Records -Descending)) {
-                $Findings.Warning += ("Owner '$($M.Email)' is marked ExpectedInSalesforce=yes in the roster but has no " +
-                                      "ACTIVE Salesforce User in $Env. Their $($M.Records) record(s) will load onto the " +
-                                      "fallback owner. Nothing breaks - but if they are current staff this is a " +
-                                      "provisioning gap, and it is invisible once the load has run.")
-                Write-Host ("                         EXPECTED BUT ABSENT: {0} ({1} records)" -f $M.Email, $M.Records) -ForegroundColor Yellow
+                if ($M.PSObject.Properties.Name -contains "LicenceType") {
+                    $Findings.Blocking += ("Owner '$($M.Email)' HAS an active Salesforce User in $Env at that exact " +
+                                           "address, but on a '$($M.LicenceType)' licence, which cannot own standard " +
+                                           "or custom records. Their $($M.Records) record(s) would load onto the " +
+                                           "fallback owner as though the person did not exist. The account is not " +
+                                           "missing and does not need creating - give it a Standard licence and " +
+                                           "re-run.")
+                    Write-Host ("                         LICENCE CANNOT OWN: {0} ('{1}', {2} records)" -f `
+                                $M.Email, $M.LicenceType, $M.Records) -ForegroundColor Red
+                }
+                else {
+                    $Findings.Warning += ("Owner '$($M.Email)' is marked ExpectedInSalesforce=yes in the roster but has " +
+                                          "no ACTIVE Salesforce User in $Env, under that address or under their name. " +
+                                          "Their $($M.Records) record(s) will load onto the fallback owner. Nothing " +
+                                          "breaks - but if they are current staff this is a provisioning gap, and it " +
+                                          "is invisible once the load has run.")
+                    Write-Host ("                         EXPECTED BUT ABSENT: {0} ({1} records)" -f $M.Email, $M.Records) -ForegroundColor Yellow
+                }
             }
 
             if ($CorrectlyAbsent -gt 0) {
