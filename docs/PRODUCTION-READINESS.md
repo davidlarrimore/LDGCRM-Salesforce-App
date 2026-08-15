@@ -38,7 +38,7 @@ closed until it has been demonstrated, not merely built.
 | 1 | The pipeline loads every in-scope object | 🟢 **Done** — 8,734 records, reproduced identically across two independent reloads | Engineering |
 | 2 | Meetings decided — build, defer, or drop | 🔴 **Blocked on a spike**, not on code | Project owner + SF admin |
 | 3 | Salesforce config changes landed | 🟢 **Done 2026-08-14** — CR-1 and CR-2 fixed, CR-3 accepted as-is | Salesforce config owner |
-| 4 | A full rehearsal in **QA**, end to end | 🟢 **Done 2026-08-14** — 8,740 records, 0 unexpected failures | Engineering |
+| 4 | A full rehearsal in **QA**, end to end | 🟠 **RE-OPENED** — the 2026-08-14 run was invalid (all nine Flows were off). Needs a reset and reload, after CR-6 is promoted | Engineering |
 | 5 | Airtable data quality at an accepted level | 🟡 **Improving** — 9 items closed 2026-08-13 | Airtable data owners |
 | 6 | The **Full** sandbox exists and Operations rehearse in it | 🔴 **Not provisioned.** Hand-off *packaging* is done (2026-08-14) — `scripts/` is a self-contained bundle, proven by running it from an unrelated directory | GSA IT / Operations |
 | 7 | Production authorized, scheduled, supervised | 🔴 **Not started** | Project owner + GSA IT |
@@ -100,10 +100,28 @@ any org lacking the field — independent of this migration. **It did not affect
 
 ---
 
-## 4. A full rehearsal in QA — 🟢 DONE 2026-08-14
+## 4. A full rehearsal in QA — 🟠 RE-OPENED
 
-**Loaded successfully on 2026-08-14 — 8,740 records in 19m37s, zero unexpected failures.** QA's first
-ever load, and the first time the pipeline ran against any org but Dev.
+> **⚠️ The 2026-08-14 run below does not count as a rehearsal, and every figure in it is still
+> accurate — which is exactly the problem.** All nine LDGCRM Flows were inactive in QA for the whole
+> run. Nothing failed, nothing was withheld, and every object count matched Dev, because flow
+> activation changes field *contents*, not row counts. Market Segment came out blank on all 92 Partner
+> Accounts, all 842 Opportunities and all 1,026 Applications.
+>
+> The Flows were switched on the same day, but activating them does **not** backfill: all three Market
+> Segment Flows fire on create or parent change, and the pipeline upserts, so a re-run is an update
+> that will not re-trigger them. **QA needs a factory reset and a full reload.**
+>
+> **Do that after CR-6 is promoted**, not before. QA still runs the name-only Contact duplicate rule,
+> so a reload today would halt at step 5 exactly as Dev did on 2026-08-15.
+>
+> The pre-flight added on 2026-08-14 now blocks a run against inactive Flows, so this specific failure
+> cannot recur silently. What it cost was a day of believing a gate was closed.
+
+**Loaded on 2026-08-14 — 8,740 records in 19m37s, zero unexpected failures.** QA's first ever load,
+and the first time the pipeline ran against any org but Dev. Kept below because what it *did* prove
+(no Dev-specific dependencies, change sets travelling correctly, the trigger bypass working in a fresh
+org) remains true and is worth not re-deriving.
 
 | | QA | Dev |
 | --- | --- | --- |

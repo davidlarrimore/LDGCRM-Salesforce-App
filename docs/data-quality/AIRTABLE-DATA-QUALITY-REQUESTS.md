@@ -104,6 +104,20 @@ differs, so the match fails on an exact-name comparison.
 | `Department of the Interior` | **`Department of Interior`** *(no "the")* | 1 |
 | `Udall Foundation` | **`Morris K. Udall and Stewart L. Udall Foundation`** | 1 |
 
+**The exact 9 rows to edit:**
+
+| Airtable row | Record ID | `Parent` says now | Change it to |
+| --- | --- | --- | --- |
+| Food, Nutrition, and Consumer Services | `recfvstWGhuC0xNIM` | Department of Agriculture | U.S. Department of Agriculture |
+| Natural Resources and Environment | `recOTuuxYnWwBq9Fs` | Department of Agriculture | U.S. Department of Agriculture |
+| Office of Hearings and Appeals | `reczWl2eLLsX6wiQT` | Department of Agriculture | U.S. Department of Agriculture |
+| Office of Partnership and Public Engagement | `recuacVhzcwbsLY7p` | Department of Agriculture | U.S. Department of Agriculture |
+| Trade and Foreign Agricultural Affairs | `rec8cRyGVGuIcWaHT` | Department of Agriculture | U.S. Department of Agriculture |
+| Fish and Wildlife Service | `recWRFYhjqhsOYRqw` | Department of the Interior | Department of Interior |
+| Office of the Inspector General for Tax Administration | `recHWe4MNSQD5CZJC` | Department of the Treasury | Department of Treasury |
+| United States Mint | `rechhENZJ5AlI2l7a` | Department of the Treasury | Department of Treasury |
+| U.S. Institute for Environmental Conflict Resolution | `recqwxkc8cXrUIW8w` | Udall Foundation | Morris K. Udall and Stewart L. Udall Foundation |
+
 **Recommendation:** change the Airtable `Parent` values to the Salesforce wording. Best
 value-for-effort on this list after the Treasury merge — four find-and-replaces recover 9 rows.
 *(Alternatively rename the Salesforce Accounts to match Airtable, if the fuller names are preferred —
@@ -118,18 +132,43 @@ matches are `Senate Committee on Judiciary` and a scatter of unrelated "Legislat
 ### 1D. 38 rows with no parent named at all *(Airtable)*
 
 The largest remaining group and the one only you can resolve — Airtable records no `Parent`, so there
-is nothing to place them under. Many are genuinely top-level and simply need Accounts creating:
+is nothing to place them under. **Fill in `Parent` where one applies and the row drops into group 1A**,
+which is then a mechanical Salesforce job. The genuinely top-level ones just need Accounts creating.
 
-> `U.S. Census Bureau`, `United States Postal Service`, `Bureau of Diplomatic Security`,
-> `United States Army Corps of Engineers`, `The Supreme Court of the United States`,
-> `United States Courts of Appeals`, `Special Courts: United States Tax Court`,
-> `Guam`, `American Samoa`, `Puerto Rico`, `Northern Mariana Islands`,
-> `John F. Kennedy Center for the Performing Arts`, `U.S. Commission on Civil Rights`,
-> `Council of Inspectors General on Integrity and Efficiency`, …
+All 38, with their Airtable record IDs:
 
-**Recommendation:** fill in `Parent` where one applies — `U.S. Census Bureau` under Commerce,
-`Bureau of Diplomatic Security` under State, `United States Army Corps of Engineers` under Defense —
-and they drop into group 1A. The territories and courts are probably top-level and just need Accounts.
+| Airtable row | Record ID | | Airtable row | Record ID |
+| --- | --- | --- | --- | --- |
+| Amtrak | `recZk2Mvn4TtpYk0d` | | Occupational Safety & Health Administration | `recjbnDe79QKW8Sgq` |
+| Chief Digital and Artificial Intelligence Office | `recx5JEtm1UNKYTvv` | | Office of Apprenticeship | `recdcul6XJXdgSvD8` |
+| Conference of State Bank Supervisors | `reccBNvFir3oYLN6J` | | Office of Fair Housing and Equal Opportunity | `recePVH6YRPZUtNjW` |
+| Court Services And Offender Supervision Agency | `recED7NXwBdseQ4Ku` | | Office of Worker Compensation Programs | `recFi0g3iqmmI4rsY` |
+| DC Pre-trial Services | `recxup2VSDjYvDvrF` | | Online Services | `reccKm7VHMAv7UpZV` |
+| DEEOIC | `recqWuCPX1ZBQc2Je` | | Recreation.gov | `recJNjbx5qAEvH1F4` |
+| Democracy | `rece56LzWEcmeFZpG` | | U.S. Census Bureau | `recEMxNvBh96rs9VA` |
+| Director of National Intelligence | `recgNHuBBrwKemvvh` | | U.S. Chemical Safety Board | `recAdhzidzJoUOeLj` |
+| Education and Economics | `recwHGeFUBKMUywIR` | | **U.S. Citizenship And Immigration Services** | `reccwhQFCDgwPTXRc` |
+| Executive Office of the President | `recRMU3Wi8mQAzaoy` | | **U.S. Citizenship and Information Services** | `recl7z1nWFC5ArpTE` |
+| Federal Employment Services | `recW99Eb9o0TJqNOC` | | U.S. Digital Service | `recctE33YubXIKT3F` |
+| Federal Housing Administration | `rec2Z5Hf216BUQy5Q` | | U.S. Supreme Court | `recbletJk3eCCDz0T` |
+| Federal Judiciary | `recnoPZtrYyBpRn1K` | | Udall Foundation | `recA0RxfQZXblmfkA` |
+| Field Operations | `recx5eqEsgg9MzbcH` | | Under Secretary for Civilian Security | `recRUUclzfaGB7JEK` |
+| Institute of Peace | `recZoJNCTpKoWyHwm` | | Under Secretary for Economic Growth | `recM6puEn2gHlabMn` |
+| International Boundary Commission | `recznKc1nW9zXz7pA` | | Under Secretary for Food | `recnEpaMZuHnZBAn0` |
+| International Joint Commission | `reccdaeK1Wh5vbCPw` | | Under Secretary for Research | `rec7ueMmx55KbN588` |
+| Legislative Branch | `recwDub3m8XZLpMLC` | | USA.gov | `recH3eAn9SyWHWz5u` |
+| login.gov | `recmEIS0hurOnrwyK` | | Nutrition and Consumer Services | `recPcNeMQLDZZ3ee1` |
+
+⚠️ **Two rows in that list look like the same agency, one of them misspelled:**
+`U.S. Citizenship And Immigration Services` and `U.S. Citizenship and Information Services`.
+*Information* is almost certainly meant to be *Immigration*. **Please check and merge if so** — a
+misspelled row can never match a Salesforce Account, so it silently strands everything linked to it.
+
+ℹ️ **`Federal Judiciary` and `Legislative Branch` also appear in group 1C** as parents that other rows
+point at. Resolving them here resolves 1C at the same time.
+
+ℹ️ **Four of the `Under Secretary for …` rows are State Department bureaus** and probably want
+`Department of State` as their parent, which would move them straight into group 1A.
 
 ### 1a. `Department of Treasury` exists twice — blocks 5 Opportunities *(Airtable fix)*
 

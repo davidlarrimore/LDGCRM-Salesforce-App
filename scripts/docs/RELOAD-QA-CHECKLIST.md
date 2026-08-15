@@ -526,7 +526,7 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
         than rebuilding on top of the ambiguity it was meant to clear.
 - [ ] `Build-AccountReconciliation.ps1` → `Invoke-SalesforceLoad.ps1 -Operation Update` (Id-keyed,
       **not** upsert)
-- [ ] Expect ~585 matched, ~154 unmatched, **8 ambiguous**. The unmatched are mostly agencies with no
+- [ ] Expect **637 matched, 92 unmatched, 8 ambiguous** (2026-08-15; was 585 / 154 / 8). The unmatched are mostly agencies with no
       Salesforce Account at all — see AIRTABLE-DATA-QUALITY-REQUESTS.md, which no longer frames this
       as an Airtable duplicate problem.
 - [ ] 🆕 **Check the `...of which resolved by parent agency` line** (added 2026-08-14). Reconciliation
@@ -547,7 +547,7 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 - [ ] Run `Build-PartnerAccountLoad.ps1`. Expect **99 ready, 0 skipped** (2026-08-14; was 94 ready /
       5 skipped — the Airtable owners linked the last 5 rows to an Account, so nothing is skipped here
       any more).
-- [ ] Load (upsert). Expect **97 succeed, 2 fail** — both tracing to parent Accounts among the 154
+- [ ] Load (upsert). Expect **96 succeed, 3 fail** (2026-08-15; was 97 / 2 — the hierarchy repair made `AmeriCorps` and `National Geospatial-Intelligence Agency` ambiguous). All trace to parent Accounts among the 92
       unmatched. Same failures as previous runs = correct, not a regression.
 - [ ] ✅ **FIXED 2026-08-13, confirmed 2026-08-14 — the orchestrator no longer stops here.** It used to halt every time:
       `Invoke-SalesforceLoad.ps1` exited non-zero on *any* Bulk failure, and this step's correct
@@ -825,7 +825,7 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 ### 4f. `LDGCRM_Opportunity_Impediment__c`
 
 - [ ] Requires Impediment **and** Opportunity loaded (two Master-Details).
-- [ ] Expect **296/296** (2026-08-13 reload; was 267). Verify the placeholder Impediment named `None` was **excluded** (465 links,
+- [ ] Expect **311/311** (2026-08-15; was 296, and 267 before that). Verify the placeholder Impediment named `None` was **excluded** (465 links,
       53% of the otherwise-loadable set). A count far above 267 means the exclusion regressed.
 - [ ] Verify `LDGCRM_Blocked_Revenue__c` rolls up a genuine figure, not a multi-million placeholder.
 
@@ -883,7 +883,7 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
       entirely; there is no upsert path and no metadata fix.
 - [ ] Confirm Phase 2 left 0 rows, or the diff will under-insert. *(Verified 0 on 2026-08-14 — it
       cascades away with its parent Opportunity.)*
-- [ ] Expect **566 rows** (2026-08-14; was 565, and 515 before that), fewer skipped as Accounts
+- [ ] Expect **588 rows** (2026-08-15; was 566, 565, and 515 before that), fewer skipped as Accounts
       resolve. **34 withheld**, waiting on a side the Account issue held back.
 
 ---
@@ -894,7 +894,7 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 
       | Object | Expect own owner | Expect fallback (`peter.marks@gsa.gov`) |
       | --- | --- | --- |
-      | Opportunity | 510 | **332** |
+      | Opportunity | 527 | **360** |
       | `LDGCRM_application__c` | ~360 | ~329 |
       | Contact | 1,876 | 0 |
       | `LDGCRM_Impediment__c` | 0 | 38 |
@@ -1017,21 +1017,21 @@ was found this way, never in a success count.
 | Rahul coordination confirmed | yes | | |
 | Loading user = intended fallback owner | | | |
 | Phase 3 ownership gate | passed | | |
-| Account | **585** tagged (per D1) | | |
-| `LDGCRM_Partner_Account__c` | **97** tagged (99 submitted, 2 known fails) | | |
-| Contact | **~1,876** (account-less now skipped) | | |
+| Account | **637** tagged | | |
+| `LDGCRM_Partner_Account__c` | **96** tagged (99 submitted, 3 known fails) | | |
+| Contact | **1,888** - 0 duplicate-rule rejects since CR-6 | | |
 | Contact names DERIVED from email | ~592 | | |
 | Contact names read back from the org | **0–2** — anything higher is the self-referential bug. ⚠️ Only true on a **wiped** org; a plan-only run against a loaded org legitimately shows ~940 | | |
 | `last.first` domains learned | `dol.gov`, `pbgc.gov` | | |
 | Contacts with a role inbox as `LastName`, **no FirstName** | ~57 (correct — address kept whole) | | |
 | Contacts where a role name was **split into a person** | **7**, all from Airtable's `Name` field | | |
 | Fallback owner resolved | `peter.marks@gsa.gov` | | |
-| Opportunity | **842** | | |
-| `LDGCRM_application__c` | **1,045** | | |
-| `LDGCRM_Opportunity_Impediment__c` | **296** | | |
-| `LDGCRM_Application_Contact__c` | **2,750** + pre-existing | | |
-| `OpportunityContactRole` | **566** | | |
-| `ContentNote` | **730** | | |
+| Opportunity | **887** | | |
+| `LDGCRM_application__c` | **1,033** - see the unexplained -12 in the baseline notes | | |
+| `LDGCRM_Opportunity_Impediment__c` | **311** | | |
+| `LDGCRM_Application_Contact__c` | **2,741** + pre-existing | | |
+| `OpportunityContactRole` | **588** | | |
+| `ContentNote` | **721** | | |
 | `LDGCRM_Market_Segment__c` | 6 (5 tagged) | | |
 | Junk FCIC Accounts created | 0 (total stays at the pre-run baseline, **4** in Dev) | | |
 | `TriggerControls__c` restored | true | | |
@@ -1054,27 +1054,36 @@ was found this way, never in a success count.
 records hard-deleted); the ambiguous-hierarchy repair crashed on a code defect and was fixed and
 re-run on 2026-08-15, followed by a fresh Airtable pull and the full load.
 
-**The load HALTED at step 5 of 12 on the Contact duplicate problem above**, and was completed by
-resuming with `-StartAtStep Opportunity`. Steps 6–12 ran with **0 failures**.
+⚠️ **These figures are a STITCHED SEQUENCE of three partial runs, not one pass.** The load halted at
+step 5, was resumed with `-StartAtStep Opportunity`, then — after CR-6 was fixed mid-afternoon —
+Contact was re-run and the three steps depending on it were re-run after that. Every number is real
+and was measured in the org, but **this is not a defensible end-to-end baseline.** Do a clean factory
+reset and full reload before quoting these to anyone.
 
 | Object | 08-14 | **08-15** | Δ | Why |
 | --- | --- | --- | --- | --- |
 | Account | 585 | **637** | **+52** | Airtable Account merges + the hierarchy repair |
-| `LDGCRM_Partner_Account__c` | 97 | **96** | −1 | |
-| Contact | 1,876 | **1,721** | **−155** | ⛔ the `Help Desk` rename |
+| `LDGCRM_Partner_Account__c` | 97 | **96** | −1 | the hierarchy repair made 2 parents ambiguous |
+| Contact | 1,876 | **1,888** | **+12** | CR-6 — all 167 duplicate-rule rejects now load |
 | Opportunity | 842 | **887** | **+45** | more Accounts reconcile |
-| `LDGCRM_application__c` | 1,045 | **1,033** | −12 | |
-| `LDGCRM_Impediment__c` | 38 | **37** | −1 | |
+| `LDGCRM_application__c` | 1,045 | **1,033** | −12 | ⚠️ **unexplained — see below** |
+| `LDGCRM_Impediment__c` | 38 | **37** | −1 | the `None` placeholder is now excluded too |
 | `LDGCRM_Opportunity_Impediment__c` | 296 | **311** | +15 | |
-| `LDGCRM_Application_Contact__c` | 2,750 | **2,532** | **−218** | cascade from the missing contacts |
-| `OpportunityContactRole` | 566 | **579** | +13 | |
+| `LDGCRM_Application_Contact__c` | 2,750 | **2,741** | −9 | |
+| `OpportunityContactRole` | 566 | **588** | +22 | |
 | `ContentNote` | 730 | **721** | −9 | |
 | `LDGCRM_Market_Segment__c` | 5 | **5** | 0 | |
-| **Total** | 8,831 | **8,559** | **−272** | |
+| **Total** | 8,831 | **8,844** | **+13** | |
 
-**Read the deltas in two groups.** Account +52 and Opportunity +45 are the Airtable owners' merge work
-landing — genuine progress. Contact −155 and Application-Contact −218 are the `Help Desk` rename.
-Undo that one edit and this run would have been the best yet.
+**What CR-6 was worth, measured rather than estimated.** Fixing the duplicate rule recovered **167
+Contacts**, and re-running the three dependent steps then recovered **+209 Application–Contact links**
+(2,536 → 2,745) and **+9 Opportunity Contact Roles**. Application–Contact rows withheld for a missing
+junction partner fell **284 → 75**.
+
+⚠️ **`LDGCRM_application__c` 1,045 → 1,033 is NOT explained.** It moved before CR-6 and is not
+accounted for by the Account work, which moved every other object upward. **Diagnose this before the
+next reload** rather than re-baselining it away — a silent drop of 12 on an object whose parents all
+improved is the shape of a real regression, not of data movement.
 
 **Post-load verification — all passed:**
 
