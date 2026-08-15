@@ -730,6 +730,90 @@ express it. A successful PATCH returns **204 No Content**, so an empty response 
 here, the opposite of every other call in this repo. The write is followed by a verifying re-query,
 the same principle as the `TriggerControls__c` restore.
 
+## ⚠️ Pre-flight: the Contact duplicate rule must be OFF (added 2026-08-15)
+
+Check 8 in `Invoke-PreflightChecks`. `OTCRM_Contact_Duplicate` matches Contacts on **first + last
+name only**, both `Exact`. It **blocks the run** in every environment, Prod included.
+
+The failure it guards has the same shape as the inactive-Flows one, which is why it is blocking
+rather than a warning: the Contact step **does not fail**. It reports success having dropped the
+rejected rows, and every junction keyed on those Contacts is short by the same people. One Dev run
+lost **167 Contacts** this way.
+
+### The pipeline switches them off itself — via a same-org metadata round-trip
+
+`Disable-LdgcrmContactDuplicateRules` runs inside pre-flight, in **every environment including
+Prod** (project owner, 2026-08-15). Unlike `-ActivateFlows` there is no sandbox-only gate: the rules
+block the Contact load identically everywhere and the decision is that they stay off everywhere, so
+making Prod the one org needing a remembered manual step is how a production load acquires a silent
+167-record hole.
+
+**Why it is a Metadata API deploy and not a PATCH.** Flow activation gets to be a one-field PATCH
+because `FlowDefinition` exposes a `Metadata` compound field. Neither rule here does:
+
+| Object | Why there is no record-level write |
+| --- | --- |
+| `DuplicateRule` | Not a Tooling API object at all (`INVALID_TYPE`); on the standard API `IsActive` is `updateable=false` |
+| `MatchingRule` | Readable in Tooling, but has **no `Metadata` field**, so there is nothing for the `FlowDefinition`-style PATCH to bind to |
+
+So it retrieves the rule **from the target org**, changes one element, and deploys it **back to that
+same org**. No XML crosses an org boundary, no component is created, no definition changes — the
+rule's own retrieved body is what goes back. That is the `-ActivateFlows` category, and CLAUDE.md's
+metadata table carries the carve-out explicitly: **round-trip-to-same-org and status-only**.
+
+### Four mechanics that are not obvious
+
+1. **The retrieve needs no SFDX project.** `--target-metadata-dir` works from any directory — which
+   is what lets this live in the bundle at all, since `scripts/` has no `sfdx-project.json` and must
+   never reach up to the repo's `sfdx/`.
+2. **`DuplicateRule` members must be object-qualified** (`Contact.OTCRM_Contact_Duplicate`). An
+   unqualified name fails with *"Need to specify full name, Required Delimiter: ."* while the
+   retrieve still reports `Succeeded` — so the failure is in `messages`, not in the status.
+3. **`--unzip` nests the payload** (`unpackaged/unpackaged/…`), so `package.xml` is located by
+   search rather than by an assumed path.
+4. **`MatchingRules` is a per-object container file** — one `Contact.matchingRule` holds every
+   Contact matching rule. A targeted retrieve returns only the requested rules and the same file
+   goes back, keeping it a round-trip of the org's own content.
+
+**Order is not negotiable:** a matching rule cannot be deactivated while an active duplicate rule
+consumes it, so duplicate rules always go first. The matching-rule pass is **non-fatal by design** —
+once no active duplicate rule consumes it a matching rule enforces nothing, so the load is already
+safe after the first pass, and failing a production load over a cosmetic tidy-up would be the wrong
+trade.
+
+**The decision to proceed rests on a verifying re-query, never on the deploy's own success report** —
+the same principle as the flow activation and the `TriggerControls__c` restore. CLAUDE.md records a
+deploy that reported "Succeeded" having deployed 0 components, so `Invoke-LdgcrmRuleDeploy` checks
+`numberComponentErrors` and `numberComponentsDeployed` too.
+
+### Why it is not promoted by change set either
+
+CR-6's fix (add `Email` to the matching rule) was built and verified in Dev, then abandoned as a
+promotion path. A change set cannot carry a matching-rule change at all:
+
+| Target state | Error |
+| --- | --- |
+| Rule **Active** | *"Before you change a matching rule, you must deactivate it."* |
+| Rule **Inactive** | *"Change the matching rule status separately from other changes."* |
+
+A change set always uploads the **source org's** status and gives you no way to edit the XML, so it
+necessarily attempts a definition change and a status change in one deployment. No target state
+passes. Both rules were removed from the change set and are deactivated by hand in Setup instead.
+
+### It stays off
+
+Unlike `TriggerControls__c`, **nothing restores it**. Do not add a `finally` that puts it back — a
+rule switched off for the load must stay off, or the next load switches it off again and the org
+oscillates. The pipeline blocks only when a rule is *still active* after it has tried.
+
+An active *matching* rule with no active duplicate rule consuming it is inert, so that case warns
+rather than blocks.
+
+These are TTS OTCRM's rules, not this app's — but **TTS OTCRM is defunct** (project owner,
+2026-08-15) and its metadata will eventually be removed wholesale, so there is no owning team to
+clear this with and no live users behind the rule. Deactivating it is the same action in Prod as in a
+sandbox. That wholesale removal is a separate future exercise and not this migration's job. See CR-6.
+
 ## Running what's built so far
 
 ```powershell

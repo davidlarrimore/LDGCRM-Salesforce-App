@@ -416,6 +416,248 @@ function Set-LdgcrmFlowActiveVersion {
     return ""
 }
 
+function Invoke-LdgcrmRuleDeploy {
+    <#
+        Deploys one prepared metadata directory and returns "" on success or an
+        error string. Split out because the duplicate-rule and matching-rule
+        passes deploy separately and in order.
+
+        CHECK numberComponentErrors, NOT just success. CLAUDE.md records a
+        deploy that reported "Succeeded" having deployed 0 components; the
+        component counters are the truthful answer.
+    #>
+    param([string]$Directory, [string]$Org, [string]$Version)
+
+    # NEVER redirect stderr (no 2>&1) - PS 5.1 turns the CLI's update banner
+    # into a NativeCommandError that kills the script.
+    $Raw = & sf project deploy start --metadata-dir $Directory --target-org $Org --api-version $Version --wait 10 --json
+    $Parsed = $null
+    try { $Parsed = ($Raw | Out-String) | ConvertFrom-Json } catch { $Parsed = $null }
+
+    if ($null -eq $Parsed) { return "Could not parse the deploy response. Raw: $($Raw -join ' ')" }
+
+    $Result = $Parsed.result
+    if ($null -eq $Result) { return "Deploy returned no result object. Message: $($Parsed.message)" }
+
+    $ErrorCount = 0
+    if ($null -ne $Result.numberComponentErrors) { $ErrorCount = [int]$Result.numberComponentErrors }
+
+    if ("$($Result.success)" -ne "true" -or $ErrorCount -gt 0) {
+        $Detail = ""
+        foreach ($F in @($Result.details.componentFailures)) {
+            if ($F.problem) { $Detail += " [$($F.fullName): $($F.problem)]" }
+        }
+        if (-not $Detail) { $Detail = " status=$($Result.status)" }
+        return "Deploy failed ($ErrorCount component error(s)).$Detail"
+    }
+
+    if ([int]$Result.numberComponentsDeployed -lt 1) {
+        return "Deploy reported success but deployed 0 components - nothing changed."
+    }
+
+    return ""
+}
+
+function Disable-LdgcrmContactDuplicateRules {
+    <#
+        Switches OFF every ACTIVE Contact duplicate rule in the target org, then
+        the matching rules behind them, as part of the load. Returns a result
+        object carrying Blocking/Warning message lists.
+
+        WHY THIS IS A METADATA DEPLOY AND NOT A SETTING PATCH. Flow activation
+        gets to be a one-field PATCH because FlowDefinition exposes a Metadata
+        compound field. Neither object here does: DuplicateRule is not a Tooling
+        API object at all (INVALID_TYPE) and its IsActive is updateable=false on
+        the standard API, while MatchingRule has no Metadata field. The Metadata
+        API is the ONLY route, so this retrieves the component from the target
+        org, flips one line, and deploys it straight back.
+
+        THAT IS STILL A SETTING FLIP, NOT A PROMOTION. It moves no XML between
+        orgs, creates no component, and changes no definition - the rule's own
+        retrieved body is what gets redeployed, with a single status element
+        altered. It is the same category as -ActivateFlows and falls under the
+        project owner's rule (2026-08-14): "There is a difference between
+        changing settings in the org via CLI and adding/updating core object
+        definitions... allow for our pre-flight script to prep and validate the
+        environment for a successful load."
+
+        RUNS IN EVERY ENVIRONMENT, PRODUCTION INCLUDED (project owner,
+        2026-08-15) - unlike -ActivateFlows, which is sandbox-only. The rules
+        block the Contact load identically everywhere and the decision is that
+        they stay off everywhere, so making Prod the one org where an operator
+        must remember a manual step is how a production load acquires a silent
+        167-record hole.
+
+        NOTHING IS RESTORED. Deliberate, same as flow activation: the rules stay
+        off permanently. Do not add a finally block that puts them back.
+
+        FOUR MECHANICS THAT ARE NOT OBVIOUS:
+          1. The retrieve needs NO sfdx project. `--target-metadata-dir` works
+             from any directory, which is what lets this live in the bundle at
+             all - scripts/ has no sfdx-project.json and must never reach up to
+             the repo's sfdx/ folder.
+          2. DuplicateRule members MUST be object-qualified ("Contact.X"). An
+             unqualified name fails with "Need to specify full name, Required
+             Delimiter: ." while the retrieve still reports Succeeded.
+          3. --unzip nests the payload (unpackaged/unpackaged/...), so the
+             package.xml is located by search rather than by assumed path.
+          4. MatchingRules is a PER-OBJECT container file - one Contact
+             .matchingRule holds every Contact matching rule. A targeted
+             retrieve returns only the requested rules, and the same file is
+             deployed back, so this is a round-trip of the org's own content.
+
+        ORDER MATTERS AND IS NOT NEGOTIABLE: a matching rule cannot be
+        deactivated while an active duplicate rule consumes it. Duplicate rules
+        first, always.
+
+        THE MATCHING-RULE PASS IS NON-FATAL BY DESIGN. Once no active duplicate
+        rule consumes it, a matching rule enforces nothing, so the load is
+        already safe after the first pass. Its deploy is also the riskier of the
+        two - a container file, and Salesforce is fussy about status-only
+        changes on matching rules - and failing a production load over a
+        cosmetic tidy-up would be the wrong trade.
+    #>
+    param([string]$Org, [string]$Version, [string]$WorkDirectory)
+
+    $Outcome = [ordered]@{ Blocking = @(); Warning = @(); Deactivated = @() }
+
+    $ActiveDuplicates = @(Invoke-SalesforceQuery `
+        -Soql "SELECT DeveloperName, IsActive FROM DuplicateRule WHERE SobjectType = 'Contact'" `
+        -OrgAlias $Org -ApiVersion $Version |
+        Where-Object { "$($_.IsActive)" -eq "true" })
+
+    if ($ActiveDuplicates.Count -eq 0) {
+        Write-Host "  Contact dup rules      none active - nothing to switch off"
+        return $Outcome
+    }
+
+    Write-Host ""
+    Write-Host ("  Switching off $($ActiveDuplicates.Count) active Contact duplicate rule(s) in $Org.") -ForegroundColor Yellow
+    Write-Host "  THIS IS PERMANENT. Nothing restores them afterwards - they are meant to stay off." -ForegroundColor Yellow
+
+    $RuleRoot = Join-Path $WorkDirectory "contact-duplicate-rules"
+    New-Item -ItemType Directory -Path $RuleRoot -Force | Out-Null
+    $RetrieveDir = Join-Path $RuleRoot "retrieved"
+
+    $ActiveMatching = @(Invoke-LdgcrmToolingQuery `
+        -Soql "SELECT DeveloperName, RuleStatus FROM MatchingRule WHERE SobjectType = 'Contact'" `
+        -Org $Org -Version $Version |
+        Where-Object { $_.RuleStatus -eq "Active" })
+
+    $RetrieveArgs = @()
+    foreach ($R in $ActiveDuplicates) { $RetrieveArgs += @("--metadata", "DuplicateRule:Contact.$($R.DeveloperName)") }
+    foreach ($R in $ActiveMatching)   { $RetrieveArgs += @("--metadata", "MatchingRule:Contact.$($R.DeveloperName)") }
+
+    $RetrieveRaw = & sf project retrieve start @RetrieveArgs --target-metadata-dir $RetrieveDir --unzip --target-org $Org --api-version $Version --json
+    $RetrieveParsed = $null
+    try { $RetrieveParsed = ($RetrieveRaw | Out-String) | ConvertFrom-Json } catch { $RetrieveParsed = $null }
+
+    if ($null -eq $RetrieveParsed -or "$($RetrieveParsed.result.success)" -ne "true") {
+        $Outcome.Blocking += ("Could not retrieve the Contact duplicate rule definitions from $Org, so they cannot be " +
+                              "switched off automatically. Deactivate them in Setup > Duplicate Rules (then Matching " +
+                              "Rules) and re-run. Detail: $($RetrieveParsed.result.status) $($RetrieveParsed.message)")
+        return $Outcome
+    }
+
+    $PackageFile = @(Get-ChildItem -Path $RetrieveDir -Filter "package.xml" -Recurse -File | Select-Object -First 1)
+    if ($PackageFile.Count -eq 0) {
+        $Outcome.Blocking += "Retrieve succeeded but no package.xml was found under $RetrieveDir - cannot locate the retrieved rules."
+        return $Outcome
+    }
+    $Unpackaged = $PackageFile[0].Directory.FullName
+
+    # --- pass 1: duplicate rules (REQUIRED) ---------------------------------
+    $DupSource = Join-Path $Unpackaged "duplicateRules"
+    $DupFiles  = @(Get-ChildItem -Path $DupSource -File -ErrorAction SilentlyContinue)
+
+    if ($DupFiles.Count -eq 0) {
+        $Outcome.Blocking += "No duplicateRules were retrieved from $Org despite $($ActiveDuplicates.Count) being active."
+        return $Outcome
+    }
+
+    $DupDeploy = Join-Path $RuleRoot "deploy-duplicate"
+    New-Item -ItemType Directory -Path (Join-Path $DupDeploy "duplicateRules") -Force | Out-Null
+    $Members = New-Object System.Collections.Generic.List[string]
+
+    foreach ($File in $DupFiles) {
+        # -Encoding UTF8 is mandatory: PS 5.1 decodes a BOM-less UTF-8 file as
+        # ANSI, which corrupts any non-ASCII in a rule's alertText.
+        $Xml = Get-Content -LiteralPath $File.FullName -Raw -Encoding UTF8
+        $Xml = $Xml -replace "<isActive>true</isActive>", "<isActive>false</isActive>"
+        [System.IO.File]::WriteAllText(
+            (Join-Path (Join-Path $DupDeploy "duplicateRules") $File.Name),
+            $Xml, (New-Object System.Text.UTF8Encoding $false))
+        $Members.Add([System.IO.Path]::GetFileNameWithoutExtension($File.Name))
+    }
+
+    Write-LdgcrmRulePackage -Path (Join-Path $DupDeploy "package.xml") -TypeName "DuplicateRule" -Members $Members -Version $Version
+
+    Write-Host "    duplicate rules ..." -NoNewline
+    $DeployError = Invoke-LdgcrmRuleDeploy -Directory $DupDeploy -Org $Org -Version $Version
+
+    if ($DeployError) {
+        Write-Host " FAILED" -ForegroundColor Red
+        $Outcome.Blocking += ("Could not switch off the Contact duplicate rule(s) in $Org. $DeployError " +
+                              "Deactivate them in Setup > Duplicate Rules and re-run.")
+        return $Outcome
+    }
+    Write-Host " done" -ForegroundColor Green
+
+    # --- pass 2: matching rules (NON-FATAL) ---------------------------------
+    $MatchSource = Join-Path $Unpackaged "matchingRules"
+    $MatchFiles  = @(Get-ChildItem -Path $MatchSource -File -ErrorAction SilentlyContinue)
+
+    if ($MatchFiles.Count -gt 0) {
+        $MatchDeploy = Join-Path $RuleRoot "deploy-matching"
+        New-Item -ItemType Directory -Path (Join-Path $MatchDeploy "matchingRules") -Force | Out-Null
+        $MatchMembers = New-Object System.Collections.Generic.List[string]
+
+        foreach ($File in $MatchFiles) {
+            $Xml = Get-Content -LiteralPath $File.FullName -Raw -Encoding UTF8
+            $Xml = $Xml -replace "<ruleStatus>Active</ruleStatus>", "<ruleStatus>Inactive</ruleStatus>"
+            [System.IO.File]::WriteAllText(
+                (Join-Path (Join-Path $MatchDeploy "matchingRules") $File.Name),
+                $Xml, (New-Object System.Text.UTF8Encoding $false))
+            foreach ($R in $ActiveMatching) { $MatchMembers.Add("Contact.$($R.DeveloperName)") }
+        }
+
+        Write-LdgcrmRulePackage -Path (Join-Path $MatchDeploy "package.xml") -TypeName "MatchingRule" -Members $MatchMembers -Version $Version
+
+        Write-Host "    matching rules  ..." -NoNewline
+        $MatchError = Invoke-LdgcrmRuleDeploy -Directory $MatchDeploy -Org $Org -Version $Version
+
+        if ($MatchError) {
+            Write-Host " not switched off" -ForegroundColor DarkGray
+            $Outcome.Warning += ("The Contact matching rule(s) in $Org could not be switched off automatically, which " +
+                                 "does NOT affect this load - a matching rule enforces nothing once no active " +
+                                 "duplicate rule consumes it, and the duplicate rules are now off. Tidy them up in " +
+                                 "Setup > Matching Rules when convenient. Detail: $MatchError")
+        }
+        else { Write-Host " done" -ForegroundColor Green }
+    }
+
+    foreach ($R in $ActiveDuplicates) { $Outcome.Deactivated += $R.DeveloperName }
+    return $Outcome
+}
+
+function Write-LdgcrmRulePackage {
+    <# Writes a one-type package.xml. UTF-8 NO BOM - a BOM ahead of the XML
+       declaration makes the manifest unparseable. #>
+    param([string]$Path, [string]$TypeName, $Members, [string]$Version)
+
+    $Lines = New-Object System.Collections.Generic.List[string]
+    $Lines.Add('<?xml version="1.0" encoding="UTF-8"?>')
+    $Lines.Add('<Package xmlns="http://soap.sforce.com/2006/04/metadata">')
+    $Lines.Add('    <types>')
+    foreach ($M in @($Members | Sort-Object -Unique)) { $Lines.Add("        <members>$M</members>") }
+    $Lines.Add("        <name>$TypeName</name>")
+    $Lines.Add('    </types>')
+    $Lines.Add("    <version>$Version</version>")
+    $Lines.Add('</Package>')
+
+    [System.IO.File]::WriteAllText($Path, ($Lines -join "`r`n"), (New-Object System.Text.UTF8Encoding $false))
+}
+
 function Invoke-PreflightChecks {
     <#
         Everything that should stop a run BEFORE the first row is written.
@@ -772,6 +1014,105 @@ function Invoke-PreflightChecks {
                 Write-Host ("                         NOT IN ROSTER: {0}" -f $N) -ForegroundColor Yellow
             }
         }
+    }
+
+    <#
+        8. THE CONTACT DUPLICATE RULE IS OFF (added 2026-08-15).
+
+        OTCRM_Contact_Duplicate matches on FirstName + LastName ONLY, both
+        Exact. It belongs to TTS OTCRM, not to this app, and it is what rejected
+        167 Contacts with DUPLICATES_DETECTED on the 2026-08-15 Dev load -
+        "there are 1,000 people named Robert Smith in the world; email should be
+        unique, first and last name doesn't have to be" (project owner). CR-6 in
+        docs/engineering/SALESFORCE-CHANGE-REQUESTS.md carries the full case.
+
+        THE LOAD SWITCHES THEM OFF ITSELF, in every environment including Prod
+        (project owner, 2026-08-15: "these things should absolutely be performed
+        on full sandbox and prod as part of the load"). It does not ask an
+        operator to do it in Setup first. See
+        Disable-LdgcrmContactDuplicateRules for the mechanism and for why a
+        Metadata API round-trip is a setting flip rather than a promotion.
+
+        WHY NOT A CHANGE SET. The original plan was to fix the rule (add Email)
+        and promote it. That is impossible: Salesforce refuses to modify a
+        matching rule that is Active in the target, and separately refuses any
+        deployment that changes a rule's definition and its status together.
+        Deactivating in the target to satisfy the first produces the second. No
+        target state passes, because a change set always carries the SOURCE
+        org's status and gives you no way to edit it. Both errors were seen, in
+        that order, promoting into QA on 2026-08-15.
+
+        BLOCKING IF IT DOES NOT WORK. With the rule on, the Contact step does
+        not fail - it SUCCEEDS having quietly dropped rows, and every junction
+        keyed on those Contacts is short by the same people. That is the same
+        shape of failure as the inactive-Flows run, so the decision to proceed
+        rests on a VERIFYING RE-QUERY below, never on the deploy's own success
+        report.
+
+        NOTHING IS RESTORED afterwards. The rules stay off permanently.
+    #>
+    $DuplicateRules = @(Invoke-SalesforceQuery `
+        -Soql "SELECT DeveloperName, IsActive FROM DuplicateRule WHERE SobjectType = 'Contact'" `
+        -OrgAlias $Org -ApiVersion $Version)
+
+    # STRING COMPARE, NOT `Where-Object { $_.IsActive }`. Defensive, not a fix
+    # for an observed bug: today the CLI's JSON gives a real boolean and the
+    # naive test agrees. But EVERY non-empty string is truthy in PowerShell, so
+    # the day this value arrives as "False" the naive test reports an inactive
+    # rule as ACTIVE and blocks every load - and it fails in the safe-looking
+    # direction, which is how it would survive review. -eq is case-insensitive,
+    # so this reads a real boolean and its string form identically.
+    $ActiveDuplicates = @($DuplicateRules | Where-Object { "$($_.IsActive)" -eq "true" })
+
+    if ($ActiveDuplicates.Count -eq 0) {
+        Write-Host ("  Contact dup rules      {0} present, none active" -f $DuplicateRules.Count)
+    }
+    else {
+        Write-Host ("  Contact dup rules      {0} ACTIVE - switching off" -f $ActiveDuplicates.Count) -ForegroundColor Yellow
+
+        $RuleOutcome = Disable-LdgcrmContactDuplicateRules `
+            -Org $Org -Version $Version -WorkDirectory (Get-LogDirectory -Category "data-migration")
+
+        foreach ($W in $RuleOutcome.Warning)  { $Findings.Warning += $W }
+        foreach ($B in $RuleOutcome.Blocking) { $Findings.Blocking += $B }
+
+        # VERIFYING RE-QUERY. Same principle as the flow activation and the
+        # TriggerControls__c restore: a deploy reporting success is not proof the
+        # org agrees. Re-read rather than trust the write - and this is the check
+        # that actually decides whether the load may proceed, so a rule still
+        # active here BLOCKS regardless of what the deploy said.
+        Write-Host "  re-reading duplicate rule state to verify..." -ForegroundColor DarkGray
+
+        $StillActive = @(Invoke-SalesforceQuery `
+            -Soql "SELECT DeveloperName, IsActive FROM DuplicateRule WHERE SobjectType = 'Contact'" `
+            -OrgAlias $Org -ApiVersion $Version |
+            Where-Object { "$($_.IsActive)" -eq "true" })
+
+        if ($StillActive.Count -eq 0) {
+            Write-Host ("  Contact dup rules      {0} switched off and verified" -f $ActiveDuplicates.Count) -ForegroundColor Green
+        }
+        else {
+            foreach ($Rule in $StillActive) {
+                $Findings.Blocking += ("Contact duplicate rule '$($Rule.DeveloperName)' is STILL ACTIVE after the " +
+                                       "pipeline tried to switch it off. Loading Contact now would report success " +
+                                       "having silently dropped rows to DUPLICATES_DETECTED, and every junction keyed " +
+                                       "on those Contacts would be short by the same people. Deactivate it in " +
+                                       "Setup > Duplicate Rules and re-run. See docs/SETUP.md, 'Contact duplicate rule'.")
+                Write-Host ("                         STILL ACTIVE: {0}" -f $Rule.DeveloperName) -ForegroundColor Red
+            }
+        }
+    }
+
+    # Reported for completeness only. A matching rule enforces nothing once no
+    # active duplicate rule consumes it, so this never blocks - the pass above
+    # already tried to switch these off and its failure is a warning by design.
+    $ActiveMatching = @(Invoke-LdgcrmToolingQuery `
+        -Soql "SELECT DeveloperName, RuleStatus FROM MatchingRule WHERE SobjectType = 'Contact'" `
+        -Org $Org -Version $Version |
+        Where-Object { $_.RuleStatus -eq "Active" })
+
+    if ($ActiveMatching.Count -gt 0) {
+        Write-Host ("                         {0} matching rule(s) still Active - inert, not blocking" -f $ActiveMatching.Count) -ForegroundColor DarkGray
     }
 
     return $Findings

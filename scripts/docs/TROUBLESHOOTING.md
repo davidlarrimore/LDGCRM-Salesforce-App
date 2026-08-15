@@ -241,11 +241,28 @@ Two distinct causes:
 
 ## `DUPLICATES_DETECTED`
 
-**Meaning:** an org-level duplicate rule rejected the record. On Contact there is a rule matching on
-first + last name that rejects a handful of rows every run (~4–5 of ~1,550).
+**Meaning:** an org-level duplicate rule rejected the record.
 
-Expected and documented. It is not in this repo's metadata — the manifest is scoped to this app, so
-other teams' rules are invisible to any amount of reading `sfdx/force-app`.
+**You should not be seeing this at all.** Pre-flight switches every active Contact duplicate rule
+off before the first row is written, permanently, and blocks the run if it cannot — see
+[SETUP.md](SETUP.md#5-the-contact-duplicate-rule--the-load-switches-it-off-for-you). A load cannot
+normally reach the Contact step with one active.
+
+If you are seeing it, one of these is true:
+
+- **Something switched the rule back on mid-run** — an admin in Setup, or another deployment. Find
+  out what; the next run will switch it off again but the rows lost in this one are gone.
+- **You skipped pre-flight**, or ran a transform's loader directly rather than through
+  `Invoke-FullMigrationLoad.ps1`.
+- **A rule on a different object** rejected the row — pre-flight only handles Contact, because that
+  is the only object where this has ever fired.
+
+The rejected rows are **lost, not merged** — the rule rejects outright, the step still reports
+success, and nothing in the run output names the people who fell out. Check
+`<run>/errors.csv` for the rows.
+
+None of these rules are in this repo's metadata — the manifest is scoped to this app, so other
+teams' rules are invisible to any amount of reading `sfdx/force-app`.
 
 ---
 

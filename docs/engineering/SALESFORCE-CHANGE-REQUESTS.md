@@ -19,15 +19,68 @@ each carries 🔴 Open / 🟡 Partially resolved / ✅ Resolved.
 
 ---
 
-## CR-6 — Contact duplicate rule matched on NAME ONLY — ✅ FIXED AND VERIFIED IN DEV 2026-08-15, 🔴 NEEDS PROMOTING
+## CR-6 — Contact duplicate rule matched on NAME ONLY — ✅ CLOSED 2026-08-15 BY DEACTIVATING THE RULE
 
-> **✅ Resolved in Dev the same day it was raised.** The project owner added `Email` to
-> `OTCRM_Contact_Matching_Rule`, so a duplicate now requires **FirstName AND LastName AND Email** to
-> match, all `Exact`, all `NullNotAllowed`.
+> **⚠️ SUPERSEDED 2026-08-15: the `Email` fix below was built, verified, and then ABANDONED as the
+> promotion path. Both rules are now switched OFF permanently in every org, by hand in Setup.**
+>
+> **Why the change set could not carry it — a genuine platform deadlock, not a mistake.** Promoting
+> into QA produced two errors in sequence, and they are mutually exclusive:
+>
+> | Target state | Error |
+> | --- | --- |
+> | Matching rule **Active** | *"Before you change a matching rule, you must deactivate it."* |
+> | Matching rule **Inactive** | *"Change the matching rule status separately from other changes."* + the duplicate rule cannot activate while its matching rule is inactive |
+>
+> A change set always uploads the **source org's** status and offers no way to edit the XML, so it
+> carried `ruleStatus=Active` and tried to change the definition *and* flip the status in one
+> deployment. No target state passes. The only change-set-shaped escape was to deactivate both rules
+> in **Dev**, re-upload, deploy, then reactivate in four orgs — turning off another team's duplicate
+> protection in the shared source sandbox, and repeating the dance at every gate.
+>
+> **Decision (project owner, 2026-08-15): remove both rules from the change set and deactivate them,
+> permanently — and do it IN THE LOAD, not by hand.** `OTCRM_Contact_Duplicate` first, then
+> `OTCRM_Contact_Matching_Rule` — the second is impossible before the first. They are not switched
+> back on afterwards.
+>
+> **Automated in pre-flight**, `Invoke-FullMigrationLoad.ps1` check 8 →
+> `Disable-LdgcrmContactDuplicateRules`, in **every environment including Prod**: *"these things
+> should absolutely be performed on full sandbox and prod as part of the load"* (project owner). It
+> blocks the run only if a rule is **still active after it has tried**, decided on a verifying
+> re-query rather than on the deploy's own success report.
+>
+> **How, given no record-level API exists.** `DuplicateRule` is not a Tooling API object
+> (`INVALID_TYPE`) and its `IsActive` is `updateable=false`; `MatchingRule` has no `Metadata`
+> compound field, so the `FlowDefinition` PATCH has nothing to bind to. The Metadata API is the only
+> route — so the rule is retrieved **from the target org**, one element is changed, and it is
+> deployed **back to that same org**. Nothing crosses an org boundary and no definition changes,
+> which is what keeps it a setting flip rather than a promotion; CLAUDE.md's metadata table carries
+> the carve-out (**round-trip-to-same-org, status-only**).
+>
+> An earlier revision of this entry said the pipeline "cannot fix it — there is no API." That
+> conflated *no record-level API* with *impossible*, and was wrong. Verified working against Dev on
+> 2026-08-15: both rules switched off by the pipeline, confirmed by re-query.
+>
+> **Not a cross-team question — TTS OTCRM is defunct** (project owner, 2026-08-15). The app is being
+> retired and all of its metadata and rules will eventually be removed; there is no owning team to
+> clear this with and no live users behind the rule. Deactivating it is **removing a blocker to
+> Login.gov CRM going live**, and it is the same action in Prod as in a sandbox.
+>
+> An earlier revision of this entry called it an unresolved cross-team dependency and asked for OTCRM
+> sign-off before Full and Prod. That was wrong and is corrected here rather than deleted, because a
+> stale "needs another team's approval" note invents a gate that does not exist. **The wholesale
+> removal of OTCRM metadata is a separate future exercise and is not this migration's job** — this
+> change deactivates two rules and nothing else.
+>
+> ---
+>
+> **What was built first, kept because it is the measurement that justified the change.** The project
+> owner added `Email` to `OTCRM_Contact_Matching_Rule`, so a duplicate required **FirstName AND
+> LastName AND Email**, all `Exact`, all `NullNotAllowed`.
 >
 > **Verified by re-running the Contact step against Dev: 1,888 submitted, 1,888 loaded, 0 failures.**
-> Contact went 1,721 → 1,888 — precisely the 167 rows the old rule had rejected. **This needs
-> promoting by change set to QA, Full and Prod**, where the name-only rule is still live.
+> Contact went 1,721 → 1,888 — precisely the 167 rows the old rule had rejected. Deactivating the rule
+> entirely is strictly more permissive than that three-field rule, so **1,888 is a floor, not a target**.
 >
 > The predicted side effect also occurred and is accepted: the six same-person-two-address pairs now
 > exist as two Contacts each (`brian.v.cooke@cbp.dhs.gov` *and* `@associates.cbp.dhs.gov`, and five
@@ -91,15 +144,18 @@ and the pipeline has no header to set.
 The immediate trigger was an Airtable bulk-rename that gave 178 different mailboxes the same name, but
 that only exposed the rule — any 178 people sharing a name would do the same.
 
-### What we are asking for
+### What we asked for, and what was actually done
 
-**Add `Email` to `OTCRM_Contact_Matching_Rule`, ideally as an exact match and the primary criterion.**
-That is the actual identity key, and it makes the rule do what its description already claims.
+**The ask was: add `Email` to `OTCRM_Contact_Matching_Rule`** as an exact match and the primary
+criterion — the actual identity key, making the rule do what its description already claims. That was
+built and verified in Dev, then abandoned when it turned out no change set could carry it to another
+org (see the deadlock at the top of this entry).
 
-**This is a TTS OTCRM-owned rule, so it is a cross-team request, not a unilateral change.** If they
-will not change a rule their own app depends on, the fallback is to **scope its filter so it no longer
-catches migration-created Contacts** — but note there is no clean discriminator today, because their
-Federal Contacts and ours share a record type.
+**What was done instead: both rules are deactivated, permanently.** This was framed at the time as a
+cross-team request needing OTCRM's agreement, with a fallback of re-scoping their filter to miss
+migration-created Contacts — which had no clean discriminator anyway, since their Federal Contacts and
+ours share a record type. **Neither turned out to be necessary: TTS OTCRM is defunct**, so the rule
+protects nothing and simply comes off.
 
 ### One consequence to state up front, because it is not a free win
 

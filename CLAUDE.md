@@ -157,7 +157,8 @@ the rule and strip out things the pipeline legitimately needs:
 | --- | --- |
 | ✅ **READ the org to check what a load needs exists** | a field, a picklist value, a record-type assignment, whether an external ID is still `unique`. The pipeline already does this — `Build-ApplicationLoad.ps1` reads live field definitions before deciding whether to send two columns. **A consolidated pre-flight check belongs in the bundle**, and is wanted. |
 | ✅ **TOGGLE a documented switch a load needs, then put it back** | `Invoke-SalesforceLoad.ps1`'s `TriggerControls__c` bypass is the model: capture, flip, restore in a `finally`, verify the restore. |
-| ❌ **DEPLOY or RETRIEVE metadata, either direction, for any reason** | If a load is blocked by missing metadata, the pipeline's job is to say so precisely and stop. Someone else builds the change set. |
+| ✅ **ROUND-TRIP a component to flip its STATUS, where no record-level API exists** | Added 2026-08-15 for the Contact duplicate/matching rules. `Disable-LdgcrmContactDuplicateRules` retrieves the rule **from the target org**, changes one element (`isActive` / `ruleStatus`), and deploys it **straight back to the same org**. No XML moves between orgs, no component is created, no definition changes. This is the `-ActivateFlows` category — a setting flip — and it is only a metadata deploy because Salesforce exposes no other write path (`DuplicateRule` isn't a Tooling object and its `IsActive` is `updateable=false`; `MatchingRule` has no `Metadata` field). **The test is round-trip-to-same-org and status-only.** |
+| ❌ **DEPLOY metadata FROM this repo, or RETRIEVE INTO it, to change what a component IS** | Adding a field, editing a definition, promoting anything between orgs. If a load is blocked by missing metadata, the pipeline's job is to say so precisely and stop. Someone else builds the change set. |
 
 ## ⚠️ `scripts/` is a SELF-CONTAINED BUNDLE — never resolve a path above its root
 
@@ -802,7 +803,18 @@ Run from inside `sfdx/`:
     outward-facing side effect this pipeline cannot inspect — user-confirmed inert in gsa-peo
     (2026-08-13), but **re-confirm before any production run**.
   - An **org-level duplicate rule** on Contact (First + Last name) that rejected 4 records with
-    `DUPLICATES_DETECTED`. Also not in the repo.
+    `DUPLICATES_DETECTED`. Also not in the repo. **This is `OTCRM_Contact_Duplicate`, and as of
+    2026-08-15 the LOAD ITSELF SWITCHES IT OFF, permanently, in every environment including Prod** —
+    it later cost 167 Contacts in one Dev run. Pre-flight check 8 calls
+    `Disable-LdgcrmContactDuplicateRules`, which retrieves the rule from the target org, flips
+    `isActive`/`ruleStatus`, deploys it back to that same org, and then **decides whether to proceed
+    on a verifying re-query, never on the deploy's own success report**. It blocks only if a rule is
+    still active afterwards. **Nothing is restored** — unlike the `TriggerControls__c` bypass, these
+    stay off. The CR-6 plan to add `Email` and promote it by change set was abandoned: a change set
+    cannot carry a matching-rule change, because Salesforce refuses to modify a rule that is Active
+    in the target *and* refuses to change a definition and a status in one deployment, and a change
+    set always carries the source org's status with no way to edit it. It is TTS OTCRM's rule, but
+    **TTS OTCRM is defunct** (user, 2026-08-15), so this needs no cross-team sign-off. See CR-6.
 
   Useful live-org checks before a first load of any object:
   `sf data query --use-tooling-api -q "SELECT Name, Status, TableEnumOrId FROM ApexTrigger WHERE TableEnumOrId = '<Object>'"`

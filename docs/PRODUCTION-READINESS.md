@@ -38,7 +38,7 @@ closed until it has been demonstrated, not merely built.
 | 1 | The pipeline loads every in-scope object | 🟢 **Done** — 8,734 records, reproduced identically across two independent reloads | Engineering |
 | 2 | Meetings decided — build, defer, or drop | 🔴 **Blocked on a spike**, not on code | Project owner + SF admin |
 | 3 | Salesforce config changes landed | 🟢 **Done 2026-08-14** — CR-1 and CR-2 fixed, CR-3 accepted as-is | Salesforce config owner |
-| 4 | A full rehearsal in **QA**, end to end | 🟠 **RE-OPENED** — the 2026-08-14 run was invalid (all nine Flows were off). Needs a reset and reload, after CR-6 is promoted | Engineering |
+| 4 | A full rehearsal in **QA**, end to end | 🟠 **RE-OPENED** — the 2026-08-14 run was invalid (all nine Flows were off). Needs a reset and reload. CR-6 no longer gates it: the duplicate rule is deactivated per org rather than promoted | Engineering |
 | 5 | Airtable data quality at an accepted level | 🟡 **Improving** — 9 items closed 2026-08-13 | Airtable data owners |
 | 6 | The **Full** sandbox exists and Operations rehearse in it | 🔴 **Not provisioned.** Hand-off *packaging* is done (2026-08-14) — `scripts/` is a self-contained bundle, proven by running it from an unrelated directory | GSA IT / Operations |
 | 7 | Production authorized, scheduled, supervised | 🔴 **Not started** | Project owner + GSA IT |

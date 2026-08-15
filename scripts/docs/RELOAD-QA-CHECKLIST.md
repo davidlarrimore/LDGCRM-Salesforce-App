@@ -689,28 +689,37 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 - [ ] ⚠️ **Verify `TriggerControls__c.Contact.On__c` is back to `true`.** Restored in a `finally` block
       with a verifying re-query, proven under real failure — check anyway. Leaving it off silently
       breaks another team's app.
-- [ ] ✅ **FIXED IN DEV 2026-08-15 — but the fix has NOT been promoted, so expect 167
-      `DUPLICATES_DETECTED` rejections and a halt in any org that has not received it yet.**
+- [ ] ⚠️ **Expect 0 `DUPLICATES_DETECTED` rejections — the load switches the rule off itself.**
 
-      `OTCRM_Contact_Matching_Rule` matched on **first + last name only**, so 178 different mailboxes
-      sharing the name `Help Desk` collided. It now also requires **Email**, all three `Exact` and
-      `NullNotAllowed`. Re-verified in Dev: **1,888 submitted, 1,888 loaded, 0 failures** (was 1,721).
-      **QA, Full and Prod still run the name-only rule** — see CR-6. Until promoted, that org halts.
+      Pre-flight deactivates every active Contact duplicate rule (and the matching rules behind it)
+      before the first row is written, permanently, and blocks the run if it cannot. Watch for
+      `Contact dup rules  N switched off and verified` in the pre-flight output. Any
+      `DUPLICATES_DETECTED` at all means something re-enabled the rule mid-run — find out what.
+      See [SETUP.md](SETUP.md#5-the-contact-duplicate-rule--the-load-switches-it-off-for-you).
 
-      ⚠️ **The rule is owned by TTS OTCRM, not by this app**, and it is filtered to `RecordType =
-      Federal`, which is what migrated partner contacts get. Confirm it is present and correct in the
-      target org rather than assuming Dev's state applies.
+      **This replaces the CR-6 change-set promotion, abandoned 2026-08-15.** The plan had been to add
+      `Email` to the matching rule and promote it. It cannot travel by change set: Salesforce refuses
+      to modify a matching rule that is Active in the target, *and* refuses a deployment that changes
+      a rule's definition and its status together — so deactivating to satisfy the first produces the
+      second, and no target state passes. Both rules came out of the change set.
 
-      On 2026-08-14 someone bulk-filled the Airtable `Name` field from the `Roles` field: all 178 rows
-      whose Role is `Help Desk POC` are now named `Help Desk`. They are 178 different mailboxes across
-      78 domains and 41 agencies, so the org rule (First + Last name) accepts one and rejects the rest.
-      **139 of the 140 rejected addresses appear nowhere else in Salesforce** — this is lost data, not
-      helpful duplicate-suppression. See AIRTABLE-DATA-QUALITY-REQUESTS.md item 3.
+      **The rule is owned by TTS OTCRM, not by this app**, and it is filtered to `RecordType =
+      Federal`, which is what migrated partner contacts get. **TTS OTCRM is defunct** and its
+      metadata will eventually be removed wholesale, so there is nobody to clear this with — it is
+      the same action in Full and Prod as in a sandbox.
 
-      **Once it is fixed, expect the baseline ~10**, of which **6 are correct and permanent**: the same
-      person under two email addresses, whose second copy the rule rightly rejects.
-      To finish a run while the data is still broken, resume with
-      `-StartAtStep Opportunity` — everything downstream loads clean, just short of those contacts.
+      **Historic baseline, for reading old runs:** with the rule active it rejected **167** Contacts
+      in Dev (1,721 of 1,888) — 178 different mailboxes across 78 domains sharing the name
+      `Help Desk` after an Airtable bulk-rename, of which **139 of 140 rejected addresses appear
+      nowhere else in Salesforce**. Dev then loaded **1,888 of 1,888, 0 failures** — but that run had
+      the rule still ACTIVE with `Email` added, which is the fix now abandoned. Deactivating entirely
+      is strictly more permissive than that, so treat 1,888 as a floor and re-baseline on the first
+      run rather than checking against it.
+
+      Note the ~6 rejections older versions of this checklist called "correct and permanent" — the
+      same person under two email addresses — now load as two Contacts. That is expected: two
+      different emails were never the same person to `Get-AirtableContactGroups`, which is what
+      merges Airtable rows on email, and this rule is not a substitute for it.
 
 ### 4d. Opportunity
 

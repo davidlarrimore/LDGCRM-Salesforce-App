@@ -212,6 +212,62 @@ information about Login.gov applicants sourced from Airtable. Do not commit anyt
 
 ---
 
+## 5. The Contact duplicate rule — the load switches it off for you
+
+**There is nothing to do here.** This section exists so the change isn't a surprise, because the
+load makes a permanent configuration change to the org on your behalf.
+
+**What happens.** Pre-flight finds every **active Contact duplicate rule**, switches it off, then
+switches off the matching rules behind it. It does this in **every environment, production
+included**, and it **does not put them back**.
+
+**Why.** `OTCRM_Contact_Duplicate` matches Contacts on **first + last name only**, both exact. That
+is not an identity test — there are a thousand people named Robert Smith — and it silently rejects
+real people. On the 2026-08-15 Dev load it cost **167 Contacts**, and every junction keyed on those
+people was short by the same names. It rejects rather than merges, and the load still reports
+success, so nothing in the run output tells you it happened.
+
+**How it does it**, since no API switches a duplicate rule off directly: it retrieves the rule *from
+the org it is loading*, changes one line, and deploys it *straight back to that same org*. Nothing
+moves between orgs and no definition changes — it is the same kind of action as `-ActivateFlows`
+pointing an org at a flow version it already has.
+
+> ### ⚠️ They stay off. Do not switch them back on
+>
+> This is **not** like the FCIC `TriggerControls__c` bypass, which the loader captures, flips and
+> restores in a `finally` block — that one is borrowed for a single step and put back. These are a
+> permanent change to the org's configuration, decided 2026-08-15. Turning them back on will stop
+> the next load until it switches them off again.
+
+**If it fails**, pre-flight blocks the run and tells you — it decides on a re-query of the org, not
+on whether the deploy claimed success. You can always do it by hand instead:
+
+1. **Setup → Duplicate Rules → OTCRM Contact Duplicate Rule → Deactivate**
+2. **Setup → Matching Rules → OTCRM Contact Matching Rule → Deactivate**
+
+That order is not optional — Salesforce will not deactivate a matching rule while an active
+duplicate rule consumes it.
+
+**Verify:**
+
+```powershell
+sf data query -q "SELECT DeveloperName, IsActive FROM DuplicateRule WHERE SobjectType='Contact'" --target-org <alias>
+sf data query --use-tooling-api -q "SELECT DeveloperName, RuleStatus FROM MatchingRule WHERE SobjectType='Contact'" --target-org <alias>
+```
+
+Every Contact duplicate rule should read `IsActive: false`. The matching rules are inert once no
+active duplicate rule uses them, so pre-flight only *warns* if one is still `Active` — but the
+agreed end state is both switched off.
+
+> **These rules belong to TTS OTCRM, not to this app** — they are un-prefixed and predate this
+> migration. **TTS OTCRM is defunct** (project owner, 2026-08-15): the app is on its way out and all
+> of its metadata and rules will eventually be removed. So there is no team to clear this with and no
+> live users behind the rule; deactivating it is removing a blocker to Login.gov CRM going live, in
+> every environment including Prod. Recorded so this reads as a decision rather than something nobody
+> thought to ask about. See `docs/engineering/SALESFORCE-CHANGE-REQUESTS.md`, CR-6.
+
+---
+
 ## You're ready
 
 Go to **[RUNNING-A-LOAD.md](RUNNING-A-LOAD.md)**.
