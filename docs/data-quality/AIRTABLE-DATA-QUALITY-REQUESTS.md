@@ -30,37 +30,104 @@ complete** — it halted at step 5 of 12 on item 3 below, which is new since 202
 
 | # | Item | Rows | What it costs | Whose call |
 | --- | --- | --- | --- | --- |
-| 1 | [Accounts with no Salesforce match](#1-accounts-with-no-salesforce-match--154-rows) | **154** | ~193 records across 5 objects | **Salesforce**, with 2 small Airtable fixes |
-| 2 | [Owners with no active Salesforce login](#2-owners-with-no-active-salesforce-login--4-people-247-opportunities) | **4 people** | 247 Opportunities get an inherited owner instead of their real one | **Salesforce / business** |
+| 1 | [Accounts with no Salesforce match](#1-accounts-with-no-salesforce-match--92-rows-was-154) | **92** *(was 154)* | ~84 records across 5 objects | **Salesforce**, with 3 Airtable fixes |
+| 2 | [Owners with no active Salesforce login](#2-owners-with-no-active-salesforce-login--a-short-confirmation-not-a-defect) | **3 names** | nothing — the fallback owner is working as designed | **Confirm only** |
 | 3 | ⛔ [178 contacts all named "Help Desk"](#3--178-contacts-are-all-named-help-desk--157-of-them-now-fail-to-load) | **178** | **157 contacts fail to load — this halted the 2026-08-15 run** | **Airtable** |
 | 4 | [Emails in the Name field](#4-three-contacts-are-named-after-an-email-address--3-rows) | **3** | 3 contacts named after an address | **Airtable** |
 | 5 | [Small tidy-ups](#5-small-tidy-ups) | various | nothing | **Airtable** |
 
 ---
 
-## 1. Accounts with no Salesforce match — 154 rows
+## 1. Accounts with no Salesforce match — 92 rows *(was 154)*
 
-**The largest remaining item, and most of it is not an Airtable problem.**
+**Down from 154 on 2026-08-14** — the Airtable merges plus a hierarchy repair on our side closed 62 of
+them. Airtable has 737 Account rows and **637 now match** a Salesforce Account.
 
-Matching works by ID first, then exact name. Airtable has 747 Account rows; **585 match** a Salesforce
-Account. The other 154 do not — and with every previously-listed duplicate now merged, what remains is
-overwhelmingly **real organisations that have no Salesforce Account at all**:
+**Re-analysed 2026-08-15, and the earlier framing was wrong.** This was described as "real
+organisations with no Salesforce Account at all", implying 154 new Accounts. That is not what the data
+shows. **54 of the 92 name a parent agency, and for 51 of them that parent already exists in
+Salesforce** — so these are *bureaus and offices that need creating underneath an Account that is
+already there*, which is a far smaller and more mechanical job than it looked.
+
+The 92 split four ways, cheapest first:
+
+| Group | Rows | What it actually is | Who fixes it |
+| --- | --- | --- | --- |
+| **1A** | **42** | Bureau/office whose parent agency **exists in Salesforce** — create it underneath | Salesforce |
+| **1B** | **9** | Parent exists but **Airtable spells it differently** — rename the Airtable value | **Airtable** |
+| **1C** | **3** | Parent genuinely absent from Salesforce | Salesforce |
+| **1D** | **38** | **No parent named in Airtable at all** — needs a parent deciding | **Airtable** |
+
+**What it's holding back (2026-08-15):** 17 Opportunities, 25 Applications, 24 Opportunity Contacts,
+16 Notes and 2 Partner Accounts. *(Opportunity was 62 — most of that closed with the merges.)*
+
+Full list: `scripts/logs/data-migration/Account-reconciliation-unmatched-*.csv`.
+
+### 1A. 42 bureaus whose parent agency already exists — create them underneath *(Salesforce)*
+
+**`Bureau of Consular Affairs` is the model for this whole group** — it is a bureau of the Department
+of State, Airtable says so in its `Parent` column, and `Department of State` is already a Salesforce
+Account. It was previously listed under 1d below as "no match, and never had one", which was
+misleading: the *bureau* has no Account, but its *parent* does, so the fix is to create it in the
+right place rather than to decide whether it belongs.
+
+The same is true of 41 others. Grouped by the parent they belong under:
+
+| Parent *(exists in Salesforce)* | Bureaus / offices to create |
+| --- | --- |
+| **Department of State** *(9)* | Bureau of Consular Affairs · Bureau of Arms Control, Verification, and Compliance · Bureau of Global Talent Management · Bureau of Overseas Building Operations · Economic and Business Affairs · Office of Secretary · Office of the Counselor · Office of the Undersecretary for Political Affairs · Office of the Undersecretary for Public Diplomacy and Public Affairs |
+| **Department of Defense** *(5)* | Director of Net Assessment · General Counsel of the Department of Defense · Under Secretary of Defense Intelligence · United States Special Operations Command · United States Transportation Command |
+| **Department of Justice** *(5)* | Interpol – Washington · Office of Community Oriented Policing Services · Office of Legislative Affairs · Office of the United States Attorneys · U.S. Trustee Program |
+| **General Services Administration** *(4)* | Federal Permitting Improvement Steering Council (FPISC) · GSA Board of Contract Appeals · Office of Civil Rights · Office of the Chief Financial Officer |
+| **Department of Labor** *(3)* | Office of the Secretary · Office of the Solicitor · Veterans' Employment and Training Service |
+| **Office of Personnel Management** *(3)* | Human Resources · Office of Diversity, Equity, Inclusion & Accessibility · Office of Small and Disadvantaged Business Utilization |
+| **Social Security Administration** *(3)* | Deputy Commissioner for Hearings Operations · Deputy Commissioner for Human Resources · Office of Civil Rights and Equal Opportunity |
+| **Nuclear Regulatory Commission** *(2)* | Executive Director for Operations · Office of the Chief Human Capital Officer |
+| **Others** *(8)* | Congress → Senate · Department of Education → Office for Civil Rights · HHS → Office of the Assistant Secretary for Health (OASH) · EPA → Office of General Counsel · NIH → National Institute of Allergy and Infectious Diseases (NIAID) · NSF → Directorate for Engineering · State and Local Government → United States Virgin Islands · VA Central Office → VA Office of Information and Technology (VA OIT) |
+
+**Recommendation:** create these 42 as `Federal` Accounts with the stated parent. It is one batch of
+work against a list that is already validated — every parent named here was confirmed present in
+Salesforce on 2026-08-15. Doing so also resolves `Under Secretary of Defense Intelligence`, which is
+what item 1e's NGA row is waiting on.
+
+### 1B. 9 rows where the parent exists but Airtable spells it differently *(Airtable fix — cheapest item here)*
+
+These looked like missing agencies and are not. The Salesforce Account exists; only the wording
+differs, so the match fails on an exact-name comparison.
+
+| Airtable `Parent` says | Salesforce actually calls it | Rows affected |
+| --- | --- | --- |
+| `Department of Agriculture` | **`U.S. Department of Agriculture`** | 5 |
+| `Department of the Treasury` | **`Department of Treasury`** *(no "the")* | 2 |
+| `Department of the Interior` | **`Department of Interior`** *(no "the")* | 1 |
+| `Udall Foundation` | **`Morris K. Udall and Stewart L. Udall Foundation`** | 1 |
+
+**Recommendation:** change the Airtable `Parent` values to the Salesforce wording. Best
+value-for-effort on this list after the Treasury merge — four find-and-replaces recover 9 rows.
+*(Alternatively rename the Salesforce Accounts to match Airtable, if the fuller names are preferred —
+but that is a change to records this migration does not own.)*
+
+### 1C. 3 rows whose parent really is absent from Salesforce
+
+`Federal Judiciary` (2 rows) and `Legislative Branch` (1). Nothing of either name exists — the closest
+matches are `Senate Committee on Judiciary` and a scatter of unrelated "Legislative Affairs" offices.
+**Decide:** create the two parent Accounts, or re-point these rows at a parent that does exist.
+
+### 1D. 38 rows with no parent named at all *(Airtable)*
+
+The largest remaining group and the one only you can resolve — Airtable records no `Parent`, so there
+is nothing to place them under. Many are genuinely top-level and simply need Accounts creating:
 
 > `U.S. Census Bureau`, `United States Postal Service`, `Bureau of Diplomatic Security`,
 > `United States Army Corps of Engineers`, `The Supreme Court of the United States`,
 > `United States Courts of Appeals`, `Special Courts: United States Tax Court`,
-> `Guam`, `American Samoa`, `Puerto Rico`, `Northern Mariana Islands`, `United States Virgin Islands`,
+> `Guam`, `American Samoa`, `Puerto Rico`, `Northern Mariana Islands`,
 > `John F. Kennedy Center for the Performing Arts`, `U.S. Commission on Civil Rights`,
-> `Council of Inspectors General on Integrity and Efficiency`, `Udall Foundation`, …
+> `Council of Inspectors General on Integrity and Efficiency`, …
 
-**What we need — mainly a Salesforce decision.** For most of the 154 the Airtable row is correct and
-the question is whether an Account should be created in Salesforce. Until one exists there is nothing
-for these records' Opportunities and Applications to attach to.
-
-**What it's holding back:** 62 Opportunities, 13 Applications, 77 Application–Contact links,
-34 Opportunity Contacts, 7 Notes and 2 Partner Accounts.
-
-Full list: `scripts/logs/data-migration/Account-reconciliation-unmatched-*.csv`.
+**Recommendation:** fill in `Parent` where one applies — `U.S. Census Bureau` under Commerce,
+`Bureau of Diplomatic Security` under State, `United States Army Corps of Engineers` under Defense —
+and they drop into group 1A. The territories and courts are probably top-level and just need Accounts.
 
 ### 1a. `Department of Treasury` exists twice — blocks 5 Opportunities *(Airtable fix)*
 
@@ -110,58 +177,53 @@ the office under `Under Secretary of Defense Intelligence` needs creating in Sal
 **What it's costing:** 1 Partner Account (`AC`) and 1 (`USDI-NGA`) fail to load, plus whatever hangs
 off them. Both return automatically on the next run once the `Parent` is corrected.
 
-### 1d. `Bureau of Consular Affairs` — no Salesforce match, and never had one
-
-Blocks 1 Partner Account, 2 Applications and 2 Opportunities. Both Opportunities are already
-`Closed Won`, so this is low urgency. **Decide one of:** create the Account, point the row at
-`Department of State`, or confirm it is fine left unmigrated.
+*(The former item 1d, `Bureau of Consular Affairs`, is resolved as a question: it is a bureau of the
+Department of State, whose Account already exists. It is now the worked example in group 1A.)*
 
 ---
 
-## 2. Owners with no active Salesforce login — 4 people, 247 Opportunities
+## 2. Owners with no active Salesforce login — a short confirmation, not a defect
 
-**This is the highest-value item on the list, and it is four user records.**
+**Substantially downgraded 2026-08-15.** This was previously the "highest-value item on the list", on
+two premises that were both wrong.
 
-Records go to their real owner where that person has an active Salesforce user. Where they don't,
-the record inherits **the parent Account's owner** instead. Nothing is lost or blocked — but an
-inherited owner *looks* like authored ownership and isn't, and because these objects use
-**owner-based sharing**, ownership also decides who can see the record.
+**Wrong premise 1 — the mechanism.** It said records with no resolvable owner *inherit the parent
+Account's owner*. They do not. That was an earlier draft of the rule, **dropped by the project owner on
+2026-08-14**. Every such record now goes to a single named fallback owner, **`peter.marks@gsa.gov`**.
+Measured in Dev after the 2026-08-15 load: **360 of 887 Opportunities** and **352 of 1,033
+Applications** sit with Peter Marks. There is no service-account inheritance and no `SystemUser
+DataLoader` involvement — that whole explanation described a design that no longer exists.
 
-**327 Opportunities currently inherit rather than being assigned. 247 of those — 76% — trace to just
-four people:**
+**Wrong premise 2 — that a missing login is a problem.** For anyone who has **left the team, it is the
+designed outcome.** Their records transitioning to Peter Marks is exactly what the fallback is for, so
+there is nothing to fix and nothing to track. Confirmed 2026-08-15 (project owner): **`hanna.kim@gsa.gov`
+and `gabriel.vorleto@gsa.gov` are no longer with the team** — both correctly resolved to Peter Marks,
+and neither is an issue.
 
-| Person | Opportunities | Situation |
-| --- | --- | --- |
-| `elizabeth.mays@gsa.gov` | **146** | no Salesforce user at all |
-| `gabriel.vorleto@gsa.gov` | **78** | user exists but is **deactivated** |
-| `tony.parrilla@gsa.gov` | 15 | no Salesforce user at all |
-| `sierra.stewart@gsa.gov` | 8 | no Salesforce user at all |
+### The only thing still worth asking
 
-**Creating or reactivating those four accounts moves 247 Opportunities to their real owner** and stops
-inheritance firing for them entirely. The remaining **80** have no owner recorded in Airtable at all,
-so inheritance is the only option there.
+For each name below: **is this person current staff?** If yes, an active Salesforce login routes their
+records to them. If they have left, **no action — Peter Marks is correct** and the name can be deleted
+from this list.
 
-### Why the inherited owner is usually a service account
+| Person | Opportunities | Salesforce user | Status |
+| --- | --- | --- | --- |
+| `elizabeth.mays@gsa.gov` | **146** | none | ❓ confirm |
+| `gabriel.vorleto@gsa.gov` | 78 | deactivated | ✅ **left the team — no action** |
+| `tony.parrilla@gsa.gov` | 15 | none | ❓ confirm |
+| `sierra.stewart@gsa.gov` | 8 | none | ❓ confirm |
 
-Because that is what owns the Account in production — **`SystemUser DataLoader` owns 651 of the 1,342
-production Accounts (48%)**, and `SNA MSadi` owns another 607 (44%). This migration never sets Account
-ownership; Airtable has no Account owner column and the Accounts pre-date the migration. So the
-inherited owner is simply whatever the Account already had.
+Also falling back, on Partner Accounts and Meetings rather than Opportunities:
+`robert.owens`, `nour.aldimashki`, `goutham.kommanaboyina`, `brianna.naolu` (no user); `trish.nguyen`,
+`diondra.humphries`, `becky.badalato`, `matt.pritchard`, `ambuj.neupane` (deactivated); and
+`hanna.kim` — ✅ **left the team, no action**.
 
-*(In the Dev sandbox this reads worse than reality: 72 Accounts show the person who ran the rebuild,
-because only 5 of the export's 14 owner names match an active user there. In production those belong
-to `SNA MSadi`.)*
+Salesforce will not assign a record to a deactivated user, so a deactivated account behaves exactly
+like a missing one. **A deactivated login is therefore good evidence the person has left**, which
+means most of this list probably needs no action at all.
 
-**Other people whose records also fall back**, on Partner Accounts and Meetings rather than
-Opportunities: `robert.owens@gsa.gov`, `nour.aldimashki@gsa.gov`, `goutham.kommanaboyina@gsa.gov`,
-`brianna.naolu@gsa.gov` (no user), and `trish.nguyen@gsa.gov`, `diondra.humphries@gsa.gov`,
-`becky.badalato@gsa.gov`, `hanna.kim@gsa.gov`, `matt.pritchard@gsa.gov`, `ambuj.neupane@gsa.gov`
-(deactivated). Salesforce will not assign a record to a deactivated user, so those behave exactly the
-same as missing.
-
-**What we need:** for each person, either confirm they're current staff who need an active login, or
-name who their records should be reassigned to. **Start with the four in the table — they are 76% of
-the problem.**
+**`elizabeth.mays@gsa.gov` is the one worth answering first** — 146 Opportunities, and no Salesforce
+user has ever existed, so unlike the deactivated names there is no signal either way.
 
 *(Sandbox observation — confirm against production before acting.)*
 Lists: `Opportunity-unresolved-owner-*.csv`, `PartnerAccount-unmapped-owner-*.csv`.
