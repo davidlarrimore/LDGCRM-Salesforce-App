@@ -19,6 +19,75 @@ each carries 🔴 Open / 🟡 Partially resolved / ✅ Resolved.
 
 ---
 
+## CR-6 — The active Contact duplicate rule matches on NAME ONLY, and it is not ours — 🔴 OPEN
+
+**Raised 2026-08-15 by the project owner**, whose framing is the whole case: *"There are 1,000 people
+named Robert Smith in the world. Email should be unique; first and last name doesn't have to be."*
+
+**The rule.** `OTCRM_Contact_Duplicate` ("OTCRM Contact Duplicate Rule") is the **only active** Contact
+duplicate rule in the org. It uses `OTCRM_Contact_Matching_Rule`, whose entire definition is:
+
+```xml
+<matchingRuleItems><fieldName>FirstName</fieldName><matchingMethod>Exact</matchingMethod></matchingRuleItems>
+<matchingRuleItems><fieldName>LastName</fieldName> <matchingMethod>Exact</matchingMethod></matchingRuleItems>
+```
+
+**`Email` does not appear in it.** Two unrelated people who share a name are, to this rule, the same
+person. The other two Contact rules — `Standard_Rule_for_Contacts_with_Duplicate_Leads` and
+`Contact_Duplicate_Rule` — are both inactive.
+
+### Three things make this worse than a debatable config choice
+
+**1. It belongs to another application.** `OTCRM` is TTS OTCRM. Its filter is `RecordType equals
+Federal`, which is exactly the record type this migration's partner-agency Contacts receive, so a rule
+written for another app's data model governs ours. **The third instance of this pattern**, after
+`priority_type__c` (another app's field with a matching label) and `GSA_FCIC_ContactTrigger` (another
+app's trigger firing on our inserts). Contacts on the `GSA` record type are unaffected.
+
+**2. It was never intended to block anything.** Its own description reads *"This is to soft check
+duplicate contacts for Federal Record Type"*, and the configuration agrees:
+
+```xml
+<actionOnInsert>Allow</actionOnInsert>
+<operationsOnInsert>Alert</operationsOnInsert>
+```
+
+**Allow + Alert** is a soft UI warning — a human sees "these look like duplicates, save anyway?" and
+clicks through. On an API insert there is no human, so the row is **rejected**. Bypassing it requires
+`DuplicateRuleHeader.allowSave=true`, which **Bulk API 2.0 does not expose** — and `sf data upsert
+bulk` is Bulk 2.0. So a rule deliberately configured *not* to block is hard-blocking this pipeline,
+and the pipeline has no header to set.
+
+**3. It is currently costing 157 Contacts** and it halted the 2026-08-15 Dev load at step 5 of 12.
+The immediate trigger was an Airtable bulk-rename (see the data-quality doc, item 3), but that only
+exposed the rule — any 178 people sharing a name would do the same.
+
+### What we are asking for
+
+**Add `Email` to `OTCRM_Contact_Matching_Rule`, ideally as an exact match and the primary criterion.**
+That is the actual identity key, and it makes the rule do what its description already claims.
+
+**This is a TTS OTCRM-owned rule, so it is a cross-team request, not a unilateral change.** If they
+will not change a rule their own app depends on, the fallback is to **scope its filter so it no longer
+catches migration-created Contacts** — but note there is no clean discriminator today, because their
+Federal Contacts and ours share a record type.
+
+### One consequence to state up front, because it is not a free win
+
+The name rule is currently *accidentally* catching the **6 genuine duplicates** — the same person under
+two email addresses (`brian.v.cooke@associates.cbp.dhs.gov` vs `brian.v.cooke@cbp.dhs.gov`, and five
+others; see the data-quality doc item 5). Match on email instead and **those 6 load as two Contacts
+each.**
+
+That is consistent with this migration's own settled rule — Contacts merge on **email**, so two
+addresses already means two Contacts — but it should be a decision, not a surprise. Net effect:
+**fixes 157, creates 6.**
+
+The 157 load either way: they carry **140 distinct addresses, 139 of which appear nowhere else in
+Salesforce**.
+
+---
+
 ## CR-5 — `LDGCRM_Tehnical_Checklist_URL__c` renamed to `LDGCRM_Technical_Checklist_URL__c` — ✅ DONE IN DEV, 🔴 NEEDS PROMOTING
 
 **Done in Dev 2026-08-14.** The API name was missing the second `c` while the **label read
