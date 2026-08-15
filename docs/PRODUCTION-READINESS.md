@@ -16,9 +16,9 @@ dev machine).
 
 ## Where we are in one line
 
-**Every object except Meetings is built, and now proven in TWO orgs** — Dev (8,734 records, twice,
-identically) and **QA (8,740 records, first attempt, 2026-08-14)** — both with zero unexpected
-failures. **Every Salesforce config change is now closed too.** What stands between that and
+**Every object except Meetings is built, and now proven in TWO orgs** — Dev (**9,079 records,
+2026-08-15**, reproduced across several reloads) and QA (8,740 records, 2026-08-14, though that run
+does not count as a rehearsal — see gate 4) — both with zero unexpected failures. **Every Salesforce config change is now closed too.** What stands between that and
 production is no longer engineering work of any kind: it is **a sandbox that does not exist yet, a
 production authorization nobody has requested, and a decision about Meetings.**
 
@@ -35,7 +35,7 @@ closed until it has been demonstrated, not merely built.
 
 | # | Gate | Status | Owner |
 | --- | --- | --- | --- |
-| 1 | The pipeline loads every in-scope object | 🟢 **Done** — 8,734 records, reproduced identically across two independent reloads | Engineering |
+| 1 | The pipeline loads every in-scope object | 🟢 **Done** — **9,079 records, 2026-08-15**, 0 unexpected failures, derived fields verified | Engineering |
 | 2 | Meetings decided — build, defer, or drop | 🔴 **Blocked on a spike**, not on code | Project owner + SF admin |
 | 3 | Salesforce config changes landed | 🟢 **Done 2026-08-14** — CR-1 and CR-2 fixed, CR-3 accepted as-is | Salesforce config owner |
 | 4 | A full rehearsal in **QA**, end to end | 🟠 **RE-OPENED** — the 2026-08-14 run was invalid (all nine Flows were off). Needs a reset and reload. CR-6 no longer gates it: the duplicate rule is deactivated per org rather than promoted | Engineering |
@@ -50,8 +50,19 @@ them, and chasing them is the critical path.
 
 ## 1. The pipeline loads every in-scope object — 🟢 Done
 
-A full wipe-and-reload of Dev (`peodv8dvn`) on 2026-08-13 loaded **8,734 records, up 28%** on the
-previous run. Per-object counts and per-script status live in
+A full wipe-and-reload of Dev (`peodv8dvn`) on **2026-08-15** loaded **9,079 records in 22 minutes —
+2 failures, both expected, 0 unexpected.** The best run the pipeline has produced.
+
+Two things that broke previous rehearsals were verified absent rather than assumed:
+
+- **Contact loaded 1,890 of 1,890, zero failures** — the org duplicate rule that rejected 167 rows the
+  day before is now switched off by the load itself.
+- **Market Segment is populated on 100% of the Flow-driven objects** (99 Partner Accounts, 889
+  Opportunities, 1,038 Applications), checked by querying the field rather than trusting row counts.
+  That is the exact failure that invalidated the 2026-08-14 QA run, where every count looked right and
+  every one of those fields was blank.
+
+Per-object counts and per-script status live in
 [engineering/ARCHITECTURE.md](engineering/ARCHITECTURE.md) — that file, not this one, is the
 authority on build status.
 

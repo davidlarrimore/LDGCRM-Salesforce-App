@@ -19,319 +19,160 @@ something migrates, it is a rule, not a request: see
 That covers derived contact names, the `Launch Level` default, the `None` impediment, portal-team
 optionality, contact merging and Partner Portal Admin sourcing — **please don't re-raise those.**
 
-**Measured 2026-08-15** against a fresh Airtable pull and a full Dev reload.
+**Measured 2026-08-15** against a fresh Airtable pull (709 Accounts, 1,515 Contacts, 904
+Opportunities, 1,058 Applications) and a full Dev wipe-and-reload.
 
-**Nothing here is blocking.** The Dev load completes end to end: 1,888 Contacts, 0 failures. Everything
-below improves how much of Airtable reaches the CRM, or how usable it is once there — none of it stops
-a migration running.
+**Nothing here is blocking.** That load completed end to end: **9,079 records, 2 failures, 0
+unexpected.** Everything below improves how much of Airtable reaches the CRM, or how usable it is
+once there — none of it stops a migration running.
+
+---
+
+## What changed since the last measurement
+
+Real progress, and it is worth seeing before the open list:
+
+| | Then | Now |
+| --- | --- | --- |
+| Accounts with no Salesforce match | 92 | **23** |
+| `Department of Treasury` duplicated (cost 5 Opportunities) | open | **fixed** |
+| `Office of Communications` triplicated | 3 rows | **1 duplicate left** |
+| `Decomissioned` misspelt on the Application status picklist | 89 records | **fixed** — `Status` now spells it correctly on 96 |
+| A 275-character `Launch Deck URL` | 1 | **fixed** — the longest URL is now 214 |
+| Completely empty Impediment rows | 2 | **fixed** — deleted |
+| Contacts rejected by Salesforce's duplicate rule | 167 | **0** — the rule is switched off by the load now |
+
+**The owner-login item is gone entirely.** It has a proper home now:
+`scripts/reference/salesforce-user-roster.csv`, which the business completed on 2026-08-15. Pre-flight
+reads it before every Full or Prod load and reports anyone whose records will not reach them.
 
 ---
 
 ## At a glance
 
-**Four items remain. Two are yours; two are shared with Salesforce.**
+**Three items remain. One is yours, one is Salesforce's, one is a short list of tidy-ups.**
 
 | # | Item | Rows | What it costs | Whose call |
 | --- | --- | --- | --- | --- |
-| 1 | [Accounts with no Salesforce match](#1-accounts-with-no-salesforce-match--92-rows-was-154) | **92** *(was 154)* | ~84 records across 5 objects | **Salesforce**, with 3 Airtable fixes |
-| 2 | [Owners with no active Salesforce login](#2-owners-with-no-active-salesforce-login--a-short-confirmation-not-a-defect) | **3 names** | nothing — the fallback owner is working as designed | **Confirm only** |
-| 3 | [Emails in the Name field](#3-three-contacts-are-named-after-an-email-address--3-rows) | **3** | 3 contacts named after an address | **Airtable** |
-| 4 | [Small tidy-ups](#4-small-tidy-ups) | various | nothing | **Airtable** |
+| 1 | [Accounts with no Salesforce match](#1-accounts-with-no-salesforce-match--34-rows) | **34** | ~110 records across 6 objects | **Salesforce**, with ~8 Airtable fixes |
+| 2 | [`Gov Employees` is not a Salesforce value](#2-gov-employees-is-not-a-salesforce-value--23-opportunities) | **23** | 23 Opportunities lose a tag | **Salesforce** |
+| 3 | [Small tidy-ups](#3-small-tidy-ups) | various | nothing | **Airtable** |
 
 ---
 
-## 1. Accounts with no Salesforce match — 92 rows *(was 154)*
+## 1. Accounts with no Salesforce match — 34 rows
 
-**Down from 154 on 2026-08-14** — the Airtable merges plus a hierarchy repair on our side closed 62 of
-them. Airtable has 737 Account rows and **637 now match** a Salesforce Account.
+**Down from 92.** Airtable has **709 Account rows and 675 now match** a Salesforce Account. This is by
+far the biggest remaining lever: an Account that cannot be matched strands everything hanging off it.
 
-**Re-analysed 2026-08-15, and the earlier framing was wrong.** This was described as "real
-organisations with no Salesforce Account at all", implying 154 new Accounts. That is not what the data
-shows. **54 of the 92 name a parent agency, and for 51 of them that parent already exists in
-Salesforce** — so these are *bureaus and offices that need creating underneath an Account that is
-already there*, which is a far smaller and more mechanical job than it looked.
+**What it's holding back right now:** 15 Opportunities, 20 Applications, 63 Contacts, 18 Opportunity
+Contacts, 12 Notes and 2 Partner Accounts — about **130 records**, all of which return automatically
+on the next run once the Account resolves. No code change needed.
 
-The 92 split four ways, cheapest first:
+The 34 split two ways.
 
-| Group | Rows | What it actually is | Who fixes it |
-| --- | --- | --- | --- |
-| **1A** | **42** | Bureau/office whose parent agency **exists in Salesforce** — create it underneath | Salesforce |
-| **1B** | **9** | Parent exists but **Airtable spells it differently** — rename the Airtable value | **Airtable** |
-| **1C** | **3** | Parent genuinely absent from Salesforce | Salesforce |
-| **1D** | **38** | **No parent named in Airtable at all** — needs a parent deciding | **Airtable** |
+### 1A. 23 rows match no Salesforce Account at all
 
-**What it's holding back (2026-08-15):** 17 Opportunities, 25 Applications, 24 Opportunity Contacts,
-16 Notes and 2 Partner Accounts. *(Opportunity was 62 — most of that closed with the merges.)*
+**11 of these name a parent that already exists in Salesforce**, so they are bureaus and offices that
+need creating *underneath* an Account that is already there — mechanical, not a research job:
 
-Full list: `scripts/logs/data-migration/Account-reconciliation-unmatched-*.csv`.
-
-### 1A. 42 bureaus whose parent agency already exists — create them underneath *(Salesforce)*
-
-**`Bureau of Consular Affairs` is the model for this whole group** — it is a bureau of the Department
-of State, Airtable says so in its `Parent` column, and `Department of State` is already a Salesforce
-Account. It was previously listed under 1d below as "no match, and never had one", which was
-misleading: the *bureau* has no Account, but its *parent* does, so the fix is to create it in the
-right place rather than to decide whether it belongs.
-
-The same is true of 41 others. Grouped by the parent they belong under:
-
-| Parent *(exists in Salesforce)* | Bureaus / offices to create |
+| Airtable row | Parent named |
 | --- | --- |
-| **Department of State** *(9)* | Bureau of Consular Affairs · Bureau of Arms Control, Verification, and Compliance · Bureau of Global Talent Management · Bureau of Overseas Building Operations · Economic and Business Affairs · Office of Secretary · Office of the Counselor · Office of the Undersecretary for Political Affairs · Office of the Undersecretary for Public Diplomacy and Public Affairs |
-| **Department of Defense** *(5)* | Director of Net Assessment · General Counsel of the Department of Defense · Under Secretary of Defense Intelligence · United States Special Operations Command · United States Transportation Command |
-| **Department of Justice** *(5)* | Interpol – Washington · Office of Community Oriented Policing Services · Office of Legislative Affairs · Office of the United States Attorneys · U.S. Trustee Program |
-| **General Services Administration** *(4)* | Federal Permitting Improvement Steering Council (FPISC) · GSA Board of Contract Appeals · Office of Civil Rights · Office of the Chief Financial Officer |
-| **Department of Labor** *(3)* | Office of the Secretary · Office of the Solicitor · Veterans' Employment and Training Service |
-| **Office of Personnel Management** *(3)* | Human Resources · Office of Diversity, Equity, Inclusion & Accessibility · Office of Small and Disadvantaged Business Utilization |
-| **Social Security Administration** *(3)* | Deputy Commissioner for Hearings Operations · Deputy Commissioner for Human Resources · Office of Civil Rights and Equal Opportunity |
-| **Nuclear Regulatory Commission** *(2)* | Executive Director for Operations · Office of the Chief Human Capital Officer |
-| **Others** *(8)* | Congress → Senate · Department of Education → Office for Civil Rights · HHS → Office of the Assistant Secretary for Health (OASH) · EPA → Office of General Counsel · NIH → National Institute of Allergy and Infectious Diseases (NIAID) · NSF → Directorate for Engineering · State and Local Government → United States Virgin Islands · VA Central Office → VA Office of Information and Technology (VA OIT) |
+| `U.S. Tax Court \| US Tax Court` | Federal Judiciary |
+| `Senate` | Congress |
+| `Office of the General Counsel` | Nuclear Regulatory Commission |
+| `Office of the Secretary` | Department of Labor |
+| `Bureau of Global Talent Management` | Department of State |
+| `Office of the Undersecretary for Public Diplomacy and Public Affairs` | Department of State |
+| `Bureau of Overseas Building Operations` | Department of State |
+| `Office of the Undersecretary for Political Affairs` | Department of State |
+| `Economic and Business Affairs` | Department of State |
+| `Office of the Secretary - DOC` | Department of Commerce |
+| `United States Virgin Islands` | State and Local Government |
 
-**Recommendation:** create these 42 as `Federal` Accounts with the stated parent. It is one batch of
-work against a list that is already validated — every parent named here was confirmed present in
-Salesforce on 2026-08-15. Doing so also resolves `Under Secretary of Defense Intelligence`, which is
-what item 1e's NGA row is waiting on.
+ℹ️ **Six of the eleven are State Department bureaus.** Creating those six underneath the existing
+`Department of State` Account clears more than half this group in one sitting.
 
-### 1B. 9 rows where the parent exists but Airtable spells it differently *(Airtable fix — cheapest item here)*
+⚠️ **`U.S. Tax Court | US Tax Court` has a pipe character in its name** — that looks like two names
+merged into one cell. Worth fixing at source whichever way this goes.
 
-These looked like missing agencies and are not. The Salesforce Account exists; only the wording
-differs, so the match fails on an exact-name comparison.
+**The remaining 12 name no parent at all**, so someone has to decide where each belongs before it can
+be created:
 
-| Airtable `Parent` says | Salesforce actually calls it | Rows affected |
+`Udall Foundation` · `Court Services And Offender Supervision Agency` · `USA.gov` · `Recreation.gov` ·
+`Executive Office of the President` · `Amtrak` · `U.S. Supreme Court` ·
+`Conference of State Bank Supervisors` · `U.S. Digital Service` · `Federal Judiciary` ·
+`Chief Digital and Artificial Intelligence Office` · `DC Pre-trial Services`
+
+ℹ️ **`Federal Judiciary` is worth doing first** — it is also the parent named by `U.S. Tax Court`
+above, so creating it clears two rows.
+
+### 1B. 11 rows match more than one Salesforce Account, so the migration refuses to guess
+
+**4 are duplicate Airtable rows** — two Airtable rows describing one real office. Only the first can
+claim the Salesforce record; the second is stranded. **Merge them down to one row each:**
+
+`Under Secretary for Nuclear Security` · `Deputy Commissioner for Operations` ·
+`Office of Communications` · `Environment and Natural Resources Division`
+
+**7 have a generic name several agencies reuse**, and the `Parent` column does not pick out either
+candidate:
+
+| Airtable row | Parent named | Problem |
 | --- | --- | --- |
-| `Department of Agriculture` | **`U.S. Department of Agriculture`** | 5 |
-| `Department of the Treasury` | **`Department of Treasury`** *(no "the")* | 2 |
-| `Department of the Interior` | **`Department of Interior`** *(no "the")* | 1 |
-| `Udall Foundation` | **`Morris K. Udall and Stewart L. Udall Foundation`** | 1 |
+| `Office of the Inspector General` | Department of Agriculture | **4** Salesforce Accounts share this name |
+| `Office of the Director` *(×2 rows)* | Office of Personnel Management | 2 share the name — and these two Airtable rows are themselves duplicates |
+| `Office of the Administrator` | National Aeronautics and Space Administration | 2 share the name |
+| `Office of the Deputy Secretary` | Department of State | 2 share the name |
+| `AmeriCorps` | **`AmeriCorps` — itself** | almost certainly the error; a row cannot be its own parent |
+| `National Geospatial-Intelligence Agency` | Under Secretary of Defense Intelligence | the two candidates sit under *Defense Intelligence Agency* and *Department of Defense* |
 
-**The exact 9 rows to edit:**
+**What we need:** for the generic names, a `Parent` value that names the agency the office actually
+belongs to. `AmeriCorps` naming itself is the cheapest fix on this page.
 
-| Airtable row | Record ID | `Parent` says now | Change it to |
-| --- | --- | --- | --- |
-| Food, Nutrition, and Consumer Services | `recfvstWGhuC0xNIM` | Department of Agriculture | U.S. Department of Agriculture |
-| Natural Resources and Environment | `recOTuuxYnWwBq9Fs` | Department of Agriculture | U.S. Department of Agriculture |
-| Office of Hearings and Appeals | `reczWl2eLLsX6wiQT` | Department of Agriculture | U.S. Department of Agriculture |
-| Office of Partnership and Public Engagement | `recuacVhzcwbsLY7p` | Department of Agriculture | U.S. Department of Agriculture |
-| Trade and Foreign Agricultural Affairs | `rec8cRyGVGuIcWaHT` | Department of Agriculture | U.S. Department of Agriculture |
-| Fish and Wildlife Service | `recWRFYhjqhsOYRqw` | Department of the Interior | Department of Interior |
-| Office of the Inspector General for Tax Administration | `recHWe4MNSQD5CZJC` | Department of the Treasury | Department of Treasury |
-| United States Mint | `rechhENZJ5AlI2l7a` | Department of the Treasury | Department of Treasury |
-| U.S. Institute for Environmental Conflict Resolution | `recqwxkc8cXrUIW8w` | Udall Foundation | Morris K. Udall and Stewart L. Udall Foundation |
-
-**Recommendation:** change the Airtable `Parent` values to the Salesforce wording. Best
-value-for-effort on this list after the Treasury merge — four find-and-replaces recover 9 rows.
-*(Alternatively rename the Salesforce Accounts to match Airtable, if the fuller names are preferred —
-but that is a change to records this migration does not own.)*
-
-### 1C. 3 rows whose parent really is absent from Salesforce
-
-`Federal Judiciary` (2 rows) and `Legislative Branch` (1). Nothing of either name exists — the closest
-matches are `Senate Committee on Judiciary` and a scatter of unrelated "Legislative Affairs" offices.
-**Decide:** create the two parent Accounts, or re-point these rows at a parent that does exist.
-
-### 1D. 38 rows with no parent named at all *(Airtable)*
-
-The largest remaining group and the one only you can resolve — Airtable records no `Parent`, so there
-is nothing to place them under. **Fill in `Parent` where one applies and the row drops into group 1A**,
-which is then a mechanical Salesforce job. The genuinely top-level ones just need Accounts creating.
-
-All 38, with their Airtable record IDs:
-
-| Airtable row | Record ID | | Airtable row | Record ID |
-| --- | --- | --- | --- | --- |
-| Amtrak | `recZk2Mvn4TtpYk0d` | | Occupational Safety & Health Administration | `recjbnDe79QKW8Sgq` |
-| Chief Digital and Artificial Intelligence Office | `recx5JEtm1UNKYTvv` | | Office of Apprenticeship | `recdcul6XJXdgSvD8` |
-| Conference of State Bank Supervisors | `reccBNvFir3oYLN6J` | | Office of Fair Housing and Equal Opportunity | `recePVH6YRPZUtNjW` |
-| Court Services And Offender Supervision Agency | `recED7NXwBdseQ4Ku` | | Office of Worker Compensation Programs | `recFi0g3iqmmI4rsY` |
-| DC Pre-trial Services | `recxup2VSDjYvDvrF` | | Online Services | `reccKm7VHMAv7UpZV` |
-| DEEOIC | `recqWuCPX1ZBQc2Je` | | Recreation.gov | `recJNjbx5qAEvH1F4` |
-| Democracy | `rece56LzWEcmeFZpG` | | U.S. Census Bureau | `recEMxNvBh96rs9VA` |
-| Director of National Intelligence | `recgNHuBBrwKemvvh` | | U.S. Chemical Safety Board | `recAdhzidzJoUOeLj` |
-| Education and Economics | `recwHGeFUBKMUywIR` | | **U.S. Citizenship And Immigration Services** | `reccwhQFCDgwPTXRc` |
-| Executive Office of the President | `recRMU3Wi8mQAzaoy` | | **U.S. Citizenship and Information Services** | `recl7z1nWFC5ArpTE` |
-| Federal Employment Services | `recW99Eb9o0TJqNOC` | | U.S. Digital Service | `recctE33YubXIKT3F` |
-| Federal Housing Administration | `rec2Z5Hf216BUQy5Q` | | U.S. Supreme Court | `recbletJk3eCCDz0T` |
-| Federal Judiciary | `recnoPZtrYyBpRn1K` | | Udall Foundation | `recA0RxfQZXblmfkA` |
-| Field Operations | `recx5eqEsgg9MzbcH` | | Under Secretary for Civilian Security | `recRUUclzfaGB7JEK` |
-| Institute of Peace | `recZoJNCTpKoWyHwm` | | Under Secretary for Economic Growth | `recM6puEn2gHlabMn` |
-| International Boundary Commission | `recznKc1nW9zXz7pA` | | Under Secretary for Food | `recnEpaMZuHnZBAn0` |
-| International Joint Commission | `reccdaeK1Wh5vbCPw` | | Under Secretary for Research | `rec7ueMmx55KbN588` |
-| Legislative Branch | `recwDub3m8XZLpMLC` | | USA.gov | `recH3eAn9SyWHWz5u` |
-| login.gov | `recmEIS0hurOnrwyK` | | Nutrition and Consumer Services | `recPcNeMQLDZZ3ee1` |
-
-⚠️ **Two rows in that list look like the same agency, one of them misspelled:**
-`U.S. Citizenship And Immigration Services` and `U.S. Citizenship and Information Services`.
-*Information* is almost certainly meant to be *Immigration*. **Please check and merge if so** — a
-misspelled row can never match a Salesforce Account, so it silently strands everything linked to it.
-
-ℹ️ **`Federal Judiciary` and `Legislative Branch` also appear in group 1C** as parents that other rows
-point at. Resolving them here resolves 1C at the same time.
-
-ℹ️ **Four of the `Under Secretary for …` rows are State Department bureaus** and probably want
-`Department of State` as their parent, which would move them straight into group 1A.
-
-### 1a. `Department of Treasury` exists twice — blocks 5 Opportunities *(Airtable fix)*
-
-Two Airtable rows now share this exact name. Only one can match the single Salesforce Account of that
-name; the other is orphaned along with its 5 Opportunities.
-
-**What we need:** merge the two rows into one, relinking anything pointing at the loser. **Best
-value-for-effort item on this list — 5 Opportunities for one merge.**
-
-### 1b. Three duplicate office rows *(Airtable fix)*
-
-Several agencies each run an office with the same generic name, so `Office of Communications` alone
-exists under both OPM and NASA. **The migration now tells them apart using your `Parent` column**, so
-this is handled — with one exception it can't resolve:
-
-- **All three `Office of Communications` rows name the same parent (OPM)**, and **both
-  `Office of the Director` rows do too.** They therefore describe the same office, and only the first
-  can claim the Salesforce record; the rest are reported as duplicates.
-- One of the three is also tagged Market Segment `Defense & National Security` while sitting under
-  OPM, which looks wrong regardless.
-
-**What we need:** merge them down to one row each.
-
-### 1c. Two offices whose parent agency has no Salesforce Account
-
-`Office of the Deputy Secretary` under *Department of State*, and `Office of the Inspector General`
-under *Department of Agriculture*. Salesforce has offices of those names, but not under those
-agencies. These belong with the 154 above — either an Account needs creating, or the `Parent` is
-wrong.
-
-### 1e. `AmeriCorps` and `National Geospatial-Intelligence Agency` — the `Parent` value is wrong *(Airtable fix)*
-
-**New on 2026-08-15, and caused by a fix on our side, not by you.** Salesforce previously held one
-Account of each name; it now holds the two that production actually defines. That is more correct, but
-it means the name alone no longer identifies the record, so the migration falls back to your `Parent`
-column — and in both cases it doesn't match either candidate:
-
-| Airtable row | Airtable says the parent is | The two Salesforce Accounts actually sit under |
-| --- | --- | --- |
-| `National Geospatial-Intelligence Agency` | `Under Secretary of Defense Intelligence` | Defense Intelligence Agency · Department of Defense |
-| `AmeriCorps` | `AmeriCorps` — **itself** | *(no parent set)* · Department of Labor |
-
-`AmeriCorps` naming itself as its own parent is almost certainly the error. For the NGA row, either
-the office under `Under Secretary of Defense Intelligence` needs creating in Salesforce, or the
-`Parent` should name one of the two agencies above.
-
-**What it's costing:** 1 Partner Account (`AC`) and 1 (`USDI-NGA`) fail to load, plus whatever hangs
-off them. Both return automatically on the next run once the `Parent` is corrected.
-
-*(The former item 1d, `Bureau of Consular Affairs`, is resolved as a question: it is a bureau of the
-Department of State, whose Account already exists. It is now the worked example in group 1A.)*
+Full list: `scripts/logs/data-migration/Account-reconciliation-unmatched-*.csv` and
+`…-ambiguous-*.csv`.
 
 ---
 
-## 2. Owners with no active Salesforce login — a short confirmation, not a defect
+## 2. `Gov Employees` is not a Salesforce value — 23 Opportunities
 
-**Substantially downgraded 2026-08-15.** This was previously the "highest-value item on the list", on
-two premises that were both wrong.
+Airtable's `Demographic Served` on Opportunities uses **`Gov Employees`**, which is not one of the six
+values the Salesforce field allows. The tag is dropped on **23 Opportunities** — the records load
+fine, they just arrive without that classification.
 
-**Wrong premise 1 — the mechanism.** It said records with no resolvable owner *inherit the parent
-Account's owner*. They do not. That was an earlier draft of the rule, **dropped by the project owner on
-2026-08-14**. Every such record now goes to a single named fallback owner, **`peter.marks@gsa.gov`**.
-Measured in Dev after the 2026-08-15 load: **360 of 887 Opportunities** and **352 of 1,033
-Applications** sit with Peter Marks. There is no service-account inheritance and no `SystemUser
-DataLoader` involvement — that whole explanation described a design that no longer exists.
+**This is a Salesforce fix, not an Airtable one.** Adding `Gov Employees` to
+`LDGCRM_Demographic_Served__c` **and** to the `Login_gov` record type migrates all 23 on the next run.
 
-**Wrong premise 2 — that a missing login is a problem.** For anyone who has **left the team, it is the
-designed outcome.** Their records transitioning to Peter Marks is exactly what the fallback is for, so
-there is nothing to fix and nothing to track. Confirmed 2026-08-15 (project owner): **`hanna.kim@gsa.gov`
-and `gabriel.vorleto@gsa.gov` are no longer with the team** — both correctly resolved to Peter Marks,
-and neither is an issue.
-
-### This now has a home: the owner roster
-
-**Added 2026-08-15.** Rather than re-litigating this list every load, the answer lives in
-**`scripts/reference/salesforce-user-roster.csv`** — one row per record owner, with a single
-business-owned column, `ExpectedInSalesforce` (`yes` / `no` / `unknown`).
-
-**It changes no behaviour.** Records still go to their Airtable owner where that person resolves to an
-active User, and to Peter Marks where they don't — automatically, as designed. The roster exists only
-because the fallback is *correct* for someone who has left and *a provisioning gap* for someone who is
-current staff, and **nothing in the run output tells those apart.** Pre-flight reads it in `Full` and
-`Prod` only, reports the mismatches, and **never blocks**.
-
-All 17 owners are seeded. `peter.marks` is `yes` (he is the fallback and the load hard-fails without
-him) and `gabriel.vorleto` is `no`. **The remaining 15 are `unknown` and need the business's answer.**
-
-For each name below: **is this person current staff?** If yes, an active Salesforce login routes their
-records to them. If they have left, **no action — Peter Marks is correct.**
-
-| Person | Opportunities | Salesforce user | Status |
-| --- | --- | --- | --- |
-| `elizabeth.mays@gsa.gov` | **146** | none | ❓ confirm |
-| `gabriel.vorleto@gsa.gov` | 78 | deactivated | ✅ **left the team — no action** |
-| `tony.parrilla@gsa.gov` | 15 | none | ❓ confirm |
-| `sierra.stewart@gsa.gov` | 8 | none | ❓ confirm |
-
-Also falling back, on Partner Accounts and Meetings rather than Opportunities:
-`robert.owens`, `nour.aldimashki`, `goutham.kommanaboyina`, `brianna.naolu` (no user); `trish.nguyen`,
-`diondra.humphries`, `becky.badalato`, `matt.pritchard`, `ambuj.neupane` (deactivated); and
-`hanna.kim` — ✅ **left the team, no action**.
-
-Salesforce will not assign a record to a deactivated user, so a deactivated account behaves exactly
-like a missing one. **A deactivated login is therefore good evidence the person has left**, which
-means most of this list probably needs no action at all.
-
-**`elizabeth.mays@gsa.gov` is the one worth answering first** — 146 Opportunities, and no Salesforce
-user has ever existed, so unlike the deactivated names there is no signal either way.
-
-*(Sandbox observation — confirm against production before acting.)*
-Lists: `Opportunity-unresolved-owner-*.csv`, `PartnerAccount-unmapped-owner-*.csv`.
+> ⚠️ Both halves are needed. A value added to the field but not assigned to the record type still
+> fails — record-type picklist narrowing is enforced on load and is invisible to the usual tooling.
 
 ---
 
-## 3. Three contacts are named after an email address — 3 rows
-
-`shyla.morisetty@dot.gov`, `christopher.villas@cisa.dhs.gov`, `icam-portfolio@gsa.gov` are in the
-**`Name`** field. The migration cannot tell these from a real name, so Salesforce ends up with a
-contact *called* an email address.
-
-**What we need:** replace with the person's actual name — the `Email` field already holds the address.
-
----
-
-## 4. Small tidy-ups
+## 3. Small tidy-ups
 
 None of these block anything or need a decision.
 
-- **Applications: `"Decomissioned"` is misspelled** (should be `"Decommissioned"`, two *m*'s) — used
-  on **89 records**. Corrected automatically on load, so nothing is blocked; fixing it at source stops
-  it being typed wrong again.
-- **Applications: 1 `Launch Deck URL` is 275 characters** (on `medicare.gov`) — over Salesforce's 255
-  limit for a URL field, so it is left blank. It's a Google redirect wrapper around a Drive link;
-  replacing it with the plain Drive URL fixes it.
-- **Impediments: 2 completely empty rows** (`recA9LjxxE56gV73J`, `recXyF5tOHJh07laz`) — no Name,
-  Category or Description; the only values are Airtable's own computed rollups. Safe to delete.
+- **Contacts: 3 rows are named after an email address.** `shyla.morisetty@dot.gov`,
+  `christopher.villas@cisa.dhs.gov`, `icam-portfolio@gsa.gov` are in the **`Name`** field, so
+  Salesforce ends up with a contact *called* an address. The `Email` field already holds it — replace
+  `Name` with the person's actual name.
+- **Contacts: `Andrea McClain` is paired with `dunia.z.nooristani@dea.gov`.** The name and the email
+  don't match each other, so one of the two is wrong.
 - **Issuer Strings: 136 `Team Name` and 137 `Team UUID` cells hold the literal text `#N/A`.** Blocks
   nothing — we transform it to blank — but a cell containing `#N/A` looks filled in, so the table
-  reads as 92% complete when the real figure is 77%.
+  reads as far more complete than it is.
 - **Issuer Strings: 7 rows link to no Application**, so whatever team they name has nowhere to land.
   Two look real and may need linking:
   `urn:gov:gsa:openidconnect.profiles:sp:sso:gsa:pmsam` and
   `urn:gov:gsa:openidconnect.profiles:sp:sso:gsa:sam`.
-- **Contacts: `Andrea McClain` is paired with `dunia.z.nooristani@dea.gov`.** The name and the email
-  don't match each other, so one of the two is wrong.
-- **Six people appear under two email addresses, and the second copy is rejected — correctly.**
-  Previously recorded here as "handled by the merge rules and needs nothing"; that was wrong, and the
-  2026-08-15 load showed why. The migration merges rows sharing an *email*, so two addresses stay two
-  rows, and Salesforce's duplicate rule then rejects the second. **The outcome is right** — one person,
-  one contact — so nothing is lost and no action is required. Listed only so the rejections are not
-  mistaken for a fault:
-
-  | Person | Rejected address | Kept as |
-  | --- | --- | --- |
-  | Terry L. Harrison | `terry.l.harrison@uscis.dhs.gov` | `terry.harrison@uscis.dhs.gov` |
-  | Brian Cooke | `brian.v.cooke@associates.cbp.dhs.gov` | `brian.v.cooke@cbp.dhs.gov` |
-  | Sivaram Ghorakavi | `sivaram.ghorakavi@eeoc.gov` | `sivaram.ghorakavi@nlrb.gov` |
-  | Joel Schlagel | `joel_schlagel@ios.doi.gov` | `joel.d.schlagel@usace.army.mil` |
-  | Jason Ashley | `jason.k.ashley1@uscg.mil` | `jason.ashley@arkansas.gov` |
-  | Patrick Newbold | `patrick.newbold@ssa.gov` | `patrick.newbold@cms.hhs.gov` |
-
-  Worth confirming only whether the four who span *two different agencies* have genuinely moved
-  employer, in which case the older address may want retiring at source.
+- **Applications: 18 have a partner-portal team on some issuer strings but not others.** These
+  migrate correctly — the agreed value wins — so this is cosmetic. Filling the blanks stops the table
+  looking inconsistent.
+- **Opportunities: 5 URL fields hold something that is not a URL**, and **3 hold a URL longer than
+  Salesforce's 255-character limit** (`Cost Estimate URL` ×2, `Sandbox URL` ×1). All are left blank
+  rather than truncated, since a truncated URL would not work. The long ones are usually a redirect
+  wrapper around a shorter real link.
 
 ---
 
@@ -340,6 +181,7 @@ None of these block anything or need a decision.
 Recorded so the state of the data is visible in one place. The engineering counterpart is
 [SALESFORCE-CHANGE-REQUESTS.md](../engineering/SALESFORCE-CHANGE-REQUESTS.md).
 
+- **`Gov Employees`** — item 2 above, the largest of these at 23 Opportunities.
 - **Identity platforms — two small gaps.** `CLEAR` (2 records) has no matching Salesforce value, so
   those selections are dropped; adding it to both fields **and** the `Login_gov` record type migrates
   them. And `Ping / Forgerock` lands in a Salesforce value spelled **`Ping/Foregerock`** — an extra

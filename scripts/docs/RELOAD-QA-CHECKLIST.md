@@ -526,9 +526,10 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
         than rebuilding on top of the ambiguity it was meant to clear.
 - [ ] `Build-AccountReconciliation.ps1` → `Invoke-SalesforceLoad.ps1 -Operation Update` (Id-keyed,
       **not** upsert)
-- [ ] Expect **637 matched, 92 unmatched, 8 ambiguous** (2026-08-15; was 585 / 154 / 8). The unmatched are mostly agencies with no
-      Salesforce Account at all — see AIRTABLE-DATA-QUALITY-REQUESTS.md, which no longer frames this
-      as an Airtable duplicate problem.
+- [ ] Expect **675 matched, 23 unmatched, 11 ambiguous** out of 709 Airtable rows (2026-08-15 reload;
+      was 637 / 92 / 8 against a 737-row export). The Airtable owners closed most of the gap between
+      those two runs, so a *lower* unmatched count is the expected direction of travel — see
+      AIRTABLE-DATA-QUALITY-REQUESTS.md item 1, which lists all 34 by name.
 - [ ] 🆕 **Check the `...of which resolved by parent agency` line** (added 2026-08-14). Reconciliation
       now tells same-named Accounts apart using Airtable's `Parent` column against Salesforce's
       `Account.ParentId`, instead of giving up at "2 candidates share this name".
@@ -536,19 +537,23 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
         step above is for. If the count is **0** and there are still ambiguous rows, the script says
         so explicitly and the ambiguous CSV will show `(no parent set)` against every candidate —
         that means the hierarchy is missing, not that the matching is broken.
-      - ⚠️ **Expect some rows to come back as `DUPLICATE AIRTABLE ROW`.** Airtable holds three rows
-        for `Office of Communications` all naming OPM as the parent, and two for
-        `Office of the Director`. They resolve to the *same* Salesforce Account, so only the first
-        claims it and the rest are reported. **This is a guard, not a failure** — without it they
-        would each overwrite the previous row's external ID and the load would report full success.
+      - ⚠️ **Expect 4 rows to come back as `DUPLICATE AIRTABLE ROW`** (2026-08-15; was 5). Two
+        Airtable rows describe one real office, so they resolve to the *same* Salesforce Account,
+        only the first claims it, and the rest are reported: `Under Secretary for Nuclear Security`,
+        `Deputy Commissioner for Operations`, `Office of Communications`, `Environment and Natural
+        Resources Division`. **This is a guard, not a failure** — without it they would each
+        overwrite the previous row's external ID and the load would report full success.
+        *(The `Office of Communications` triplet is down to one duplicate, and the two
+        `Office of the Director` rows now surface under the generic-name group instead.)*
 
 ### 4b. `LDGCRM_Partner_Account__c`
 
 - [ ] Run `Build-PartnerAccountLoad.ps1`. Expect **99 ready, 0 skipped** (2026-08-14; was 94 ready /
       5 skipped — the Airtable owners linked the last 5 rows to an Account, so nothing is skipped here
       any more).
-- [ ] Load (upsert). Expect **96 succeed, 3 fail** (2026-08-15; was 97 / 2 — the hierarchy repair made `AmeriCorps` and `National Geospatial-Intelligence Agency` ambiguous). All trace to parent Accounts among the 92
-      unmatched. Same failures as previous runs = correct, not a regression.
+- [ ] Load (upsert). Expect **97 succeed, 2 fail** (2026-08-15 reload; was 96 / 3). Both failures are
+      `INVALID_FIELD: Foreign key external ID … not found` and trace to parent Accounts among the 34
+      unmatched/ambiguous. Same failures as previous runs = correct, not a regression.
 - [ ] ✅ **FIXED 2026-08-13, confirmed 2026-08-14 — the orchestrator no longer stops here.** It used to halt every time:
       `Invoke-SalesforceLoad.ps1` exited non-zero on *any* Bulk failure, and this step's correct
       outcome includes some failures, so a correct run was indistinguishable from a broken one and
@@ -591,9 +596,15 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 
 ### 4c. Contact — ⚠️ the one load that disables another app's trigger
 
-- [ ] Run `Build-ContactLoad.ps1`. Expect **~1,882 ready**, **~54 skipped for no Account** (2026-08-13 reload; was ~1,553 / ~390), and an
-      Account-source split of roughly **965 Airtable column / 151 via Application / 399 via
-      Opportunity / 38 inferred from a `.gov` domain**.
+- [ ] Run `Build-ContactLoad.ps1`. Expect **1,890 ready**, **63 skipped for no Account** (2026-08-15
+      reload; was ~1,882 / ~54). Of the 63: **39 have no Account link in Airtable at all**, 24 link to
+      an Account that did not reconcile.
+      - ℹ️ **The input is 1,960, not the 1,515 rows in the Contacts export.** Contact draws on **two**
+        Airtable tables — 1,515 from `Contacts` plus **520 folded in from `Opportunity Contacts`**,
+        which has no link back to Contacts — then merges rows sharing an email down to 1,960. A
+        number larger than the Contacts export is correct, not double-counting.
+- [ ] Load (upsert). Expect **1,890 / 1,890, zero failures.** Any `DUPLICATES_DETECTED` at all means
+      the duplicate rule was switched back on — see §4c's rule check above.
 - [ ] ⚠️ **Contacts with no resolvable Account are now SKIPPED, not loaded** (new 2026-08-13). Review
       `logs/data-migration/Contact-no-account-*.csv`. Most trace to the unmatched-Account problem and
       return automatically once that is fixed.
@@ -723,9 +734,14 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 
 ### 4d. Opportunity
 
-- [ ] Run `Build-OpportunityLoad.ps1`. Expect **842 ready**, 62 withheld — **all 62 unreconciled Accounts** (2026-08-13 reload; was 742 ready / 186 withheld across 142 unreconciled + 28 no Status + 16 no Account link, the last two now fixed at source),
-      28 no Status, 16 no Account link), **476 owner-resolved / 266 fallback**.
-- [ ] Load (upsert). Expect 742/742.
+- [ ] Run `Build-OpportunityLoad.ps1`. Expect **889 ready, 15 withheld** — all 15 unreconciled
+      Accounts (2026-08-15 reload; was 842 ready / 62 withheld, against a 928-row export).
+- [ ] Load (upsert). Expect **889 / 889.**
+- [ ] ℹ️ **Expect ~277 Opportunities on the fallback owner, and do not treat that as a fault in
+      Dev or QA.** Those sandboxes are partial refreshes that carry no expectation the Partnerships
+      team have logins at all, so an unresolved owner is the designed outcome there. In **Full and
+      Prod** the owner roster is checked instead, and a *present but unusable* owner blocks the run —
+      see `reference/README.md`.
 - [ ] Verify the `Login_gov` record type is set and its restricted picklists took — this object failed
       19/19 once on record-type picklist narrowing that `sf sobject describe` does not reveal.
 - [ ] Verify Market Segment came from the before-save Flow, and revenue formulas computed (~467
@@ -773,13 +789,15 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 
 ### 4e. `LDGCRM_application__c`
 
-- [ ] Run `Build-ApplicationLoad.ps1`. **Re-baselined 2026-08-14 against the re-pulled export**
-      (1,058 Airtable rows): expect **1,045 ready**, **13 withheld** — 8 for no Partner Account in
-      Airtable + 5 for a Partner Account not loaded (was 8 + 22; the Account merges freed 17). Must
-      run *after* Partner Account and Opportunity are loaded, or it withholds far more.
-      *(Trend on the same underlying rule: 688 ready → 1,026 → 1,045. Re-baseline each run rather than
-      reading movement as a regression.)*
-- [ ] Load (upsert). Expect 1,045/1,045.
+- [ ] Run `Build-ApplicationLoad.ps1`. **Re-baselined 2026-08-15** against the same 1,058-row export:
+      expect **1,038 ready**, **20 withheld** — 14 for a Partner Account that is not loaded + 6 for no
+      Partner Account link in Airtable (was 1,045 ready / 13 withheld). Must run *after* Partner
+      Account and Opportunity are loaded, or it withholds far more.
+      *(Trend on the same underlying rule: 688 → 1,026 → 1,045 → 1,038. Re-baseline each run rather
+      than reading movement as a regression.)*
+- [ ] Load (upsert). Expect **1,038 / 1,038.**
+- [ ] Second pass `PopulateBrokerParent`. Expect **69 linked, 1 skipped** — the skipped row is its own
+      Broker App Parent, which a record cannot be.
 - [ ] Verify Market Segment came from the Flow; no formula field was written.
 - [ ] ℹ️ **Expect ~607 Applications to have Launch Level DEFAULTED to `1 - Very Low Impact`** (the
       build prints the count). Airtable leaves it blank on 621 of 1,056 rows, and blank is not
