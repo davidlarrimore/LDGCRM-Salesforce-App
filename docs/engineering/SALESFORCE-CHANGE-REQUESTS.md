@@ -19,6 +19,41 @@ each carries 🔴 Open / 🟡 Partially resolved / ✅ Resolved.
 
 ---
 
+## CR-5 — `LDGCRM_Tehnical_Checklist_URL__c` renamed to `LDGCRM_Technical_Checklist_URL__c` — ✅ DONE IN DEV, 🔴 NEEDS PROMOTING
+
+**Done in Dev 2026-08-14.** The API name was missing the second `c` while the **label read
+"Technical Checklist URL" correctly** — so everything a human saw was spelled right, and the typo
+looked like a bug in the transform rather than in the field. Both earlier spellings are now gone from
+Dev: `LDGRM_Tehnical_…` (wrong prefix *and* body) and `LDGCRM_Tehnical_…` (body only).
+
+Safe to do as a create-and-delete because **0 records held a value**. Anywhere that is not true, the
+data has to be copied across before the old field is dropped.
+
+### What to include in the change set
+
+| Component | Type | Note |
+| --- | --- | --- |
+| `Opportunity.LDGCRM_Technical_Checklist_URL__c` | Custom Field | the new field |
+| `Opportunity-Login.gov CRM` | Page Layout | places it |
+| `LDGCRM_Partnership_Team_Member_CRE`, `LDGCRM_Partnership_Viewer_R`, `LDGCRM_Production_Support_CRED` | Permission Set | FLS |
+| `GSA System Administrator`, `GSA Standard Basic User`, `GSA Standard Platform User`, `GSA Standard Salesforce User` | Profile | FLS |
+| `LDGCRM_Login_gov_Market_Segments_with_Accounts_with_Opportunities`, `LDGCRM_Login_gov_Opportunities_with_Activity`, `LDGCRM_Login_gov_Opportunities_with_Impediments` | Report Type | column references |
+| **`Federal_Opportunity_Record_Page`** | **Lightning Page** | ⚠️ **easy to miss — see below** |
+
+> ### ⚠️ Two traps in promoting this one
+>
+> **1. `Federal_Opportunity_Record_Page` is not `LDGCRM_`-prefixed**, so it is not in
+> `manifest/package.xml` and does not appear in this repo at all. It nonetheless displays this field,
+> and in Dev it **blocked the delete** until it was repointed. If it is left out of the change set,
+> the target org's page still points at the old field.
+>
+> **2. A change set cannot DELETE.** Promoting this **adds** the correctly-spelled field but leaves
+> `LDGCRM_Tehnical_Checklist_URL__c` in place in the target org, so both will exist side by side.
+> The old one has to be deleted by hand in Setup afterwards — and **check it holds no data first**,
+> which is not guaranteed to still be true outside Dev.
+
+---
+
 ## CR-4 — `LDGCRM_Level_of_Priority__c` picklist values — ✅ DONE IN DEV, 🔴 NEEDS PROMOTING
 
 **This is the one to put in the next change set.** Made in Dev on 2026-08-14 at the project owner's
@@ -51,12 +86,12 @@ its absence.
 
 ### Two things to know before promoting
 
-- ⚠️ **`TTS_OTCRM_Opportunity` lost its assignment for this field** as a side effect — it only exposed
-  `High`, so deactivating that left the block empty and Salesforce removed it (33 → 32 picklist blocks
-  on that record type). Harmless here (0 records, and the field is `LDGCRM_`-owned — it appears on
-  that record type only because the field was **renamed** into this app from an earlier life), but
-  **check whether your change set carries that record type**, since promoting it would make the same
-  change in the target org.
+- ⚠️ **Do NOT put `TTS_OTCRM_Opportunity` in the change set.** It lost its assignment for this field
+  in Dev as a side effect — it only exposed `High`, so deactivating that left the block empty and
+  Salesforce removed it (33 → 32 picklist blocks on that record type). Harmless in Dev (0 records, and
+  the field is `LDGCRM_`-owned — it sits on that record type only because the field was renamed into
+  this app from an earlier life), but promoting that record type would make the same change to
+  **another team's app** in the target org. Only `Login_gov` belongs in this change set.
 - ✅ **The transform is already updated and proven against the load file** — 371 of 842 Opportunities
   carry a value (`Strategic` 249, `High Volume` 70, `IdV Upgrade` 38, `Leadership Escalation` 14), and
   every one was cross-checked against what the org accepts. Nothing further is needed on the pipeline
