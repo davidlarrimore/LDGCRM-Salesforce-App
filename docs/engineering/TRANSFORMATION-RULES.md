@@ -994,20 +994,41 @@ would read as an Airtable data problem rather than an out-of-date file on disk. 
 general pattern for any transform whose source column changed type: **make the old shape a loud
 failure, not a silent zero.**
 
-### ⚠️ `LDGCRM_Tehnical_Checklist_URL__c` — the API name is misspelled, and the label is not
+### `LDGCRM_Technical_Checklist_URL__c` — renamed twice on 2026-08-14; both old names are dead
 
-**Do not "correct" this to `Technical` in a transform.** The Salesforce API name really is
-`LDGCRM_Tehnical_Checklist_URL__c`, missing the second `c`, while its **label reads
-"Technical Checklist URL" correctly**. That mismatch is the whole hazard: everything a human sees is
-spelled right, so the typo looks like a bug in the script rather than in the field, and "fixing" it
-produces `INVALID_FIELD` on every row.
+The current API name is **`LDGCRM_Technical_Checklist_URL__c`**. It got there in two steps on the
+same day, and **both earlier spellings are gone from the org**:
 
-**History that matters for anyone reading old commits or an old change set:** the field was renamed on
-2026-08-14 from **`LDGRM_`** to **`LDGCRM_`**. The *prefix* was wrong, which mattered because the
-prefix is this org's ownership signal — an `LDGRM_` field reads as belonging to nobody, or to another
-app. The misspelling in the body was **not** corrected at the same time, so the field is half-fixed.
-`git log` will show 11 metadata files changing name references in one go; that is the rename, not
-drift.
+| | Wrong how | Why it mattered |
+| --- | --- | --- |
+| `LDGRM_Tehnical_Checklist_URL__c` | prefix **and** body | `LDGRM_` is not this app's prefix, so the field read as belonging to nobody or to another app. The prefix is the ownership signal in this org. |
+| `LDGCRM_Tehnical_Checklist_URL__c` | body only — missing the second `c` | Its **label** read "Technical Checklist URL" correctly, so everything a human saw was spelled right. A reader would "fix" the transform to `Technical` and get `INVALID_FIELD` on every row. |
+
+If you meet either old name in a commit, a change set or another org, it is stale — not a variant to
+support.
+
+> ### ⚠️ Renaming a custom field is not one deploy, and the CLI will tell you it worked when it didn't
+>
+> Three things caught this rename out, all worth knowing before the next one:
+>
+> 1. **A changed `<fullName>` CREATES a field, it does not rename one.** So a rename is really
+>    create-new → repoint every reference → delete old. Safe here only because **0 records held a
+>    value**; with data it needs a migration pass between steps.
+> 2. **`componentSuccesses` in a FAILED deploy means nothing.** The first attempt reported
+>    `created=True` for the new field while the deploy as a whole failed — and Salesforce rolls the
+>    whole deployment back, so nothing landed. `success` is the field to read, not the component list.
+>    The Tooling API's `FieldDefinition` confirmed the org was untouched; `sf sobject describe`
+>    disagreed, because it serves a cached answer.
+> 3. **A reference can live outside this repo.** The delete was blocked by
+>    `Federal_Opportunity_Record_Page`, a Lightning page that is **not LDGCRM-prefixed and therefore
+>    not in `manifest/package.xml`** — invisible to any amount of grepping `force-app`. It had to be
+>    retrieved, repointed and deployed separately. Grep the repo *and* expect the org to know about
+>    references the repo does not.
+>
+> Sequence that worked: create + repoint everything in the repo (12 components) → repoint the
+> out-of-repo Lightning page → delete the old field via `--manifest` with
+> `--post-destructive-changes`, checking `deleted=True`. Note `--metadata-dir` **silently ignores** a
+> destructive manifest.
 
 Mapped from Airtable's `Technical Checklist URL` (Opportunities table) through the shared
 `Resolve-OpportunityUrl` helper, so it gets the same treatment as the other three URL fields:

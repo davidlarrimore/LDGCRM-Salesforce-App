@@ -927,7 +927,7 @@
         </columns>
         <columns>
             <checkedByDefault>false</checkedByDefault>
-            <field>LDGCRM_Tehnical_Checklist_URL__c</field>
+            <field>LDGCRM_Technical_Checklist_URL__c</field>
             <table>LDGCRM_Market_Segment__c.LGDCRM_Accounts__r.Opportunities</table>
         </columns>
         <columns>

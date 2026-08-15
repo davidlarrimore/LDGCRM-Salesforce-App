@@ -1187,7 +1187,7 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Opportunity.LDGCRM_Tehnical_Checklist_URL__c</field>
+        <field>Opportunity.LDGCRM_Technical_Checklist_URL__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

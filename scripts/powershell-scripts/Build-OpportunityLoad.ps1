@@ -787,13 +787,10 @@ foreach ($Row in $AirtableOpportunities) {
         LDGCRM_Cost_Estimate_URL__c                 = (Resolve-OpportunityUrl -Value $Row.fields.'Cost Estimate URL' -AirtableField "Cost Estimate URL" -RecordId $RecId -ReviewList $ValueReviewRows)
         LDGCRM_Summary_URL__c                       = (Resolve-OpportunityUrl -Value $Row.fields.'Summary URL' -AirtableField "Summary URL" -RecordId $RecId -ReviewList $ValueReviewRows)
         LDGCRM_Sandbox_URL__c                       = (Resolve-OpportunityUrl -Value $Row.fields.'Sandbox URL' -AirtableField "Sandbox URL" -RecordId $RecId -ReviewList $ValueReviewRows)
-        # NOTE THE API NAME: "Tehnical", not "Technical". The typo is in the
-        # Salesforce field, not here - its LABEL reads "Technical Checklist URL"
-        # correctly, which is exactly what makes it easy to "fix" by hand and
-        # break the load. The field was renamed on 2026-08-14 from LDGRM_ to
-        # LDGCRM_ (the PREFIX was wrong, so it read as another app's field);
-        # the misspelling in the body was not corrected at the same time.
-        LDGCRM_Tehnical_Checklist_URL__c            = (Resolve-OpportunityUrl -Value $Row.fields.'Technical Checklist URL' -AirtableField "Technical Checklist URL" -RecordId $RecId -ReviewList $ValueReviewRows)
+        # Renamed TWICE on 2026-08-14, both spellings now dead: LDGRM_Tehnical_
+        # (wrong prefix AND misspelled) -> LDGCRM_Tehnical_ -> this. If you meet
+        # either old name in a commit, a change set or another org, it is stale.
+        LDGCRM_Technical_Checklist_URL__c           = (Resolve-OpportunityUrl -Value $Row.fields.'Technical Checklist URL' -AirtableField "Technical Checklist URL" -RecordId $RecId -ReviewList $ValueReviewRows)
     }
 
     $UpsertRows.Add([PSCustomObject]$OutputRow)
