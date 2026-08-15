@@ -693,9 +693,13 @@ if ($RepairAmbiguousHierarchy -and $RepairPlan.Count -gt 0 -and -not $PlanOnly) 
     Write-Host ""
     Write-Host "Applying the ambiguous-hierarchy repair..." -ForegroundColor Yellow
 
+    # Export-DataLoaderCsv takes -InputObject and is NOT pipeline-bound - piping
+    # into it fails with "missing mandatory parameters: InputObject" rather than
+    # writing an empty file, which is the one mercy here. Same trap CLAUDE.md
+    # records for its parameter name.
     $RepairDeleteFile = Join-Path $RunDirectory "repair-ambiguous-hierarchy-delete.csv"
-    $RepairPlan | Select-Object @{ Name = "Id"; Expression = { $_.AccountId } } |
-        Export-DataLoaderCsv -Path $RepairDeleteFile
+    $RepairDeleteRows = @($RepairPlan | Select-Object @{ Name = "Id"; Expression = { $_.AccountId } })
+    Export-DataLoaderCsv -InputObject $RepairDeleteRows -Path $RepairDeleteFile
 
     # Ordinary delete, not a hard delete: these go to the Recycle Bin, so a
     # mistake is recoverable for 15 days. The records are rebuilt moments later
