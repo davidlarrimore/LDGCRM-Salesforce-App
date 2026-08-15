@@ -48,15 +48,31 @@ reads it before every Full or Prod load and reports anyone whose records will no
 
 ---
 
+## ⚠️ This list holds only what COSTS RECORDS
+
+**Standing rule, project owner 2026-08-15.** An item earns a place here only if it stops a row
+reaching Salesforce, gets it withheld, or attaches it to the wrong parent. Cosmetic findings — a
+Contact named after its email address, `#N/A` in a Team Name, an Application whose issuer strings
+only partly agree — are **not** asks, because the record loads correctly regardless. They were being
+re-reported every run, which buried the items that do cost records.
+
+**Decisions already taken are not re-raised either.** Over-long URLs, contacts under two addresses,
+and the unlinked issuer strings are settled or parked; they live in
+[TRANSFORMATION-RULES.md → Settled business rules](../engineering/TRANSFORMATION-RULES.md#settled-business-rules--closed-not-open-questions).
+
+The test before adding anything: **name the records that do not reach Salesforce because of it.** If
+the answer is none, it does not belong here.
+
+---
+
 ## At a glance
 
-**Three items remain. One is yours, one is Salesforce's, one is a short list of tidy-ups.**
+**Two items remain.**
 
 | # | Item | Rows | What it costs | Whose call |
 | --- | --- | --- | --- | --- |
-| 1 | [Accounts with no Salesforce match](#1-accounts-with-no-salesforce-match--34-rows) | **34** | ~110 records across 6 objects | **Salesforce**, with ~8 Airtable fixes |
+| 1 | [Accounts with no Salesforce match](#1-accounts-with-no-salesforce-match--34-rows) | **34** | ~130 records across 6 objects | **Salesforce**, with ~10 Airtable fixes |
 | 2 | [`Gov Employees` is not a Salesforce value](#2-gov-employees-is-not-a-salesforce-value--23-opportunities) | **23** | 23 Opportunities lose a tag | **Salesforce** |
-| 3 | [Small tidy-ups](#3-small-tidy-ups) | various | nothing | **Airtable** |
 
 ---
 
@@ -149,30 +165,22 @@ fine, they just arrive without that classification.
 
 ---
 
-## 3. Small tidy-ups
+## Removed 2026-08-15, and why
 
-None of these block anything or need a decision.
+Kept briefly so nobody re-adds them. All were on this list and none of them costs a record.
 
-- **Contacts: 3 rows are named after an email address.** `shyla.morisetty@dot.gov`,
-  `christopher.villas@cisa.dhs.gov`, `icam-portfolio@gsa.gov` are in the **`Name`** field, so
-  Salesforce ends up with a contact *called* an address. The `Email` field already holds it — replace
-  `Name` with the person's actual name.
-- **Contacts: `Andrea McClain` is paired with `dunia.z.nooristani@dea.gov`.** The name and the email
-  don't match each other, so one of the two is wrong.
-- **Issuer Strings: 136 `Team Name` and 137 `Team UUID` cells hold the literal text `#N/A`.** Blocks
-  nothing — we transform it to blank — but a cell containing `#N/A` looks filled in, so the table
-  reads as far more complete than it is.
-- **Issuer Strings: 7 rows link to no Application**, so whatever team they name has nowhere to land.
-  Two look real and may need linking:
-  `urn:gov:gsa:openidconnect.profiles:sp:sso:gsa:pmsam` and
-  `urn:gov:gsa:openidconnect.profiles:sp:sso:gsa:sam`.
-- **Applications: 18 have a partner-portal team on some issuer strings but not others.** These
-  migrate correctly — the agreed value wins — so this is cosmetic. Filling the blanks stops the table
-  looking inconsistent.
-- **Opportunities: 5 URL fields hold something that is not a URL**, and **3 hold a URL longer than
-  Salesforce's 255-character limit** (`Cost Estimate URL` ×2, `Sandbox URL` ×1). All are left blank
-  rather than truncated, since a truncated URL would not work. The long ones are usually a redirect
-  wrapper around a shorter real link.
+| Was listed as | Why it is gone |
+| --- | --- |
+| `Andrea McClain` paired with the wrong email | **Fixed at source.** Now `andrea.d.mcclain@dea.gov`, and Dunia Nooristani is a separate contact with her own address. It was reported stale — carried forward without re-measuring. |
+| 2 empty Impediment rows | **Deleted at source**, confirmed against the current pull: 38 rows, 0 empty. |
+| `"Decomissioned"` misspelt on 89 Applications | **Fixed at source** — `Status` now spells it correctly on 96. |
+| A 275-character `Launch Deck URL` | **Settled decision** — the link is being stored outside Salesforce. |
+| 3 contacts named after an email address | **Cosmetic.** The contact loads, with the right address and links. |
+| 136 `#N/A` cells in Issuer Strings | **Cosmetic.** Transformed to blank on load. |
+| 7 Issuer Strings with no Application | **Parked by the business** — possibly partner-portal test entries; provenance being checked before deletion. Nothing depends on them. |
+| 18 Applications with a partly-filled portal team | **Cosmetic.** The agreed value wins and migrates correctly. |
+| 5 non-URL and 3 over-long URL values | **Settled decision** — blanked rather than truncated. |
+| 6 people under two email addresses | **Deferred by the business** pending confirmation of the current address from each account owner. |
 
 ---
 

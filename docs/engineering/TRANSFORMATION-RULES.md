@@ -44,6 +44,27 @@ detail for each lives in its object's section below.
 | **Applications' `Pilots`, `Usage Tracker Application Name`, `Vital Update %`** | earlier | Confirmed not needed in Salesforce. |
 | **Partner Accounts' `Migrated to the partner portal`** | earlier | Not migrating for now. Not permanent. |
 | **The issuer string VALUES themselves are not migrated** | earlier | Salesforce's field holds one 40-character value; most issuer strings are longer and most Applications have several. Its help text describes it as OE-maintained by hand. |
+| **A URL that is over 255 characters, or is not a URL, is left BLANK** | 2026-08-15 | Not truncated — a truncated URL does not work. 255 is a Salesforce hard limit on a Url field and cannot be raised by metadata. The affected links are being stored outside Salesforce by the business. **Not a data-quality ask**; the record loads either way. |
+| **Contacts recorded under two different email addresses stay as two records** | 2026-08-15 | Deferred by the business pending confirmation from each account owner of the current address. Merging on name would assert that two addresses belong to one person. Revisit only when the business asks. |
+| **Issuer strings with no linked Application are left alone** | 2026-08-15 | 7 rows. They may be partner-portal test entries created by the onboarding engineers; the business is checking provenance before anything is deleted. Nothing is lost by leaving them — they have nowhere to land and no record depends on them. |
+
+### ⚠️ What belongs in the data-quality document, and what does not
+
+**Standing rule, project owner 2026-08-15:** *"data cleanup that doesn't impact the data load can be
+ignored… we have also made decisions on things like the URLs that you continue to put in the report.
+Those just need to be documented somewhere but we need to stop having it in the backlog."*
+
+So `AIRTABLE-DATA-QUALITY-REQUESTS.md` and the stakeholder fix list carry **only items that cost
+records** — a row that fails to load, is withheld, or is attached to the wrong parent. Everything
+else belongs here as a settled decision, or nowhere.
+
+**Cosmetic findings are not asks.** A Contact named after its email address still loads, with the
+right address and the right links. `#N/A` in a Team Name still becomes blank. An Application whose
+issuer strings only partly agree still gets the agreed value. These were being reported every run;
+they are not defects and re-listing them buries the items that do cost records.
+
+The test before adding anything: **name the records that do not reach Salesforce because of it.** If
+the answer is none, it does not go in the list.
 
 ## General principle (read this before writing a new transform)
 
