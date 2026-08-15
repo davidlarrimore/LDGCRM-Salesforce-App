@@ -9,11 +9,13 @@
 
 | Workstream | Rows | Owner | Effort |
 | --- | --- | --- | --- |
-| [A. Seed 10 external IDs](#a-seed-10-external-ids-salesforce-data) | 10 | Engineering | one update load |
-| [B. Set ParentId on 14 same-named Accounts](#b-set-parentid-on-the-same-named-accounts-salesforce-data) | 11 rows blocked | Engineering | needs a decision each |
+| [A. Seed 9 external IDs](#a-seed-10-external-ids-salesforce-data) | 9 | Engineering | one update load |
+| [B. Set ParentId on the same-named Accounts](#b-set-parentid-on-the-same-named-accounts-salesforce-data) | 11 rows blocked | Engineering | needs a decision each |
 | [C. Create 6 new Accounts](#c-create-6-new-accounts-salesforce-config) | 6 | Salesforce config | small |
 | [D. Merge 6 duplicate Airtable rows](#d-merge-6-duplicate-airtable-rows-airtable) | 6 | **Airtable** | in the Fix List |
+| [D1. The Tax Court duplicate](#d1-the-tax-court--a-duplicate-in-production-not-just-in-airtable) | 3 + 2 | **Both** | production merge needed |
 | [E. Fill in Parent on 12 rows](#e-fill-in-parent-on-12-rows-airtable) | 12 | **Airtable** | in the Fix List |
+| Rename `United States Virgin Islands` | 1 | **Airtable** | in the Fix List |
 
 ---
 
@@ -31,7 +33,6 @@ renamed later. It is a one-time data update, not a lookup the pipeline has to ke
 | --- | --- | --- | --- |
 | `Senate` | `rec8IktOJbrgTaTig` | `U.S.Senate` | U.S. Congress |
 | `Udall Foundation` | `recA0RxfQZXblmfkA` | `Morris K. Udall and Stewart L. Udall Foundation` | — |
-| `United States Virgin Islands` | `reccouuBTMQSBuZqz` | `Territory of Virgin Islands` | — |
 | `Economic and Business Affairs` | `recqHR0cR8XENC4F8` | `Economic & Business Affairs` | Under Secretary for Economic Growth |
 | `Bureau of Overseas Building Operations` | `recfkbTRu97EXnqXk` | `Overseas Buildings Operations` | Under Secretary for Management |
 | `Office of the Secretary` *(Labor)* | `recZ83VX9A77iNN2V` | `Office of the Secretary - DOL` | Department of Labor |
@@ -44,13 +45,19 @@ renamed later. It is a one-time data update, not a lookup the pipeline has to ke
 correct in exactly one sandbox and silently wrong everywhere else. Resolve the name to an Id in the
 target org at load time.
 
-**Two to confirm before loading**, because both are a judgement about identity rather than spelling:
+**One to confirm before loading:** `U.S.Senate` is missing a space. That is a defect in the
+production Account name, not in Airtable. Seeding the external ID makes the match work regardless;
+fixing the name is separate and optional.
 
-- **`Territory of Virgin Islands`** — almost certainly the same entity as `United States Virgin
-  Islands`, but it is a production record this migration does not own.
-- **`U.S.Senate`** is missing a space. That is a defect in the production Account name, not in
-  Airtable. Seeding the external ID makes the match work regardless; fixing the name is separate and
-  optional.
+> **`United States Virgin Islands` was in this list and has been moved to Airtable** (project owner,
+> 2026-08-15). The match to `Territory of Virgin Islands` is confirmed correct, but the fix is to
+> rename the **Airtable** row rather than seed an external ID, so the two systems agree on the name
+> rather than agreeing only through a hidden key. It is now in the Fix List.
+>
+> This is the judgement call that separates the two approaches, and it is worth stating: seed the
+> external ID when **both names are legitimate** and neither side should have to give up its own
+> vocabulary (`Amtrak` vs `National Railroad Passenger Corporation (Amtrak)`). Rename when **one
+> name is simply better** and the other is nobody's preferred term.
 
 ---
 
@@ -107,7 +114,7 @@ Sources: [Recreation.gov: Overview and Issues for Congress](https://www.congress
 
 ---
 
-## D. Merge 6 duplicate Airtable rows *(Airtable)*
+## D. Merge duplicate Airtable rows *(Airtable)*
 
 The Salesforce Account exists and a **different Airtable row already claimed it**, so this row is a
 second description of the same office:
@@ -117,9 +124,104 @@ second description of the same office:
 `Office of the Secretary - DOC` · `Office of the Undersecretary for Political Affairs`
 *(claimed as `Under Secretary for Political Affairs`)*
 
-⚠️ **`U.S. Tax Court | US Tax Court` is different and worth a look.** **Both** names exist as
-separate production Accounts and both are already claimed, so that pipe character looks like two
-Airtable rows merged into one cell.
+Plus three where the losing row and the claiming row have **the same name AND the same parent**,
+which is what makes them genuinely one office recorded twice:
+
+| Row reported as duplicate | Claimed by | Shared parent |
+| --- | --- | --- |
+| `Under Secretary for Nuclear Security` `recbyMnp1lAeSyUW1` | `recRUUclzfaGB7JEK` | Department of Energy |
+| `Deputy Commissioner for Operations` `recem3YiYxbZSoRzD` | `recZC9gVe1flfEuS6` | Social Security Administration |
+| `Office of Communications` `recxjIMfLr118aF43` | `rec1dQcLw9nbweDEF` | Office of Personnel Management |
+
+> **Same name at level 3 and below is NOT by itself a duplicate** (project owner, 2026-08-15) —
+> several agencies legitimately run an `Office of Communications`. The test is whether the **parent**
+> matches too. It does for all three above. Checking that is what caught the case below.
+
+---
+
+## D2. `Environment and Natural Resources Division` — a mis-match, not a duplicate
+
+**Found 2026-08-15 by checking whether the parents actually agreed. They did not**, and this one was
+about to be sent to the data owners as a merge request that would have destroyed the correct row.
+
+| | Airtable row | Parent |
+| --- | --- | --- |
+| Reported as the duplicate | `recxmAuYgs0XGRIsJ` | **Department of Justice** ✅ correct |
+| The row that claimed the Account | `recOTuuxYnWwBq9Fs` | **Department of Agriculture** ❌ |
+
+The Salesforce Account is `Environment and Natural Resources Division` **under Department of
+Justice**. The USDA-parented row took it; the correctly-parented DOJ row was locked out.
+
+**How it happened: the wrong field was edited.** `recOTuuxYnWwBq9Fs` was
+`Natural Resources and Environment` under `Department of Agriculture` — a USDA mission area, and item
+1 on the previous fix list, where we asked for its **`Parent`** to be corrected to
+`U.S. Department of Agriculture`. Instead its **`Name`** was changed to
+`Environment and Natural Resources Division` and the parent left alone. The renamed row then collided
+with DOJ's division of that name.
+
+Its real target exists and it is not claiming it: `Under Secretary for Natural Resources and
+Environment` under `U.S. Department of Agriculture`.
+
+**Fix:** restore `recOTuuxYnWwBq9Fs`'s name to `Natural Resources and Environment` and set its
+`Parent` to `U.S. Department of Agriculture` — the change originally asked for. `recxmAuYgs0XGRIsJ`
+then matches DOJ's Account on the next run with no further action.
+
+⚠️ **Clear the stolen external ID first.** DOJ's Account currently carries
+`LDGCRM_External_ID__c = recOTuuxYnWwBq9Fs`. Renaming Airtable alone will not release it — the
+reconciliation matches external ID *before* name, so the wrong binding would survive the fix.
+
+### The pipeline weakness this exposes
+
+**Where a name matches exactly one Salesforce Account, the parent is not checked at all.** Parent is
+used only to break ties between several same-named candidates. So a single-candidate name match wins
+even when Airtable says the row belongs to a different agency entirely — which is precisely how a
+USDA row acquired a DOJ Account.
+
+**Parent should be a veto, not just a tie-breaker:** where an Airtable row names a parent and the
+candidate Account's parent contradicts it, that is not a match at any candidate count. Without it,
+any rename in Airtable can silently re-point an Account belonging to another agency, and the run
+still reports success.
+
+---
+
+## D1. The Tax Court — a duplicate in PRODUCTION, not just in Airtable
+
+Investigated 2026-08-15 after the pipe character in `U.S. Tax Court | US Tax Court` looked like a
+merged cell. It is worse than that: **both systems hold duplicates.**
+
+**Production has two Accounts for one court**, straight from `peo-prod-accounts-2026-07-16.xls`:
+
+| Name | Production Id | Level | Parent | Created | By |
+| --- | --- | --- | --- | --- | --- |
+| `U.S. Tax Court` | `0013d00000BjqjD` | Level 2 | `U.S. Supreme Court` | 10 Dec 2024 | SystemUser DataLoader |
+| `US Tax Court` | `0013d00000BEpfc` | Level 3 or below | *(none)* | 8 Aug 2023 | Jewel Dorsey |
+
+`Clerk of the Court` hangs off the first one, so it is the better-formed of the two.
+
+**Airtable has three rows for the same court:**
+
+| Airtable row | Record ID | Matched to |
+| --- | --- | --- |
+| `U.S. Tax Court` | `recmHTalRWAChHW9u` | production `U.S. Tax Court` |
+| `US Tax Court` | `recaIpw4URTgPYINx` | production `US Tax Court` |
+| `U.S. Tax Court \| US Tax Court` | `rec3f05eVwFfswnOq` | **nothing left to match** |
+
+So the third row is not the cause of the problem — it is the *symptom*. Two Airtable rows had already
+taken the two production records, and the merged-cell row arrived to find both gone. Merging only the
+Airtable side would leave the production duplicate in place and the CRM would still show the court
+twice.
+
+**What is needed, and it is two separate decisions:**
+
+1. **Production** — merge `US Tax Court` into `U.S. Tax Court`, keeping the latter (it has the child
+   record and a parent). ⚠️ **This is a production Account this migration does not own**, so it needs
+   the config owner, not the pipeline.
+2. **Airtable** — collapse the three rows to one.
+
+ℹ️ **Worth flagging while someone is in there:** production has the U.S. Tax Court parented under
+`U.S. Supreme Court`. The Tax Court is an Article I legislative court and does not sit under the
+Supreme Court. Airtable's `Federal Judiciary` is closer to right. Not this migration's to fix, but it
+will propagate into the CRM hierarchy as-is.
 
 ---
 
