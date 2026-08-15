@@ -689,10 +689,17 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 - [ ] ⚠️ **Verify `TriggerControls__c.Contact.On__c` is back to `true`.** Restored in a `finally` block
       with a verifying re-query, proven under real failure — check anyway. Leaving it off silently
       breaks another team's app.
-- [ ] ⛔ **Expect 167 `DUPLICATES_DETECTED` rejections until the Airtable "Help Desk" bulk-rename is
-      undone — and expect the orchestrator to STOP here.** It classifies all 167 as a known cause but
-      halts because they exceed the allowance of 95, on the correct principle that *a known cause at
-      unusual volume means something upstream changed*. It had.
+- [ ] ✅ **FIXED IN DEV 2026-08-15 — but the fix has NOT been promoted, so expect 167
+      `DUPLICATES_DETECTED` rejections and a halt in any org that has not received it yet.**
+
+      `OTCRM_Contact_Matching_Rule` matched on **first + last name only**, so 178 different mailboxes
+      sharing the name `Help Desk` collided. It now also requires **Email**, all three `Exact` and
+      `NullNotAllowed`. Re-verified in Dev: **1,888 submitted, 1,888 loaded, 0 failures** (was 1,721).
+      **QA, Full and Prod still run the name-only rule** — see CR-6. Until promoted, that org halts.
+
+      ⚠️ **The rule is owned by TTS OTCRM, not by this app**, and it is filtered to `RecordType =
+      Federal`, which is what migrated partner contacts get. Confirm it is present and correct in the
+      target org rather than assuming Dev's state applies.
 
       On 2026-08-14 someone bulk-filled the Airtable `Name` field from the `Roles` field: all 178 rows
       whose Role is `Help Desk POC` are now named `Help Desk`. They are 178 different mailboxes across

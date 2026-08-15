@@ -32,7 +32,7 @@ complete** — it halted at step 5 of 12 on item 3 below, which is new since 202
 | --- | --- | --- | --- | --- |
 | 1 | [Accounts with no Salesforce match](#1-accounts-with-no-salesforce-match--92-rows-was-154) | **92** *(was 154)* | ~84 records across 5 objects | **Salesforce**, with 3 Airtable fixes |
 | 2 | [Owners with no active Salesforce login](#2-owners-with-no-active-salesforce-login--a-short-confirmation-not-a-defect) | **3 names** | nothing — the fallback owner is working as designed | **Confirm only** |
-| 3 | ⛔ [178 contacts all named "Help Desk"](#3--178-contacts-are-all-named-help-desk--157-of-them-now-fail-to-load) | **178** | **157 contacts fail to load — this halted the 2026-08-15 run** | **Airtable** |
+| 3 | [178 contacts all named "Help Desk"](#3-178-contacts-are-all-named-help-desk--no-longer-blocking-still-worth-fixing) | **178** | ✅ no longer blocks — but 175 identically-named contacts are near-unsearchable | **Airtable** |
 | 4 | [Emails in the Name field](#4-three-contacts-are-named-after-an-email-address--3-rows) | **3** | 3 contacts named after an address | **Airtable** |
 | 5 | [Small tidy-ups](#5-small-tidy-ups) | various | nothing | **Airtable** |
 
@@ -242,10 +242,21 @@ Lists: `Opportunity-unresolved-owner-*.csv`, `PartnerAccount-unmapped-owner-*.cs
 
 ---
 
-## 3. ⛔ 178 contacts are all named "Help Desk" — 157 of them now FAIL to load
+## 3. 178 contacts are all named "Help Desk" — no longer blocking, still worth fixing
 
-**This is the single blocking item, and it is new since 2026-08-14.** It stopped the 2026-08-15 Dev
-load at step 5 of 12.
+> **✅ UNBLOCKED 2026-08-15, from the Salesforce side rather than yours.** These 157 Contacts were
+> being rejected by a Salesforce duplicate rule that matched on **first + last name only**. That rule
+> now also requires the **email address** to match, so 178 different mailboxes sharing a name no
+> longer collide. Re-verified the same day: **1,888 Contacts submitted, 1,888 loaded, 0 failures.**
+>
+> **The data question is still open, though, and this is the honest position:** nothing was fixed
+> about the data. Salesforce now contains **175 Contacts all named "Help Desk"**, which loads fine and
+> is close to unusable — searching the CRM for a partner's help desk returns 175 identical names with
+> no way to tell which agency any of them belongs to. It has moved from *blocking* to *bad*, which is
+> progress, not resolution.
+
+**This was the single blocking item, and it is new since 2026-08-14.** It stopped the 2026-08-15 Dev
+load at step 5 of 12 before the rule was changed.
 
 **178 Contact rows now have the exact `Name` "Help Desk"** — 12% of the whole Contacts table. They are
 not duplicates of each other: they are 178 *different* mailboxes at different agencies

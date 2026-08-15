@@ -19,7 +19,34 @@ each carries 🔴 Open / 🟡 Partially resolved / ✅ Resolved.
 
 ---
 
-## CR-6 — The active Contact duplicate rule matches on NAME ONLY, and it is not ours — 🔴 OPEN
+## CR-6 — Contact duplicate rule matched on NAME ONLY — ✅ FIXED AND VERIFIED IN DEV 2026-08-15, 🔴 NEEDS PROMOTING
+
+> **✅ Resolved in Dev the same day it was raised.** The project owner added `Email` to
+> `OTCRM_Contact_Matching_Rule`, so a duplicate now requires **FirstName AND LastName AND Email** to
+> match, all `Exact`, all `NullNotAllowed`.
+>
+> **Verified by re-running the Contact step against Dev: 1,888 submitted, 1,888 loaded, 0 failures.**
+> Contact went 1,721 → 1,888 — precisely the 167 rows the old rule had rejected. **This needs
+> promoting by change set to QA, Full and Prod**, where the name-only rule is still live.
+>
+> The predicted side effect also occurred and is accepted: the six same-person-two-address pairs now
+> exist as two Contacts each (`brian.v.cooke@cbp.dhs.gov` *and* `@associates.cbp.dhs.gov`, and five
+> others). That is consistent with this migration's settled merge-on-email rule. **Net: fixed 167,
+> created 6.**
+>
+> **The Airtable ask in the data-quality doc is NOT closed by this.** The rule change stopped 157
+> Contacts being rejected; it did not make the data good. Salesforce now holds **175 Contacts all
+> named "Help Desk"**, which is a search-and-usability problem rather than a load failure. See item 3
+> there — downgraded from blocking, still open.
+>
+> **A stronger option was raised and not taken, recorded so it is a decision rather than an oversight:**
+> matching on **Email alone** would fix the same 167 *and* catch the case the three-field rule now
+> misses — same mailbox, name typed differently (`bob.smith@agency.gov` as both "Bob Smith" and
+> "Robert Smith"). Every AND makes a matching rule catch *less*, so requiring an admittedly unreliable
+> field to match propagates that unreliability. The rule is `Alert`, not `Block`, so a false positive
+> costs one click and a false negative silently creates a duplicate — an asymmetry that favours the
+> broader rule. The argument the other way is shared mailboxes: ~57 role inboxes exist, and Email-only
+> would alert on two people recorded against one of them.
 
 **Raised 2026-08-15 by the project owner**, whose framing is the whole case: *"There are 1,000 people
 named Robert Smith in the world. Email should be unique; first and last name doesn't have to be."*
