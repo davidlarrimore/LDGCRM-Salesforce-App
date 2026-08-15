@@ -961,7 +961,7 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>true</editable>
+        <editable>false</editable>
         <field>Opportunity.ExpectedRevenue</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -1182,12 +1182,12 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Opportunity.LDGCRM_Technical_Readiness__c</field>
+        <field>Opportunity.LDGCRM_Technical_Checklist_URL__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Opportunity.LDGCRM_Technical_Checklist_URL__c</field>
+        <field>Opportunity.LDGCRM_Technical_Readiness__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1428,11 +1428,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.deprecated_TLDGCRM_Technical_Readiness__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.priority_type__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

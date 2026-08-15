@@ -1184,12 +1184,12 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Opportunity.LDGCRM_Technical_Readiness__c</field>
+        <field>Opportunity.LDGCRM_Technical_Checklist_URL__c</field>
         <readable>false</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Opportunity.LDGCRM_Technical_Checklist_URL__c</field>
+        <field>Opportunity.LDGCRM_Technical_Readiness__c</field>
         <readable>false</readable>
     </fieldPermissions>
     <fieldPermissions>
