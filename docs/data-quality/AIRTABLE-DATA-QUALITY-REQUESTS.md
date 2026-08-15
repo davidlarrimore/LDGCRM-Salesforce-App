@@ -19,22 +19,24 @@ something migrates, it is a rule, not a request: see
 That covers derived contact names, the `Launch Level` default, the `None` impediment, portal-team
 optionality, contact merging and Partner Portal Admin sourcing — **please don't re-raise those.**
 
-**Measured 2026-08-15** against a fresh Airtable pull and a Dev wipe-and-reload. **That load did not
-complete** — it halted at step 5 of 12 on item 3 below, which is new since 2026-08-14.
+**Measured 2026-08-15** against a fresh Airtable pull and a full Dev reload.
+
+**Nothing here is blocking.** The Dev load completes end to end: 1,888 Contacts, 0 failures. Everything
+below improves how much of Airtable reaches the CRM, or how usable it is once there — none of it stops
+a migration running.
 
 ---
 
 ## At a glance
 
-**Five items remain. Three are yours; two are Salesforce-side. Item 3 is blocking and is new.**
+**Four items remain. Two are yours; two are shared with Salesforce.**
 
 | # | Item | Rows | What it costs | Whose call |
 | --- | --- | --- | --- | --- |
 | 1 | [Accounts with no Salesforce match](#1-accounts-with-no-salesforce-match--92-rows-was-154) | **92** *(was 154)* | ~84 records across 5 objects | **Salesforce**, with 3 Airtable fixes |
 | 2 | [Owners with no active Salesforce login](#2-owners-with-no-active-salesforce-login--a-short-confirmation-not-a-defect) | **3 names** | nothing — the fallback owner is working as designed | **Confirm only** |
-| 3 | [178 contacts all named "Help Desk"](#3-178-contacts-are-all-named-help-desk--no-longer-blocking-still-worth-fixing) | **178** | ✅ no longer blocks — but 175 identically-named contacts are near-unsearchable | **Airtable** |
-| 4 | [Emails in the Name field](#4-three-contacts-are-named-after-an-email-address--3-rows) | **3** | 3 contacts named after an address | **Airtable** |
-| 5 | [Small tidy-ups](#5-small-tidy-ups) | various | nothing | **Airtable** |
+| 3 | [Emails in the Name field](#3-three-contacts-are-named-after-an-email-address--3-rows) | **3** | 3 contacts named after an address | **Airtable** |
+| 4 | [Small tidy-ups](#4-small-tidy-ups) | various | nothing | **Airtable** |
 
 ---
 
@@ -242,79 +244,7 @@ Lists: `Opportunity-unresolved-owner-*.csv`, `PartnerAccount-unmapped-owner-*.cs
 
 ---
 
-## 3. 178 contacts are all named "Help Desk" — no longer blocking, still worth fixing
-
-> **✅ UNBLOCKED 2026-08-15, from the Salesforce side rather than yours.** These 157 Contacts were
-> being rejected by a Salesforce duplicate rule that matched on **first + last name only**. That rule
-> now also requires the **email address** to match, so 178 different mailboxes sharing a name no
-> longer collide. Re-verified the same day: **1,888 Contacts submitted, 1,888 loaded, 0 failures.**
->
-> **The data question is still open, though, and this is the honest position:** nothing was fixed
-> about the data. Salesforce now contains **175 Contacts all named "Help Desk"**, which loads fine and
-> is close to unusable — searching the CRM for a partner's help desk returns 175 identical names with
-> no way to tell which agency any of them belongs to. It has moved from *blocking* to *bad*, which is
-> progress, not resolution.
-
-**This was the single blocking item, and it is new since 2026-08-14.** It stopped the 2026-08-15 Dev
-load at step 5 of 12 before the rule was changed.
-
-**178 Contact rows now have the exact `Name` "Help Desk"** — 12% of the whole Contacts table. They are
-not duplicates of each other: they are 178 *different* mailboxes at different agencies
-(`npms@dot.gov`, `ocioclientcenter@dot.gov`, `sfs@opm.gov`, `cbpone@cbp.dhs.gov`, …), each of which
-now carries the same name.
-
-**Why that breaks the load.** Salesforce has an org rule rejecting contacts that share a first *and*
-last name. 178 rows all named `Help Desk` → first `Help`, last `Desk` → **Salesforce accepted the
-first one and rejected 157.** Those 157 people are simply absent from the CRM, and every Application
-link and Opportunity role that depended on them is withheld too.
-
-**This looks like it came from fixing the "contacts with no name" item, and we are grateful for the
-effort — but this particular fill-in costs more than the blank did.** Rows with no name fell 1,054 →
-857 over the same period, and 178 `Help Desk` rows appeared. When the `Name` was blank the migration
-derived a distinct name from the email address (`npms@dot.gov` → `npms`), so all 178 loaded
-successfully. A shared generic name is the one value that fails where blank succeeded.
-
-**We checked whether these are actually helpful duplicate-suppression, and they are not.** The
-reasonable reading is that contacts are being unified at source and Salesforce is now correctly
-refusing copies that should never have existed. That is true of the six people in item 5 below — but
-not here. Of the 140 rejected rows that carry an email, **139 have an address that appears nowhere
-else in Salesforce**; only 1 was a genuine duplicate. They span **78 email domains across 41
-agencies** (DHS 18, Interior 15, Transportation 14, Education 9 …). These are different agencies'
-help desks, not one help desk recorded 178 times.
-
-**What we need — any one of these works:**
-
-1. **Best: clear the `Name` on all 178.** They are role inboxes, not people. Blank is explicitly
-   handled: the address is kept whole and no first name is invented. This restores all 157.
-2. **Or make each name distinct and real** — `NPMS Help Desk`, `CBP One Help Desk`, and so on. Names
-   that differ from each other load fine.
-3. **Or tell us these should not be contacts at all** and we will exclude them.
-
-⚠️ **Please don't apply the same fill-in to the remaining 857 unnamed rows.** Any generic value
-repeated across rows will fail the same way. Blank is genuinely better than a shared placeholder here.
-
-### The original 7, still open and unchanged
-
-Separately, these hold a help-desk name in `Name` that is *unique*, so they load — they just read as
-staff. Same ask: clear the `Name`, or confirm they should read as people.
-
-| Airtable `Name` | Became |
-| --- | --- |
-| `UI Claimant Portal Help Desk` | First `UI Claimant Portal Help`, Last `Desk` |
-| `EBSA Lost & Found Help Desk Information` | First `EBSA Lost & Found Help Desk`, Last `Information` |
-| `Peace Corps Help Desk` | First `Peace Corps Help`, Last `Desk` |
-| `FDM Help Desk` | First `FDM Help`, Last `Desk` |
-| `Help Desk Independent Study System` | First `Help Desk Independent Study`, Last `System` |
-| `Wisconsin UI Help Center` | First `Wisconsin UI Help`, Last `Center` |
-| `SSA Help Desk` ×2 | First `SSA Help`, Last `Desk` |
-
-The other ~57 role inboxes were detected from their *email address* (`support@`, `nfrhelpdesk@`) and
-handled correctly. Only names in the `Name` field slip through, because that is the one field the
-migration is meant to trust.
-
----
-
-## 4. Three contacts are named after an email address — 3 rows
+## 3. Three contacts are named after an email address — 3 rows
 
 `shyla.morisetty@dot.gov`, `christopher.villas@cisa.dhs.gov`, `icam-portfolio@gsa.gov` are in the
 **`Name`** field. The migration cannot tell these from a real name, so Salesforce ends up with a
@@ -324,7 +254,7 @@ contact *called* an email address.
 
 ---
 
-## 5. Small tidy-ups
+## 4. Small tidy-ups
 
 None of these block anything or need a decision.
 

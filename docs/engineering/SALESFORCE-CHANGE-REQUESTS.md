@@ -34,10 +34,12 @@ each carries 🔴 Open / 🟡 Partially resolved / ✅ Resolved.
 > others). That is consistent with this migration's settled merge-on-email rule. **Net: fixed 167,
 > created 6.**
 >
-> **The Airtable ask in the data-quality doc is NOT closed by this.** The rule change stopped 157
-> Contacts being rejected; it did not make the data good. Salesforce now holds **175 Contacts all
-> named "Help Desk"**, which is a search-and-usability problem rather than a load failure. See item 3
-> there — downgraded from blocking, still open.
+> **The Airtable side was CLOSED BY DECISION, not fixed.** Salesforce now holds **175 Contacts all
+> named "Help Desk"** — they load cleanly, but searching the CRM for a partner's help desk returns 175
+> identical names with no way to tell the agencies apart. **Project owner, 2026-08-15: not this
+> migration's problem to solve; it will be cleaned up post-migration.** The item has been removed from
+> the data-quality document accordingly. Recorded here so the 175 are a known, accepted state rather
+> than a surprise to whoever first searches for one.
 >
 > **A stronger option was raised and not taken, recorded so it is a decision rather than an oversight:**
 > matching on **Email alone** would fix the same 167 *and* catch the case the three-field rule now
@@ -86,8 +88,8 @@ bulk` is Bulk 2.0. So a rule deliberately configured *not* to block is hard-bloc
 and the pipeline has no header to set.
 
 **3. It is currently costing 157 Contacts** and it halted the 2026-08-15 Dev load at step 5 of 12.
-The immediate trigger was an Airtable bulk-rename (see the data-quality doc, item 3), but that only
-exposed the rule — any 178 people sharing a name would do the same.
+The immediate trigger was an Airtable bulk-rename that gave 178 different mailboxes the same name, but
+that only exposed the rule — any 178 people sharing a name would do the same.
 
 ### What we are asking for
 
@@ -103,7 +105,7 @@ Federal Contacts and ours share a record type.
 
 The name rule is currently *accidentally* catching the **6 genuine duplicates** — the same person under
 two email addresses (`brian.v.cooke@associates.cbp.dhs.gov` vs `brian.v.cooke@cbp.dhs.gov`, and five
-others; see the data-quality doc item 5). Match on email instead and **those 6 load as two Contacts
+others; see the data-quality doc's "Small tidy-ups"). Match on email instead and **those 6 load as two Contacts
 each.**
 
 That is consistent with this migration's own settled rule — Contacts merge on **email**, so two
