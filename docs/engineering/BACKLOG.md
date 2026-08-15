@@ -559,3 +559,51 @@ list handed to whoever builds the change set.
 - Where does the expectation table live — hand-maintained in the script, or generated from
   `sfdx/force-app/` (which the bundle cannot read)? Hand-maintained is the only option that survives
   the hand-off.
+
+---
+
+## 8. Airtable owner emails that do not match the Salesforce User — 🔴 open question
+
+**Raised 2026-08-15.** The ownership resolver joins an Airtable collaborator's **email** to
+`User.Email` (and its sandbox `.invalid` form). Where the two spellings differ the person is
+indistinguishable from someone who has no account at all: the record falls back to the default
+owner, correctly, and nothing says why.
+
+**The known case is Tony Parrilla**, who owns 15 Opportunities and 15 Partner Accounts:
+
+| | Address |
+| --- | --- |
+| Airtable (`Pod Opportunity Lead`, `Account Owner`) | `tony.parrilla@gsa.gov` |
+| Salesforce Dev (`User.Email`, and the `Username` base) | `antonio.parrilla@gsa.gov` |
+
+The `.invalid` suffix is **not** the issue — the resolver already queries both forms. It is `tony`
+versus `antonio`, and his whole Salesforce identity uses the formal spelling.
+
+**This is probably not bad data.** GSA commonly issues a `firstname.lastname` alias alongside the
+formal address, so both are plausibly his. That makes it a **join-key mismatch**, not a data error,
+which is why it is filed here as a question rather than in the Airtable data-quality document.
+
+### What we do not know yet
+
+- **Whether it holds in Full or Prod.** The only evidence is from Dev, and Dev/QA are partial
+  refreshes that carry no expectation these logins exist — a missing or differently-spelled user
+  there is expected and is *not* a finding (project owner, 2026-08-15). Falling back is the correct
+  outcome in a sandbox.
+- **Whether it would even help.** In Dev he is `UserType = CsnOnly` (Chatter Free), which cannot own
+  records at all, so a perfect email match would still fall back. Fixing the address changes nothing
+  until the licence type does.
+- **How many others are affected.** Only Parrilla has been checked. A name-based sweep of every
+  Airtable collaborator against `User.Name` would find the rest, but display names are a weak join
+  (`Resolve-SalesforceOwnerIdsByName` documents why) so it can only produce candidates for a human.
+
+### Do not fix it with an alias table
+
+The tempting shortcut is an email-alias map in the pipeline. That hides the mismatch instead of
+resolving it, and it is the pattern this project has already ruled out for Airtable data problems.
+The fix is to make one side agree with the other — ask the business which address is his, then
+correct the Airtable collaborator to whatever Salesforce holds.
+
+**Next step:** check his record in the Full sandbox once it exists, at the same time as the roster's
+other two open cases (Elizabeth Mays, absent; Shaunte Brown, Chatter Free). All three are the same
+question — *does this person own their records in production?* — and pre-flight check 7 answers all
+of them in one pass. Nothing to do until then.
