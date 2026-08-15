@@ -19,20 +19,20 @@ something migrates, it is a rule, not a request: see
 That covers derived contact names, the `Launch Level` default, the `None` impediment, portal-team
 optionality, contact merging and Partner Portal Admin sourcing — **please don't re-raise those.**
 
-**Measured 2026-08-14** against a fresh Airtable pull and a complete sandbox wipe-and-reload
-(8,831 records migrated, 0 unexpected failures).
+**Measured 2026-08-15** against a fresh Airtable pull and a Dev wipe-and-reload. **That load did not
+complete** — it halted at step 5 of 12 on item 3 below, which is new since 2026-08-14.
 
 ---
 
 ## At a glance
 
-**Five items remain. Three are yours; two are Salesforce-side.**
+**Five items remain. Three are yours; two are Salesforce-side. Item 3 is blocking and is new.**
 
 | # | Item | Rows | What it costs | Whose call |
 | --- | --- | --- | --- | --- |
 | 1 | [Accounts with no Salesforce match](#1-accounts-with-no-salesforce-match--154-rows) | **154** | ~193 records across 5 objects | **Salesforce**, with 2 small Airtable fixes |
 | 2 | [Owners with no active Salesforce login](#2-owners-with-no-active-salesforce-login--4-people-247-opportunities) | **4 people** | 247 Opportunities get an inherited owner instead of their real one | **Salesforce / business** |
-| 3 | [Help-desk names became people](#3-seven-help-desk-names-became-people--7-contacts) | **7** | 7 contacts look like staff | **Airtable** |
+| 3 | ⛔ [178 contacts all named "Help Desk"](#3--178-contacts-are-all-named-help-desk--157-of-them-now-fail-to-load) | **178** | **157 contacts fail to load — this halted the 2026-08-15 run** | **Airtable** |
 | 4 | [Emails in the Name field](#4-three-contacts-are-named-after-an-email-address--3-rows) | **3** | 3 contacts named after an address | **Airtable** |
 | 5 | [Small tidy-ups](#5-small-tidy-ups) | various | nothing | **Airtable** |
 
@@ -149,29 +149,64 @@ Lists: `Opportunity-unresolved-owner-*.csv`, `PartnerAccount-unmapped-owner-*.cs
 
 ---
 
-## 3. Seven help-desk names became "people" — 7 contacts
+## 3. ⛔ 178 contacts are all named "Help Desk" — 157 of them now FAIL to load
 
-Where the `Name` field holds a **help-desk or team name rather than a person**, the migration takes it
-at its word and splits it into a first and last name — it has no way to tell `Help Desk` from a real
-name. Salesforce now contains contacts called:
+**This is the single blocking item, and it is new since 2026-08-14.** It stopped the 2026-08-15 Dev
+load at step 5 of 12.
+
+**178 Contact rows now have the exact `Name` "Help Desk"** — 12% of the whole Contacts table. They are
+not duplicates of each other: they are 178 *different* mailboxes at different agencies
+(`npms@dot.gov`, `ocioclientcenter@dot.gov`, `sfs@opm.gov`, `cbpone@cbp.dhs.gov`, …), each of which
+now carries the same name.
+
+**Why that breaks the load.** Salesforce has an org rule rejecting contacts that share a first *and*
+last name. 178 rows all named `Help Desk` → first `Help`, last `Desk` → **Salesforce accepted the
+first one and rejected 157.** Those 157 people are simply absent from the CRM, and every Application
+link and Opportunity role that depended on them is withheld too.
+
+**This looks like it came from fixing the "contacts with no name" item, and we are grateful for the
+effort — but this particular fill-in costs more than the blank did.** Rows with no name fell 1,054 →
+857 over the same period, and 178 `Help Desk` rows appeared. When the `Name` was blank the migration
+derived a distinct name from the email address (`npms@dot.gov` → `npms`), so all 178 loaded
+successfully. A shared generic name is the one value that fails where blank succeeded.
+
+**We checked whether these are actually helpful duplicate-suppression, and they are not.** The
+reasonable reading is that contacts are being unified at source and Salesforce is now correctly
+refusing copies that should never have existed. That is true of the six people in item 5 below — but
+not here. Of the 140 rejected rows that carry an email, **139 have an address that appears nowhere
+else in Salesforce**; only 1 was a genuine duplicate. They span **78 email domains across 41
+agencies** (DHS 18, Interior 15, Transportation 14, Education 9 …). These are different agencies'
+help desks, not one help desk recorded 178 times.
+
+**What we need — any one of these works:**
+
+1. **Best: clear the `Name` on all 178.** They are role inboxes, not people. Blank is explicitly
+   handled: the address is kept whole and no first name is invented. This restores all 157.
+2. **Or make each name distinct and real** — `NPMS Help Desk`, `CBP One Help Desk`, and so on. Names
+   that differ from each other load fine.
+3. **Or tell us these should not be contacts at all** and we will exclude them.
+
+⚠️ **Please don't apply the same fill-in to the remaining 857 unnamed rows.** Any generic value
+repeated across rows will fail the same way. Blank is genuinely better than a shared placeholder here.
+
+### The original 7, still open and unchanged
+
+Separately, these hold a help-desk name in `Name` that is *unique*, so they load — they just read as
+staff. Same ask: clear the `Name`, or confirm they should read as people.
 
 | Airtable `Name` | Became |
 | --- | --- |
-| `HELP DESK` | First `Help`, Last `Desk` |
 | `UI Claimant Portal Help Desk` | First `UI Claimant Portal Help`, Last `Desk` |
 | `EBSA Lost & Found Help Desk Information` | First `EBSA Lost & Found Help Desk`, Last `Information` |
 | `Peace Corps Help Desk` | First `Peace Corps Help`, Last `Desk` |
 | `FDM Help Desk` | First `FDM Help`, Last `Desk` |
 | `Help Desk Independent Study System` | First `Help Desk Independent Study`, Last `System` |
 | `Wisconsin UI Help Center` | First `Wisconsin UI Help`, Last `Center` |
+| `SSA Help Desk` ×2 | First `SSA Help`, Last `Desk` |
 
-**This is only these 7.** The other 57 role inboxes were detected from their *email address*
-(`support@`, `nfrhelpdesk@`) and handled correctly — the address is kept whole and **no first name is
-invented**. These 7 slipped through because the role name is in the `Name` field, where the migration
-is meant to trust what you wrote.
-
-**What we need:** either clear the `Name` on these 7 so they're treated as role inboxes like the other
-57, or confirm they should read as people.
+The other ~57 role inboxes were detected from their *email address* (`support@`, `nfrhelpdesk@`) and
+handled correctly. Only names in the `Name` field slip through, because that is the one field the
+migration is meant to trust.
 
 ---
 
@@ -205,8 +240,25 @@ None of these block anything or need a decision.
   `urn:gov:gsa:openidconnect.profiles:sp:sso:gsa:pmsam` and
   `urn:gov:gsa:openidconnect.profiles:sp:sso:gsa:sam`.
 - **Contacts: `Andrea McClain` is paired with `dunia.z.nooristani@dea.gov`.** The name and the email
-  don't match each other, so one of the two is wrong. *(The other four people appearing under two
-  addresses are handled by the merge rules and need nothing.)*
+  don't match each other, so one of the two is wrong.
+- **Six people appear under two email addresses, and the second copy is rejected — correctly.**
+  Previously recorded here as "handled by the merge rules and needs nothing"; that was wrong, and the
+  2026-08-15 load showed why. The migration merges rows sharing an *email*, so two addresses stay two
+  rows, and Salesforce's duplicate rule then rejects the second. **The outcome is right** — one person,
+  one contact — so nothing is lost and no action is required. Listed only so the rejections are not
+  mistaken for a fault:
+
+  | Person | Rejected address | Kept as |
+  | --- | --- | --- |
+  | Terry L. Harrison | `terry.l.harrison@uscis.dhs.gov` | `terry.harrison@uscis.dhs.gov` |
+  | Brian Cooke | `brian.v.cooke@associates.cbp.dhs.gov` | `brian.v.cooke@cbp.dhs.gov` |
+  | Sivaram Ghorakavi | `sivaram.ghorakavi@eeoc.gov` | `sivaram.ghorakavi@nlrb.gov` |
+  | Joel Schlagel | `joel_schlagel@ios.doi.gov` | `joel.d.schlagel@usace.army.mil` |
+  | Jason Ashley | `jason.k.ashley1@uscg.mil` | `jason.ashley@arkansas.gov` |
+  | Patrick Newbold | `patrick.newbold@ssa.gov` | `patrick.newbold@cms.hhs.gov` |
+
+  Worth confirming only whether the four who span *two different agencies* have genuinely moved
+  employer, in which case the older address may want retiring at source.
 
 ---
 

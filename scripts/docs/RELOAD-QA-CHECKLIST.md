@@ -676,7 +676,21 @@ Market Segment (STEP 1 - loaded by the pipeline as of 2026-08-14)
 - [ ] ⚠️ **Verify `TriggerControls__c.Contact.On__c` is back to `true`.** Restored in a `finally` block
       with a verifying re-query, proven under real failure — check anyway. Leaving it off silently
       breaks another team's app.
-- [ ] Expect ~4 `DUPLICATES_DETECTED` rejections from the org-level duplicate rule. Known, documented.
+- [ ] ⛔ **Expect 167 `DUPLICATES_DETECTED` rejections until the Airtable "Help Desk" bulk-rename is
+      undone — and expect the orchestrator to STOP here.** It classifies all 167 as a known cause but
+      halts because they exceed the allowance of 95, on the correct principle that *a known cause at
+      unusual volume means something upstream changed*. It had.
+
+      On 2026-08-14 someone bulk-filled the Airtable `Name` field from the `Roles` field: all 178 rows
+      whose Role is `Help Desk POC` are now named `Help Desk`. They are 178 different mailboxes across
+      78 domains and 41 agencies, so the org rule (First + Last name) accepts one and rejects the rest.
+      **139 of the 140 rejected addresses appear nowhere else in Salesforce** — this is lost data, not
+      helpful duplicate-suppression. See AIRTABLE-DATA-QUALITY-REQUESTS.md item 3.
+
+      **Once it is fixed, expect the baseline ~10**, of which **6 are correct and permanent**: the same
+      person under two email addresses, whose second copy the rule rightly rejects.
+      To finish a run while the data is still broken, resume with
+      `-StartAtStep Opportunity` — everything downstream loads clean, just short of those contacts.
 
 ### 4d. Opportunity
 
@@ -1014,10 +1028,54 @@ was found this way, never in a success count.
 
 ---
 
-## Results of the 2026-08-14 full reload (wipe → bootstrap → load → QA) — CURRENT BASELINE
+## Results of the 2026-08-15 Dev reload — CURRENT BASELINE
 
-**This is the figure set to diff against.** Sandbox wiped (8,018 records hard-deleted), Accounts
-rebuilt from the production export, Airtable re-pulled, then loaded end to end in **19m 47s**.
+**This is the figure set to diff against.** The wipe and Account bootstrap ran on 2026-08-14 (8,830
+records hard-deleted); the ambiguous-hierarchy repair crashed on a code defect and was fixed and
+re-run on 2026-08-15, followed by a fresh Airtable pull and the full load.
+
+**The load HALTED at step 5 of 12 on the Contact duplicate problem above**, and was completed by
+resuming with `-StartAtStep Opportunity`. Steps 6–12 ran with **0 failures**.
+
+| Object | 08-14 | **08-15** | Δ | Why |
+| --- | --- | --- | --- | --- |
+| Account | 585 | **637** | **+52** | Airtable Account merges + the hierarchy repair |
+| `LDGCRM_Partner_Account__c` | 97 | **96** | −1 | |
+| Contact | 1,876 | **1,721** | **−155** | ⛔ the `Help Desk` rename |
+| Opportunity | 842 | **887** | **+45** | more Accounts reconcile |
+| `LDGCRM_application__c` | 1,045 | **1,033** | −12 | |
+| `LDGCRM_Impediment__c` | 38 | **37** | −1 | |
+| `LDGCRM_Opportunity_Impediment__c` | 296 | **311** | +15 | |
+| `LDGCRM_Application_Contact__c` | 2,750 | **2,532** | **−218** | cascade from the missing contacts |
+| `OpportunityContactRole` | 566 | **579** | +13 | |
+| `ContentNote` | 730 | **721** | −9 | |
+| `LDGCRM_Market_Segment__c` | 5 | **5** | 0 | |
+| **Total** | 8,831 | **8,559** | **−272** | |
+
+**Read the deltas in two groups.** Account +52 and Opportunity +45 are the Airtable owners' merge work
+landing — genuine progress. Contact −155 and Application-Contact −218 are the `Help Desk` rename.
+Undo that one edit and this run would have been the best yet.
+
+**Post-load verification — all passed:**
+
+| Check | Result |
+| --- | --- |
+| Market Segment blank on Partner Account / Opportunity / Application | **0 / 0 / 0** — the Flows fired |
+| LDGCRM Flows at pre-flight | **9 of 9 active and current** |
+| Records owned by an inactive user (3 objects) | **0** |
+| FCIC junk Accounts | **4** — unchanged from baseline |
+| `TriggerControls__c.Contact.On__c` | **true** — restored |
+| Event / Task / Lead | **0 / 0 / 0** |
+| Applications with a NULL Launch Level | **0** |
+| Applications holding literal `#N/A` | **0** |
+| Applications with Partner Portal Team UUID | **681** |
+| Applications with Broker App Parent | **66** |
+| Partner Portal Admin flags | **1,074** |
+
+### Results of the 2026-08-14 full reload (superseded — kept for the trend)
+
+Sandbox wiped (8,018 records hard-deleted), Accounts rebuilt from the production export, Airtable
+re-pulled, then loaded end to end in **19m 47s**.
 
 | Object | Airtable rows | Loaded | 08-13 | Notes |
 | --- | --- | --- | --- | --- |
