@@ -48,6 +48,7 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "Common.ps1")
 . (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
+. (Join-Path $PSScriptRoot "Common.AccountMatching.ps1")
 
 $OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
@@ -58,21 +59,16 @@ $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Build-Accou
 # store the segment name) in 3 of 5 cases - confirmed by querying gsa-peo
 # directly rather than assumed. "Benefits" and "Infrastructure" already match
 # and don't need an entry here.
-$MarketSegmentMap = @{
-    "Defense & National Security"       = "Defense"
-    "Finance (Regulation & Compliance)" = "Finance & Regulation"
-    "State & Local (SLTT)"              = "State & Local"
-}
+# The map itself now lives in Common.AccountMatching.ps1 as
+# Get-LdgcrmMarketSegmentName, shared with Build-AccountCreationLoad.ps1.
+# Account is the ONE object where the migration writes Market Segment directly -
+# the other three get it from a before-save Flow - so two copies of this map
+# would diverge silently and only Account would be wrong.
 
-function Get-NormalizedName {
-    param([string]$Name)
-
-    if ([string]::IsNullOrWhiteSpace($Name)) {
-        return ""
-    }
-
-    return $Name.Trim().ToLowerInvariant()
-}
+# Name normalisation lives in Common.AccountMatching.ps1 too
+# (Get-LdgcrmNameExact / Get-LdgcrmNameLoose). The local copy folded case only,
+# so it saw "Economic & Business Affairs" and "Economic and Business Affairs" as
+# different offices; the shared one does not.
 
 try {
 
@@ -108,34 +104,31 @@ Write-Host "$($SalesforceAccounts.Count) Salesforce Account records found."
 # lookup needed.
 $SfByExternalId = [System.Collections.Generic.Dictionary[string, object]]::new()
 
-# Unclaimed records (no external ID yet) indexed by normalized Name, for
-# the name-match fallback. A record is removed from this pool the moment
-# it's claimed by an Airtable row, so a second Airtable row with the same
-# name can't silently double-claim it - it falls through to "unmatched"
-# for human review instead.
-$SfByName = [System.Collections.Generic.Dictionary[string, System.Collections.Generic.List[object]]]::new()
-
 # ------------------------------------------------------------
-# DISAMBIGUATING BY PARENT
+# PARENT IS A VETO, NOT A TIE-BREAKER
 #
-# Several agencies each run an office with the same generic name - OPM, NASA,
-# NSF and CDC all have an "Office of Communications" or an "Office of the
-# Director", and four departments each have an "Office of the Inspector
-# General". Matching on Name alone finds 2+ candidates and (correctly) refuses
-# to guess, which is why 8 Airtable rows were reported ambiguous on 2026-08-14.
+# Several agencies each run an office with the same generic name - four
+# departments have an "Office of the Inspector General", and OPM, NASA, NSF and
+# CDC all have an "Office of the Director". Airtable's Accounts table carries a
+# plain-text `Parent` column naming the agency; Salesforce carries the
+# equivalent as Account.ParentId.
 #
-# Airtable's Accounts table carries a plain-text `Parent` column naming the
-# agency, and Salesforce carries the equivalent as Account.ParentId. Comparing
-# the two resolves the office to exactly one Account without guessing.
+# The parent used to be consulted ONLY when two or more Accounts shared a name.
+# A name matching exactly one Account won outright - so a Housing and Urban
+# Development row matched Commerce's "Office of the Secretary", and six others
+# like it attached one agency's records to another agency's office while the run
+# reported success. Seven Accounts were linked that way.
+#
+# Now the agency selects the candidate pool before any name is compared, so an
+# office belonging to a different department is never a candidate at all,
+# however well the names agree.
 #
 # Two things this deliberately does NOT do:
-#   - It never falls back to picking one when the parent doesn't decide it. No
-#     parent match, or more than one, is still reported for human review.
-#   - It never lets two Airtable rows claim the same Salesforce Account. Airtable
-#     currently holds three rows for "Office of Communications" all naming OPM as
-#     the parent; without the claim check they would all resolve to the same
-#     record and overwrite each other's external ID, which reports as success.
-#     The second and third are reported as duplicates instead.
+#   - It never picks one when the agency does not decide it. Several candidates,
+#     or none, is reported for human review.
+#   - It never lets two Airtable rows claim the same Salesforce Account. The
+#     claimed record leaves the pool, and the second row is reported as a
+#     duplicate rather than silently overwriting the first one's external ID.
 #
 # NOTE the parent must actually be populated in the target org for this to fire.
 # A sandbox rebuilt by Invoke-AccountBootstrap.ps1 can be missing the parent on
@@ -145,13 +138,11 @@ $SfByName = [System.Collections.Generic.Dictionary[string, System.Collections.Ge
 # correct in production.
 # ------------------------------------------------------------
 
-# Every unclaimed record keyed "<name>|<parent name>", kept intact for
-# diagnostics after $SfByName has had claimed records removed from it.
-$SfByNameAndParent = [System.Collections.Generic.Dictionary[string, System.Collections.Generic.List[object]]]::new()
-
 # Salesforce Id -> the Airtable row that claimed it, so a later row colliding on
 # the same record can be told exactly which row beat it to it.
 $ClaimedBy = [System.Collections.Generic.Dictionary[string, object]]::new()
+
+$UnclaimedAccounts = [System.Collections.Generic.List[object]]::new()
 
 foreach ($SfAccount in $SalesforceAccounts) {
     if (-not [string]::IsNullOrWhiteSpace($SfAccount.LDGCRM_External_ID__c)) {
@@ -159,22 +150,27 @@ foreach ($SfAccount in $SalesforceAccounts) {
         continue
     }
 
-    $NormalizedName = Get-NormalizedName -Name $SfAccount.Name
+    # Flatten Parent.Name so the shared index sees the same shape whether the
+    # Accounts came from a SOQL query or from the production export.
+    $ParentName = ""
+    if ($SfAccount.Parent -and $SfAccount.Parent.Name) { $ParentName = $SfAccount.Parent.Name }
+    $SfAccount | Add-Member -NotePropertyName ParentName -NotePropertyValue $ParentName -Force
 
-    if (-not $SfByName.ContainsKey($NormalizedName)) {
-        $SfByName[$NormalizedName] = [System.Collections.Generic.List[object]]::new()
-    }
-
-    $SfByName[$NormalizedName].Add($SfAccount)
-
-    $ParentKey = $NormalizedName + "|" + (Get-NormalizedName -Name $SfAccount.Parent.Name)
-
-    if (-not $SfByNameAndParent.ContainsKey($ParentKey)) {
-        $SfByNameAndParent[$ParentKey] = [System.Collections.Generic.List[object]]::new()
-    }
-
-    $SfByNameAndParent[$ParentKey].Add($SfAccount)
+    $UnclaimedAccounts.Add($SfAccount)
 }
+
+# THE MATCHING RULES NOW LIVE IN Common.AccountMatching.ps1, shared with
+# Build-AccountCreationLoad.ps1 so both answer "is this the same office?"
+# identically. They used to be implemented here alone, and the creation pass
+# answered differently - which is how a Housing and Urban Development row came
+# to own Commerce's Account.
+$Index = New-LdgcrmAccountIndex -Accounts $UnclaimedAccounts.ToArray()
+
+# Loose "<name>|<parent>" -> the Airtable row that claimed it. Once an Account
+# is claimed it leaves the index entirely, so a second Airtable row for the same
+# office finds nothing and would otherwise be reported as "no such Account".
+# This keeps the far more useful finding: two Airtable rows describe one office.
+$ClaimedByNameParent = @{}
 
 # ============================================================
 # RECONCILE
@@ -190,12 +186,7 @@ $ParentResolvedCount = 0
 foreach ($AirtableRow in $AirtableAccounts) {
     $RecId = $AirtableRow.id
     $AtName = $AirtableRow.fields.Name
-    $RawSegment = $AirtableRow.fields.'Market Segment'
-    $AtSegment = $RawSegment
-
-    if ($RawSegment -and $MarketSegmentMap.ContainsKey($RawSegment)) {
-        $AtSegment = $MarketSegmentMap[$RawSegment]
-    }
+    $AtSegment = Get-LdgcrmMarketSegmentName -AirtableValue $AirtableRow.fields.'Market Segment'
 
     $DesiredType = if ($AirtableRow.fields.'States + DC/PR') { "State" } else { "Federal" }
 
@@ -207,42 +198,69 @@ foreach ($AirtableRow in $AirtableAccounts) {
         $MatchType = "ExternalId"
     }
     else {
-        $NormalizedName = Get-NormalizedName -Name $AtName
-        $Candidates = $null
-
-        if ($SfByName.ContainsKey($NormalizedName)) {
-            $Candidates = $SfByName[$NormalizedName]
-        }
-
         # Airtable's Parent is a plain-text agency name (not a linked record).
         $AtParent = @($AirtableRow.fields.Parent) | Select-Object -First 1
-        $NormalizedParent = Get-NormalizedName -Name $AtParent
+        $ClaimKey = (Get-LdgcrmNameLoose -Name $AtName) + "|" + (Get-LdgcrmNameLoose -Name $AtParent)
 
-        if (-not $Candidates -or $Candidates.Count -eq 0) {
-            # Before calling it unmatched: did an EARLIER Airtable row already
-            # claim the Account this one would have matched? If so these two
-            # Airtable rows describe the same office and one is a duplicate -
-            # a materially different finding from "no such Account exists".
-            $ClaimedHit = $null
+        $Resolution = Resolve-LdgcrmAccount -Index $Index -Name $AtName -ParentName $AtParent
 
-            if ($NormalizedParent -and $SfByNameAndParent.ContainsKey($NormalizedName + "|" + $NormalizedParent)) {
-                foreach ($Cand in $SfByNameAndParent[$NormalizedName + "|" + $NormalizedParent]) {
-                    if ($ClaimedBy.ContainsKey($Cand.Id)) { $ClaimedHit = $Cand; break }
-                }
+        if ($Resolution.Verdict -eq "Match") {
+            $MatchedSfAccount = $Resolution.Account
+            $MatchType = "Name"
+
+            # Anything the plain name alone would not have found was resolved by
+            # the agency - either by narrowing to its subtree or by the suffix
+            # convention. Counted so the run reports how much work that did.
+            if ($Resolution.Route -notlike "exact name*") { $ParentResolvedCount++ }
+
+            Remove-LdgcrmAccountFromIndex -Index $Index -Account $MatchedSfAccount
+            $ClaimedBy[$MatchedSfAccount.Id] = [PSCustomObject]@{
+                AirtableRecordId = $RecId
+                AirtableName     = $AtName
             }
-
-            if ($ClaimedHit) {
-                $Winner = $ClaimedBy[$ClaimedHit.Id]
+            $ClaimedByNameParent[$ClaimKey] = [PSCustomObject]@{
+                AirtableRecordId = $RecId
+                Account          = $MatchedSfAccount
+            }
+        }
+        elseif ($Resolution.Verdict -eq "Confirm") {
+            $AmbiguousRows.Add([PSCustomObject]@{
+                AirtableRecordId       = $RecId
+                AirtableName           = $AtName
+                AirtableParent         = $AtParent
+                AirtableMarketSegment  = $AtSegment
+                AirtableDesiredType    = $DesiredType
+                CandidateSalesforceIds = (@($Resolution.Candidates | ForEach-Object {
+                                            if ($_.PSObject.Properties.Name -contains 'Account') { $_.Account.Id } else { $_.Id }
+                                        }) -join "; ")
+                Reason                 = "$($Resolution.Route). The migration will not guess between them - a human must decide."
+            })
+            continue
+        }
+        else {
+            # Before calling it unmatched: did an EARLIER Airtable row already
+            # claim the Account this one describes? If so these two rows are the
+            # same office, which is a materially different finding from "no such
+            # Account exists" - and the one the data owners can act on.
+            if ($ClaimedByNameParent.ContainsKey($ClaimKey)) {
+                $Winner = $ClaimedByNameParent[$ClaimKey]
                 $AmbiguousRows.Add([PSCustomObject]@{
                     AirtableRecordId       = $RecId
                     AirtableName           = $AtName
                     AirtableParent         = $AtParent
                     AirtableMarketSegment  = $AtSegment
                     AirtableDesiredType    = $DesiredType
-                    CandidateSalesforceIds = $ClaimedHit.Id
-                    Reason                 = "DUPLICATE AIRTABLE ROW. Salesforce Account $($ClaimedHit.Id) ('$($ClaimedHit.Name)' under '$($ClaimedHit.Parent.Name)') was already matched by Airtable row $($Winner.AirtableRecordId). Both rows describe the same office - merge them in Airtable."
+                    CandidateSalesforceIds = $Winner.Account.Id
+                    Reason                 = "DUPLICATE AIRTABLE ROW. Salesforce Account $($Winner.Account.Id) ('$($Winner.Account.Name)' under '$($Winner.Account.ParentName)') was already matched by Airtable row $($Winner.AirtableRecordId). Both rows describe the same office - merge them in Airtable."
                 })
                 continue
+            }
+
+            $RuledOut = ""
+            if ($Resolution.Candidates -and @($Resolution.Candidates).Count -gt 0) {
+                $RuledOut = " Ruled out: " + (@($Resolution.Candidates | ForEach-Object {
+                    if ($_.PSObject.Properties.Name -contains 'Account') { $_.Account.Name } else { $_.Name }
+                }) -join "; ") + "."
             }
 
             $UnmatchedRows.Add([PSCustomObject]@{
@@ -251,64 +269,9 @@ foreach ($AirtableRow in $AirtableAccounts) {
                 AirtableParent        = $AtParent
                 AirtableMarketSegment = $AtSegment
                 AirtableDesiredType   = $DesiredType
-                Reason                 = "No existing Salesforce Account with this external ID or an exact Name match. Needs human review - do not auto-create."
+                Reason                = "$($Resolution.Route).$RuledOut Needs an Account creating - see Build-AccountCreationLoad.ps1."
             })
             continue
-        }
-
-        if ($Candidates.Count -gt 1) {
-            # Narrow by parent agency. Only an EXACTLY-one result is a match;
-            # zero or several leaves the row ambiguous, as before.
-            $ParentMatches = @()
-
-            if ($NormalizedParent) {
-                $ParentMatches = @($Candidates | Where-Object {
-                    (Get-NormalizedName -Name $_.Parent.Name) -eq $NormalizedParent
-                })
-            }
-
-            if ($ParentMatches.Count -ne 1) {
-                $SfParents = @($Candidates | ForEach-Object {
-                    if ($_.Parent.Name) { $_.Parent.Name } else { "(no parent set)" }
-                }) -join ", "
-
-                $Why = if (-not $NormalizedParent) {
-                    "Airtable names no Parent for this row, so there is nothing to disambiguate with."
-                }
-                elseif ($ParentMatches.Count -eq 0) {
-                    "Airtable says the parent is '$AtParent', but no candidate sits under that agency (they sit under: $SfParents). Either the Salesforce Account for that agency's office does not exist, or Airtable's Parent is wrong."
-                }
-                else {
-                    "$($ParentMatches.Count) candidates share BOTH this Name and the parent '$AtParent'."
-                }
-
-                $AmbiguousRows.Add([PSCustomObject]@{
-                    AirtableRecordId       = $RecId
-                    AirtableName           = $AtName
-                    AirtableParent         = $AtParent
-                    AirtableMarketSegment  = $AtSegment
-                    AirtableDesiredType    = $DesiredType
-                    CandidateSalesforceIds = ($Candidates | ForEach-Object { $_.Id }) -join "; "
-                    Reason                 = "$($Candidates.Count) unclaimed Salesforce Accounts share this Name. $Why"
-                })
-                continue
-            }
-
-            $MatchedSfAccount = $ParentMatches[0]
-            $MatchType = "NameAndParent"
-        }
-        else {
-            $MatchedSfAccount = $Candidates[0]
-            $MatchType = "Name"
-        }
-
-        # Claim it so a later duplicate-name row can't match it too. Removed by
-        # identity, not by index - with parent matching the winner is not
-        # necessarily the first candidate in the list.
-        [void]$SfByName[$NormalizedName].Remove($MatchedSfAccount)
-        $ClaimedBy[$MatchedSfAccount.Id] = [PSCustomObject]@{
-            AirtableRecordId = $RecId
-            AirtableName     = $AtName
         }
     }
 

@@ -143,6 +143,10 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "Common.ps1")
 . (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
+# For Get-LdgcrmAccountDepth / Get-LdgcrmAccountLevel - the same depth-to-level
+# ladder the Account creation transform uses, so a bootstrapped sandbox and a
+# migrated Account agree on what "Level 3" means.
+. (Join-Path $PSScriptRoot "Common.AccountMatching.ps1")
 
 $OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
@@ -194,6 +198,25 @@ function Get-OrgAccountIndex {
     }
 
     return $Index
+}
+
+function Get-OrgAccountIdMap {
+    <#
+        Re-keys the name-indexed org Accounts by Id, so a record's depth can be
+        measured by walking ParentId.
+
+        Built from the index that was already read rather than querying again -
+        the bootstrap re-reads the org once per pass, and a second query per
+        pass would double the cost to answer a question the first one already
+        contains.
+    #>
+    param([Parameter(Mandatory = $true)]$Index)
+
+    $ById = @{}
+    foreach ($Key in $Index.Keys) {
+        foreach ($Account in $Index[$Key]) { $ById[$Account.Id] = $Account }
+    }
+    return $ById
 }
 
 function Get-UniqueOrgAccount {
@@ -785,6 +808,10 @@ for ($Pass = 1; $Pass -le $MaxPasses; $Pass++) {
     $StillPending = [System.Collections.Generic.List[object]]::new()
     $QueuedUpdateIds = @{}
 
+    # Rebuilt each pass, from the index this pass just read, so a parent
+    # inserted by the previous pass is already walkable.
+    $AccountsById = Get-OrgAccountIdMap -Index $AccountIndex
+
     # The review lists ACCUMULATE across passes - they are never cleared. A row
     # is only ever added to one of them at the moment it is dropped from
     # $Pending, so it can be reported at most once; clearing per pass would
@@ -915,11 +942,30 @@ for ($Pass = 1; $Pass -le $MaxPasses; $Pass++) {
                 $OwnerUnresolvedCount++
             }
 
+            # Account_Level__c is DERIVED FROM DEPTH, not copied from the
+            # export. Two reasons, and the second is a hard blocker:
+            #
+            #   1. The export's own value is inconsistent - 40 rows say
+            #      "Level 3 or below", 11 of which have no parent at all.
+            #   2. The field is a RESTRICTED picklist and the Federal record
+            #      type assigns only Level 1-4+. "Level 3 or below" is NOT
+            #      assigned, so loading the export verbatim would fail those
+            #      rows with INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST - the
+            #      record-type narrowing that sf sobject describe does not show.
+            #
+            # Depth only ever produces the four values the record type accepts,
+            # and it is the same ladder Build-AccountCreationLoad.ps1 uses.
+            $Depth = 0
+            if ($ParentId) {
+                $Depth = (Get-LdgcrmAccountDepth -AccountsById $AccountsById -AccountId $ParentId) + 1
+            }
+
             $InsertRows.Add([PSCustomObject][ordered]@{
-                Name         = $Row.Name
-                RecordTypeId = $RecordTypeIdByName[(Get-NormalizedName -Name $Row.RecordType)]
-                ParentId     = $ParentId
-                OwnerId      = $OwnerId
+                Name             = $Row.Name
+                RecordTypeId     = $RecordTypeIdByName[(Get-NormalizedName -Name $Row.RecordType)]
+                ParentId         = $ParentId
+                OwnerId          = $OwnerId
+                Account_Level__c = (Get-LdgcrmAccountLevel -Depth $Depth)
             })
             continue
         }
@@ -1172,6 +1218,70 @@ if (-not $PlanOnly) {
     if ($TotalInsertFailed -gt 0 -or $TotalUpdateFailed -gt 0) {
         Write-Host ("{0,-40} {1,8:N0}" -f "Insert row failures", $TotalInsertFailed) -ForegroundColor Red
         Write-Host ("{0,-40} {1,8:N0}" -f "Parent-link row failures", $TotalUpdateFailed) -ForegroundColor Red
+    }
+
+    # ------------------------------------------------------------
+    # ACCOUNT LEVEL BACKFILL
+    #
+    # Runs AFTER every pass, not during them, for two reasons: a record's level
+    # depends on the finished hierarchy, and the Accounts that most need it are
+    # the ones this run never inserted. The insert path sets the level on new
+    # records; an Account that already existed is otherwise left blank for ever,
+    # which is how the sandbox came to carry 681 blanks against a production org
+    # where the field is populated on every row.
+    #
+    # Only ever CORRECTS a blank or a wrong value - the same "fill in, do not
+    # overwrite a considered answer" rule the parent linking follows.
+    # ------------------------------------------------------------
+    Write-Host ""
+    Write-Host "Backfilling Account_Level__c from the finished hierarchy..." -ForegroundColor Cyan
+
+    $LevelRows = @(Invoke-SalesforceQuery `
+        -Soql "SELECT Id, ParentId, Account_Level__c FROM Account" `
+        -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
+
+    $LevelById = @{}
+    foreach ($Account in $LevelRows) { $LevelById[$Account.Id] = $Account }
+
+    $LevelFixes = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($Account in $LevelRows) {
+        $Depth   = Get-LdgcrmAccountDepth -AccountsById $LevelById -AccountId $Account.Id
+        $Derived = Get-LdgcrmAccountLevel -Depth $Depth
+
+        if ($Account.Account_Level__c -eq $Derived) { continue }
+
+        $LevelFixes.Add([PSCustomObject]@{
+            Id               = $Account.Id
+            Account_Level__c = $Derived
+        })
+    }
+
+    Write-Host ("{0,-40} {1,8:N0}" -f "Accounts read", $LevelRows.Count)
+    Write-Host ("{0,-40} {1,8:N0}" -f "Levels to set or correct", $LevelFixes.Count)
+
+    if ($LevelFixes.Count -eq 0) {
+        Write-Host "  Every Account already carries the level its depth implies." -ForegroundColor Green
+    }
+    elseif ($PlanOnly) {
+        Write-Host "  -PlanOnly: not written." -ForegroundColor Yellow
+    }
+    else {
+        $LevelFile = Join-Path $RunDirectory "account-level-backfill.csv"
+        Export-DataLoaderCsv -InputObject $LevelFixes.ToArray() -Path $LevelFile
+
+        $LevelResult = Invoke-BulkCsv -Subcommand "update" -CsvFile $LevelFile -Org $OrgAlias -Version $ApiVersion -Wait $WaitMinutes
+        $LevelCounts = Get-BulkCounts -Result $LevelResult
+        $LevelOk = $LevelCounts.Processed - $LevelCounts.Failed
+
+        Write-Host ("  levels set {0:N0}, failed {1:N0} (job {2})" -f $LevelOk, $LevelCounts.Failed, $LevelCounts.JobId)
+
+        if ($LevelCounts.Failed -gt 0) {
+            # The likeliest cause is a record type that does not assign the
+            # value - Account_Level__c is a RESTRICTED picklist and only the
+            # Federal record type carries the full Level 1-4+ ladder.
+            Write-Host "  Row failures - see: sf data bulk results --job-id $($LevelCounts.JobId) --target-org $OrgAlias" -ForegroundColor Yellow
+        }
     }
 
     Write-Host ""

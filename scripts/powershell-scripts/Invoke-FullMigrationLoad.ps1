@@ -159,9 +159,28 @@ $Steps = @(
         Why = "Independent parent - no lookups, so it can go first."
     }
     [ordered]@{
+        # BEFORE the reconciliation, and that order is load-bearing. These
+        # Accounts do not exist yet, so the reconciliation cannot match them;
+        # creating them first means the very next step tags them with their
+        # external ID and sets Market Segment and Type in the same run. Run the
+        # other way round and every created Account stays untagged until
+        # somebody runs the pipeline a second time.
+        #
+        # INSERT, not upsert: LDGCRM_External_ID__c is externalId=true but
+        # unique=false on Account, so an upsert cannot key on it reliably, and
+        # these records are by definition absent.
+        #
+        # The transform only proposes an Account after sweeping the whole org -
+        # see Build-AccountCreationLoad.ps1. Run it with -PlanOnly to see what
+        # would be created without creating anything.
+        Name = "AccountCreate"; Build = "Build-AccountCreationLoad.ps1"
+        Object = "Account"; Csv = "Account-insert.csv"; Operation = "Insert"
+        Why = "Creates the Accounts Airtable needs that the org does not have. Must precede the reconciliation, which tags them."
+    }
+    [ordered]@{
         Name = "Account"; Build = "Build-AccountReconciliation.ps1"
         Object = "Account"; Csv = "Account-update.csv"; Operation = "Update"
-        Why = "UPDATE, not upsert - Accounts pre-exist and are matched, never created."
+        Why = "UPDATE, not upsert - matches Airtable rows onto Accounts that already exist, including any just created."
     }
     [ordered]@{
         Name = "PartnerAccount"; Build = "Build-PartnerAccountLoad.ps1"
