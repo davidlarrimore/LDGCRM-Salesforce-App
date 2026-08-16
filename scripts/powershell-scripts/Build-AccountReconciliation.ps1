@@ -354,8 +354,8 @@ if ($DuplicateAirtableRows.Count -gt 0) {
 if ($ParentResolvedCount -eq 0 -and $AmbiguousRows.Count -gt 0) {
     Write-Host ""
     Write-Host "Parent-agency matching resolved nothing this run." -ForegroundColor Yellow
-    Write-Host "If the ambiguous rows say '(no parent set)', the target org is missing" -ForegroundColor Yellow
-    Write-Host "the Account hierarchy - see Invoke-AccountBootstrap.ps1 and docs/TROUBLESHOOTING.md." -ForegroundColor Yellow
+    Write-Host "Ambiguous rows reading '(no parent set)' mean the org has no Account" -ForegroundColor Yellow
+    Write-Host "hierarchy. See Invoke-AccountBootstrap.ps1, docs/TROUBLESHOOTING.md." -ForegroundColor Yellow
 }
 Write-Host ""
 

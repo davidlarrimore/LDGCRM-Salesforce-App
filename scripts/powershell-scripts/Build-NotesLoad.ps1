@@ -326,8 +326,7 @@ if ($NewRows.Count -gt 0) {
     Write-Host "Staging file (NOT loadable directly - see below):" -ForegroundColor Cyan
     Write-Host $StagingFile
     Write-Host ""
-    Write-Host "This file carries BOTH the note and its parent link, which are two" -ForegroundColor Yellow
-    Write-Host "different objects. Load it with the orchestrator, not Invoke-SalesforceLoad:" -ForegroundColor Yellow
+    Write-Host "Carries the note and its parent link (two objects). Load with:" -ForegroundColor Yellow
     Write-Host "  scripts\powershell-scripts\Invoke-NotesLoad.ps1 -Environment $Environment" -ForegroundColor DarkGray
 }
 

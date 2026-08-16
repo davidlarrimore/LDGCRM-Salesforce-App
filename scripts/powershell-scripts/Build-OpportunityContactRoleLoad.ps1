@@ -86,8 +86,8 @@ Write-Host "============================================================" -Foreg
 Write-Host " OPPORTUNITY CONTACT ROLE PREP (Airtable -> $OrgAlias)" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "No external-ID upsert is possible on this object - this builds an" -ForegroundColor Yellow
-Write-Host "INSERT file by diffing against what already exists. Read-only so far." -ForegroundColor Yellow
+Write-Host "Builds an INSERT file by diffing against existing rows (no upsert on this" -ForegroundColor Yellow
+Write-Host "object). Reads Salesforce - writes local files only." -ForegroundColor Yellow
 Write-Host ""
 
 $AirtableOpportunityContacts = Import-AirtableTable -Label "Opportunity Contacts"

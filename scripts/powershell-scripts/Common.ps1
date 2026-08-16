@@ -15,6 +15,14 @@
 # sandbox, and now means production).
 . (Join-Path $PSScriptRoot "Common.Orgs.ps1")
 
+# Suppress the Salesforce CLI's "update available" banner. It writes to stderr
+# on every invocation, so a run interleaves hundreds of copies through the
+# output. Suppressing it here is the only safe fix: redirecting stderr (2>&1,
+# 2>$null) makes PS 5.1 wrap each line in an ErrorRecord and kill the script.
+# Process-scoped, so nothing outside this run is affected.
+$env:SF_SKIP_NEW_VERSION_CHECK = "true"
+$env:SF_AUTOUPDATE_DISABLE = "true"
+
 function Get-LdgcrmRoot {
     <#
         THE BUNDLE ROOT - the one folder everything operational lives under.

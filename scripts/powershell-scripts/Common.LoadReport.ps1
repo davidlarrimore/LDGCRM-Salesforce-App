@@ -57,14 +57,10 @@
 # Review-CSV name fragment -> what kind of finding it is. Matched as a
 # substring, longest first, so "-portal-team-review-" wins over "-review-".
 #
-# THREE KINDS, because they need three different reactions:
-#   Withheld - rows that never reached Salesforce. The invisible category, and
-#              the one to read first: these are records missing from the CRM
-#              that no load error will ever mention.
-#   Review   - the pipeline refused to guess and wants a human. Ambiguous
-#              matches, unresolved owners, conflicting values.
-#   Caveat   - loaded, but something was derived, dropped or truncated on the
-#              way in. Correct-by-design, worth spot-checking.
+# Kinds, by what happened to the row:
+#   Withheld - not submitted to Salesforce.
+#   Review   - not submitted; written to a review CSV instead.
+#   Caveat   - submitted and loaded, with a value derived, dropped or truncated.
 $Script:LoadFindingKinds = [ordered]@{
     "-domain-inferred-account-" = @{ Kind = "Review";   Label = "Account inferred from email domain" }
     "-portal-team-conflicts-"   = @{ Kind = "Review";   Label = "Conflicting portal team" }
@@ -487,19 +483,18 @@ function Write-LoadRunReport {
         (($SummaryRows | Measure-Object Failed -Sum).Sum),
         (($SummaryRows | Measure-Object Withheld -Sum).Sum))
     Add-Line ""
-    Add-Line "  WITHHELD counts rows the transform never submitted. They are NOT load errors -"
-    Add-Line "  Salesforce never saw them - so nothing else in a load result will mention them."
+    Add-Line "  NOT SUBMITTED = the transform did not send the row. No load error refers to these."
     Add-Line ""
 
     # 2. LOAD FAILURES
     Add-Line $Line
-    Add-Line " 2. LOAD FAILURES - rows Salesforce rejected"
+    Add-Line " 2. ROWS REJECTED BY SALESFORCE"
     Add-Line $Line
     $UnexpectedErrors = @($ErrorRows | Where-Object { $_.Classification -eq "UNEXPECTED" })
     $ExpectedErrors = @($ErrorRows | Where-Object { $_.Classification -ne "UNEXPECTED" })
 
     Add-Line ""
-    Add-Line "  UNEXPECTED - no configured cause matches. These stop the run."
+    Add-Line "  UNEXPECTED - no configured cause matched. Stops the run."
     if ($UnexpectedErrors.Count -eq 0) {
         Add-Line "    (none)"
     }
@@ -511,7 +506,7 @@ function Write-LoadRunReport {
     }
 
     Add-Line ""
-    Add-Line "  EXPECTED - a known cause for that object, within its allowance."
+    Add-Line "  EXPECTED - matched a configured cause for that object."
     if ($ExpectedErrors.Count -eq 0) {
         Add-Line "    (none)"
     }
@@ -549,10 +544,10 @@ function Write-LoadRunReport {
     # doesn't appear makes the report look like it lost a section.
     $SectionNumber = 2
     $Sections = @(
-        @{ Kind = "Withheld"; Title = "ROWS WITHHELD - never submitted, so no load error mentions them" }
-        @{ Kind = "Review";   Title = "NEEDS A HUMAN - the pipeline refused to guess" }
-        @{ Kind = "Caveat";   Title = "LOADED WITH A CAVEAT - derived, dropped or truncated on the way in" }
-        @{ Kind = "Other";    Title = "UNCLASSIFIED REVIEW OUTPUT - a finding this report does not recognise" }
+        @{ Kind = "Withheld"; Title = "ROWS NOT SUBMITTED" }
+        @{ Kind = "Review";   Title = "ROWS SENT TO REVIEW" }
+        @{ Kind = "Caveat";   Title = "ROWS LOADED WITH A VALUE CHANGED OR DROPPED" }
+        @{ Kind = "Other";    Title = "REVIEW FILES NOT CLASSIFIED" }
     )
 
     foreach ($Section in $Sections) {
@@ -601,7 +596,7 @@ function Write-LoadRunReport {
 
     $SectionNumber++
     Add-Line $Line
-    Add-Line (" {0}. POST-LOAD VALIDATION - the failures a success count cannot show" -f $SectionNumber)
+    Add-Line (" {0}. POST-LOAD VALIDATION" -f $SectionNumber)
     Add-Line $Line
     if ($null -eq $Validation) {
         Add-Line "  (not run - see Mode above)"
@@ -622,23 +617,22 @@ function Write-LoadRunReport {
 
     $SectionNumber++
     Add-Line $Line
-    Add-Line (" {0}. WHERE TO LOOK NEXT" -f $SectionNumber)
+    Add-Line (" {0}. RUN OUTPUT" -f $SectionNumber)
     Add-Line $Line
     # Everything this run produced is in ONE folder, so this is a list of file
     # names rather than a tour of four directories - which is the whole point of
     # the 2026-08-13 consolidation.
-    Add-Line ("  Everything from this run is in:")
     Add-Line ("    {0}" -f $RunDirectory)
     Add-Line ""
     Add-Line ("    SUMMARY.txt                    this report")
     Add-Line ("    load-summary.csv               one row per step")
-    Add-Line ("    errors.csv                     one row per distinct error, classified")
+    Add-Line ("    errors.csv                     one row per distinct error")
     Add-Line ("    findings.csv                   one row per review CSV")
-    Add-Line ("    <Script>.log                   each step's full transcript")
-    Add-Line ("    <object>-*-failed-records.csv  the rows Salesforce rejected, with payloads")
-    Add-Line ("    external-ids-*.csv             what existed before - a rollback needs these")
+    Add-Line ("    <Script>.log                   per-step transcript")
+    Add-Line ("    <object>-*-failed-records.csv  rejected rows, with payloads")
+    Add-Line ("    external-ids-*.csv             pre-run external IDs, required by a rollback")
     Add-Line ""
-    Add-Line "  A clean report is not a verified migration. Walk docs/RELOAD-QA-CHECKLIST.md."
+    Add-Line "  Verification steps: docs/RELOAD-QA-CHECKLIST.md"
     Add-Line ""
 
     $Text = ($Out -join [Environment]::NewLine)

@@ -105,26 +105,14 @@ param(
     [switch]$ActivateFlows,
 
     <#
-        Run the full readiness check (Test-LdgcrmReadiness.ps1) BEFORE pre-flight,
-        and stop if it reports any failure.
+        Run Test-LdgcrmReadiness.ps1 before pre-flight and stop on any failure.
 
-        Pre-flight and readiness answer different questions and neither replaces
-        the other. Pre-flight asks "will this run behave correctly?" - Flows,
-        duplicate rules, the trigger switch, the fallback owner - and it always
-        runs, whether or not this switch is passed. Readiness asks the broader
-        "is this machine, this Airtable pull and this ORG SHAPE ready at all?":
-        every field the transforms write exists and is writable, every Migration
-        table was pulled and has rows, the identity-platform columns still have
-        the shape the transform expects, and which environments you can reach.
+        Readiness checks the bundle, the Airtable pull and the org's SHAPE -
+        every field a load writes exists and is writable, every Migration table
+        was pulled. Pre-flight checks run-time state (Flows, duplicate rules,
+        trigger switch) and runs with or without this switch.
 
-        Off by default because it costs one describe per object (~30s) and
-        repeats work on a pipeline you have already run today. Worth passing on
-        the first load into an org you have not loaded before, after a change set
-        lands, or any time you are about to write to QA/Full/Prod - those are
-        precisely the cases where a field exists in Dev and nowhere else.
-
-        Read-only. It cannot fix anything, and passing it does not disarm any
-        pre-flight check.
+        Off by default: costs one describe per object, roughly 30s. Read-only.
     #>
     [switch]$Readiness
 )
@@ -268,10 +256,7 @@ $Steps = @(
     }
 )
 
-# The nine flows that must be active, and the Dev-only flow that must not
-# escape. Both lists moved to Common.DataMigration.ps1 on 2026-08-16 so
-# Test-LdgcrmReadiness.ps1 reports on exactly what this script enforces - two
-# copies would drift, and the drift would be invisible from either side.
+# Defined in Common.DataMigration.ps1, shared with Test-LdgcrmReadiness.ps1.
 $ExpectedActiveFlows = @(Get-LdgcrmExpectedActiveFlows)
 $DevOnlyFlows = @(Get-LdgcrmDevOnlyFlows)
 
@@ -281,10 +266,9 @@ function Get-StepProperty {
     return $Default
 }
 
-# Invoke-LdgcrmToolingQuery and Get-LdgcrmFlowState moved to
-# Common.DataMigration.ps1 on 2026-08-16 - both are read-only and are now shared
-# with Test-LdgcrmReadiness.ps1. Set-LdgcrmFlowActiveVersion deliberately stays
-# here: it WRITES, and the readiness check must have no way to reach it.
+# Invoke-LdgcrmToolingQuery and Get-LdgcrmFlowState live in
+# Common.DataMigration.ps1 (read-only, shared with the readiness check).
+# Set-LdgcrmFlowActiveVersion stays here because it writes.
 
 function Set-LdgcrmFlowActiveVersion {
     <#
@@ -454,13 +438,13 @@ function Disable-LdgcrmContactDuplicateRules {
         Where-Object { "$($_.IsActive)" -eq "true" })
 
     if ($ActiveDuplicates.Count -eq 0) {
-        Write-Host "  Contact dup rules      none active - nothing to switch off"
+        Write-Host "  Contact dup rules      none active"
         return $Outcome
     }
 
     Write-Host ""
     Write-Host ("  Switching off $($ActiveDuplicates.Count) active Contact duplicate rule(s) in $Org.") -ForegroundColor Yellow
-    Write-Host "  THIS IS PERMANENT. Nothing restores them afterwards - they are meant to stay off." -ForegroundColor Yellow
+    Write-Host "  Permanent: these are not restored after the load." -ForegroundColor Yellow
 
     $RuleRoot = Join-Path $WorkDirectory "contact-duplicate-rules"
     New-Item -ItemType Directory -Path $RuleRoot -Force | Out-Null
@@ -749,9 +733,7 @@ function Invoke-PreflightChecks {
     if ($ActivateFlows -and $Activatable.Count -gt 0) {
         Write-Host ""
         Write-Host "  -ActivateFlows: switching on $($Activatable.Count) flow(s) in $Org." -ForegroundColor Yellow
-        Write-Host "  THIS IS PERMANENT. Unlike the TriggerControls__c bypass nothing is restored" -ForegroundColor Yellow
-        Write-Host "  afterwards - a flow switched on for the load must stay on, or the org goes" -ForegroundColor Yellow
-        Write-Host "  back to producing wrong data for every record created in the UI." -ForegroundColor Yellow
+        Write-Host "  Permanent: these are not switched back off after the load." -ForegroundColor Yellow
         Write-Host ""
 
         foreach ($F in $Activatable) {
@@ -1596,14 +1578,8 @@ if ($ActivateFlows -and $Environment -eq "Prod") {
 }
 
 # --- optional readiness check ----------------------------------------------
-# Runs BEFORE pre-flight because it answers the earlier question: pre-flight
-# assumes the org is shaped correctly and checks whether the run will BEHAVE;
-# readiness checks the shape itself. A missing field is worth finding before
-# anything reads an Airtable export.
-#
-# Deliberately a child process, not an inlined copy of the checks: one
-# implementation, and it stays runnable on its own by an operator who just wants
-# to know where they stand. Read-only, so it runs identically under -PlanOnly.
+# Runs before pre-flight: it checks org shape, pre-flight checks run-time state.
+# Child process so there is one implementation and it stays runnable standalone.
 if ($Readiness) {
     Write-Host ""
     Write-Host "============================================================" -ForegroundColor Cyan
@@ -1617,9 +1593,8 @@ if ($Readiness) {
     if ($ReadinessCode -ne 0) {
         Write-Host ""
         Write-Host "READINESS CHECK FAILED - nothing was run." -ForegroundColor Red
-        Write-Host "Fix the failures listed above, or re-run without -Readiness to skip it." -ForegroundColor Yellow
-        # Not honoured by -ContinueOnError. That switch is about a STEP failing
-        # partway through a load; this is a refusal to start at all.
+        Write-Host "Fix the failures above, or re-run without -Readiness." -ForegroundColor Yellow
+        # -ContinueOnError does not apply: that covers a step failing mid-load.
         exit 1
     }
 
@@ -1753,14 +1728,13 @@ foreach ($Step in $Selected) {
             $Stale = $true
             Write-Host ""
             Write-Host ("  {0} was NOT written by this run (last written {1:yyyy-MM-dd HH:mm})." -f $Step.Csv, $Written) -ForegroundColor Yellow
-            Write-Host "  The transform produced no rows, so the file on disk belongs to an earlier" -ForegroundColor Yellow
-            Write-Host "  run. Treating this step as zero rows rather than loading it." -ForegroundColor Yellow
+            Write-Host "  Transform produced no rows. Step counted as 0; file not loaded." -ForegroundColor Yellow
         }
         else {
             $RowCount = @(Import-Csv -LiteralPath $CsvPath).Count
             if (-not $BuildScript -and $Written -lt $RunStart) {
-                Write-Host ("  NOTE: {0} predates this run (last written {1:yyyy-MM-dd HH:mm}) - its" -f $Step.Csv, $Written) -ForegroundColor Yellow
-                Write-Host "  transform did not run in this invocation. Confirm it is the file you want." -ForegroundColor Yellow
+                Write-Host ("  {0} predates this run (last written {1:yyyy-MM-dd HH:mm})." -f $Step.Csv, $Written) -ForegroundColor Yellow
+                Write-Host "  Its transform did not run in this invocation." -ForegroundColor Yellow
             }
         }
     }
@@ -1862,11 +1836,8 @@ foreach ($Result in $Results) {
 Write-Host ""
 
 if ($Partial) {
-    Write-Host "PARTIAL steps loaded successfully with SOME rows rejected, and every" -ForegroundColor Yellow
-    Write-Host "rejection matched a known cause for that object (parent Account not" -ForegroundColor Yellow
-    Write-Host "reconciled, org duplicate rule). That is the documented correct outcome," -ForegroundColor Yellow
-    Write-Host "not a failure - the sequence continued rather than stopping." -ForegroundColor Yellow
-    Write-Host "Per-row detail: <object>-<jobid>-failed-records.csv in this run's directory." -ForegroundColor DarkGray
+    Write-Host "PARTIAL: rows were rejected, all matching a configured cause. Sequence continued." -ForegroundColor Yellow
+    Write-Host "Per-row detail: <object>-<jobid>-failed-records.csv" -ForegroundColor DarkGray
     Write-Host ""
 }
 
@@ -1885,10 +1856,8 @@ if (-not $PlanOnly -and -not $Failed) {
 
     Write-Host ""
     if ($Problems.Count -gt 0) {
-        Write-Host "POST-LOAD VALIDATION FOUND PROBLEMS:" -ForegroundColor Red
+        Write-Host "POST-LOAD VALIDATION PROBLEMS:" -ForegroundColor Red
         foreach ($Problem in $Problems) { Write-Host "  - $Problem" -ForegroundColor Red }
-        Write-Host ""
-        Write-Host "The load itself reported success. These are the quiet failures." -ForegroundColor Yellow
     }
     else {
         Write-Host "Post-load validation passed." -ForegroundColor Green
@@ -1896,7 +1865,7 @@ if (-not $PlanOnly -and -not $Failed) {
 
     if ($Notices.Count -gt 0) {
         Write-Host ""
-        Write-Host "KNOWN INCOMPLETE - loaded correctly, but data is still missing:" -ForegroundColor Yellow
+        Write-Host "INCOMPLETE - loaded, with known data still missing:" -ForegroundColor Yellow
         foreach ($Notice in $Notices) { Write-Host "  - $Notice" -ForegroundColor Yellow }
         Write-Host ""
         Write-Host "These do not fail the run. They are waiting on something outside this repo." -ForegroundColor DarkGray
@@ -1936,9 +1905,8 @@ catch {
 if ($Failed) {
     $LastStep = $Results[$Results.Count - 1].Step
     Write-Host ""
-    Write-Host "The sequence STOPPED at '$LastStep'." -ForegroundColor Red
-    Write-Host "Everything after it would withhold rows that depend on that step, which is why" -ForegroundColor Yellow
-    Write-Host "it did not continue. Fix the cause, then resume with:" -ForegroundColor Yellow
+    Write-Host "STOPPED at '$LastStep'. Remaining steps did not run." -ForegroundColor Red
+    Write-Host "Resume with:" -ForegroundColor Yellow
     Write-Host ("  Invoke-FullMigrationLoad.ps1 -Environment {0} -StartAtStep {1}" -f $Environment, $LastStep) -ForegroundColor DarkGray
     exit 1
 }
@@ -1948,8 +1916,7 @@ if ($PlanOnly) {
     Write-Host "Restore point and baseline counts: $RunDirectory" -ForegroundColor DarkGray
 }
 else {
-    Write-Host "This is NOT a full verification. Walk docs/RELOAD-QA-CHECKLIST.md - success" -ForegroundColor Cyan
-    Write-Host "counts are not the same as correct data." -ForegroundColor Cyan
+    Write-Host "Verification steps: docs/RELOAD-QA-CHECKLIST.md" -ForegroundColor Cyan
 
     if ($Problems.Count -gt 0) { exit 1 }
 }

@@ -693,10 +693,9 @@ if ($PortalTeamFieldsBlocked) {
     Write-Host "  !! PARTNER PORTAL TEAM COLUMNS WITHHELD FROM THIS LOAD !!" -ForegroundColor Red
     Write-Host ("     LDGCRM_P3_Team_UUID__c unique=$($TeamUuidField.unique), " +
                 "LDGCRM_P3_Partner_Portal_Team_Name__c unique=$($TeamNameField.unique) in $OrgAlias.") -ForegroundColor Yellow
-    Write-Host ("     One portal team legitimately owns many Applications, so $PortalTeamCollisionCount of " +
-                "$($PortalTeamByApplicationId.Count) resolved Applications would fail with DUPLICATE_VALUE.") -ForegroundColor Yellow
-    Write-Host "     CHANGE SET NEEDED: set Unique = false on both fields (they are not External IDs" -ForegroundColor Yellow
-    Write-Host "     and nothing keys on them). Then re-run this script - no code change." -ForegroundColor Yellow
+    Write-Host ("     $PortalTeamCollisionCount of $($PortalTeamByApplicationId.Count) resolved Applications " +
+                "would fail with DUPLICATE_VALUE.") -ForegroundColor Yellow
+    Write-Host "     CHANGE SET NEEDED: set Unique = false on both fields, then re-run." -ForegroundColor Yellow
     Write-Host ""
 }
 else {

@@ -450,7 +450,7 @@ if ($DisableTriggerControl) {
         Write-Host "Disabled." -ForegroundColor Yellow
     }
     else {
-        Write-Host "Already off - leaving it alone (and leaving it off afterwards)." -ForegroundColor Yellow
+        Write-Host "Already off. Left unchanged, and left off afterwards." -ForegroundColor Yellow
     }
 }
 
@@ -561,8 +561,7 @@ if ($LoadInvocation.ExitCode -eq 0) {
 if ($LoadInvocation.ExitCode -ne 0) {
     if (-not $JobId) {
         Write-Host ""
-        Write-Host "The load failed and no job id was returned, so the failures cannot be" -ForegroundColor Red
-        Write-Host "classified. Treating as a real failure." -ForegroundColor Red
+        Write-Host "Load failed. No job id returned, so failures cannot be classified." -ForegroundColor Red
         $LoadFailed = $true
         $StepResult.ErrorMessage = "The load failed and no job id was returned, so the failures could not be classified."
     }
@@ -651,15 +650,13 @@ if ($LoadInvocation.ExitCode -ne 0) {
         }
         elseif ($FailedRows.Count -gt $Allowance) {
             Write-Host ""
-            Write-Host "  All failures match a known cause, but $($FailedRows.Count) exceeds the allowance of $Allowance." -ForegroundColor Red
-            Write-Host "  A known cause at unusual volume means something upstream changed - stopping." -ForegroundColor Red
+            Write-Host "  All failures matched a configured cause, but $($FailedRows.Count) exceeds the allowance of $Allowance. Stopping." -ForegroundColor Red
             $LoadFailed = $true
             $StepResult.ErrorMessage = "All failures match a known cause, but $($FailedRows.Count) exceeds the allowance of $Allowance - a known cause at unusual volume."
         }
         else {
             Write-Host ""
-            Write-Host "  EXPECTED PARTIAL - every failure matches a known cause for this object," -ForegroundColor Yellow
-            Write-Host "  and the count is within the allowance. This is a correct outcome." -ForegroundColor Yellow
+            Write-Host "  EXPECTED PARTIAL - all failures matched a configured cause, within allowance." -ForegroundColor Yellow
             Write-Host "  $($Rows.Count - $FailedRows.Count) of $($Rows.Count) row(s) loaded." -ForegroundColor Green
             $ExpectedPartial = $true
             $StepResult.Outcome = "expected-partial"

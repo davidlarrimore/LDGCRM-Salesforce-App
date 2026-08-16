@@ -1,57 +1,29 @@
 #Requires -Version 5.1
 
 <#
-    THE READINESS CHECK. "Is this machine, this Airtable pull and this org ready
-    for a migration load?" - answered in one command, before anything writes.
+    Readiness check for a migration load. Read-only: queries and describes only,
+    so it takes no confirmation token and runs against any environment including
+    Prod. Fixes nothing - each finding names the command that would.
 
-    READ-ONLY AND UNGATED. It queries and describes; it never inserts, updates,
-    deletes or deploys, so it needs no typed confirmation and is safe against any
-    environment INCLUDING production. That is deliberate: a check an operator
-    hesitates to run is a check nobody runs.
+    Checks:
+      1. Config      .env, Airtable token shape (PAT starts "pat"), data/ and
+                     logs/ writable, production Account export present.
+      2. Airtable    all 10 Migration tables pulled, row counts, export age,
+                     and identity-platform column shape (multi-select, not
+                     rec... ids).
+      3. Environments  each registry entry probed for reachability and identity.
+                     Only the target failing is a FAIL.
+      4. Access      running user, profile, UserType; fallback owner resolves.
+      5. Metadata    each object exists, LDGCRM_External_ID__c is externalId,
+                     and every column in each load CSV resolves to a writable
+                     field. Driven off the CSVs so it tracks what the transforms
+                     currently emit.
+      6. Automation  nine Flows active, Dev-only flow absent outside Dev,
+                     Contact trigger switch, Market Segment resolvability.
+                     Reported here; Invoke-FullMigrationLoad.ps1 enforces them.
 
-    WHY IT EXISTS. The pipeline already had a pre-flight, but only INSIDE
-    Invoke-FullMigrationLoad.ps1 - so the only way to ask "am I ready?" was to
-    start a load. And what it covered was narrow: Flows, duplicate rules, the
-    trigger switch, the fallback owner, export age. It said nothing about whether
-    the fields the transforms write actually EXIST in the target org, which is a
-    real difference between orgs, not a hypothetical - priority_type__c exists in
-    Dev and not at all in QA (CLAUDE.md). A missing field surfaces as a failed
-    step eight objects deep, long after several thousand records have loaded.
-
-    WHAT IT CHECKS, and why each one is here rather than left to the load:
-
-      1. Bundle and configuration - .env, the Airtable token's SHAPE (a PAT
-         starts "pat"; the old "key..." style was removed by Airtable in Feb
-         2024), and that data/ and logs/ are writable.
-      2. Airtable pull - every Migration table present, row counts, age, and the
-         load-bearing COLUMN SHAPES. A stale export can change a column's type,
-         not just its values: Opportunities' identity-platform columns went from
-         linked records to multi-selects, and a transform written for one shape
-         reads the other as garbage.
-      3. Environments - every registry entry probed for reachability and
-         identity. Answers "which orgs can I actually reach from here?", which
-         nothing else does; Assert-LdgcrmOrgTarget only ever checks the single
-         org a script is targeting, at the moment it runs.
-      4. Access - who you are in the target org, and whether you can actually
-         create and update each object. An operator with read-only access to one
-         object fails one step, late.
-      5. Metadata - each object exists, LDGCRM_External_ID__c is still
-         externalId=true, and - when a load CSV is on disk - EVERY COLUMN IN IT
-         resolves to a real, writable field. That last check is deliberately
-         driven off the CSVs rather than a hard-coded field list, so it cannot go
-         stale: whatever the transforms emit today is what gets verified.
-      6. Automation - the nine Flows, the Contact duplicate rules, the trigger
-         kill switch and the fallback owner. Reported here too so one command
-         answers the whole question, but the LOAD still enforces them itself -
-         this is not a substitute for that, and passing here does not disarm it.
-
-    WHAT IT DELIBERATELY DOES NOT DO. It does not fix anything. No flow is
-    activated, no rule disabled, no file re-pulled. Every finding names the
-    command that would fix it and stops there, because a check that repairs what
-    it finds cannot be run to find out what is wrong.
-
-    EXIT CODE: 0 if nothing FAILED (warnings still exit 0), 1 if anything did.
-    Wired into Invoke-FullMigrationLoad.ps1 as -Readiness.
+    Exit 0 unless a check FAILED; warnings exit 0.
+    Runs inside Invoke-FullMigrationLoad.ps1 as -Readiness.
 #>
 
 [CmdletBinding()]
@@ -71,6 +43,9 @@ param(
     # authorized yet, to check the bundle and the Airtable pull alone.
     [switch]$SkipOrgChecks,
 
+    # Print every check, not just the ones that are not PASS.
+    [switch]$Detailed,
+
     # Warn if the newest Airtable JSON is older than this.
     [int]$MaxExportAgeDays = 7,
 
@@ -85,10 +60,11 @@ $ErrorActionPreference = "Stop"
 # ============================================================================
 #  RESULT COLLECTION
 # ============================================================================
-# Everything funnels through Add-Result so the summary, the CSV and the exit
-# code cannot disagree with what was printed.
+# Single path for all findings: printed line, summary, CSV and exit code.
 
 $Script:Results = New-Object System.Collections.Generic.List[object]
+$Script:SectionName = ""
+$Script:SectionStart = 0
 
 function Add-Result {
     param(
@@ -96,9 +72,7 @@ function Add-Result {
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][ValidateSet("PASS", "WARN", "FAIL", "INFO")][string]$Status,
         [string]$Detail = "",
-        # The command or action that would resolve a WARN/FAIL. Printed in the
-        # summary, because "Market Segments not resolvable" is only useful if
-        # you also know which script fixes it.
+        # Command or action that resolves a WARN/FAIL.
         [string]$Fix = ""
     )
 
@@ -109,46 +83,77 @@ function Add-Result {
         Detail   = $Detail
         Fix      = $Fix
     })
+}
 
-    $Colour = "Gray"
-    if ($Status -eq "PASS") { $Colour = "Green" }
-    elseif ($Status -eq "WARN") { $Colour = "Yellow" }
-    elseif ($Status -eq "FAIL") { $Colour = "Red" }
+function Complete-Section {
+    # One line per section. Individual checks print only when not PASS, or with
+    # -Detailed. The CSV always holds every result.
+    if (-not $Script:SectionName) { return }
 
-    Write-Host ("  {0,-6} {1,-44} {2}" -f $Status, $Name, $Detail) -ForegroundColor $Colour
+    $Slice = @($Script:Results | Select-Object -Skip $Script:SectionStart)
+    if ($Slice.Count -eq 0) { return }
+
+    $Fails = @($Slice | Where-Object { $_.Status -eq "FAIL" })
+    $Warns = @($Slice | Where-Object { $_.Status -eq "WARN" })
+    $Infos = @($Slice | Where-Object { $_.Status -eq "INFO" })
+    $Oks   = @($Slice | Where-Object { $_.Status -eq "PASS" })
+
+    $Parts = @("{0} ok" -f $Oks.Count)
+    if ($Warns.Count -gt 0) { $Parts += "{0} warning{1}" -f $Warns.Count, $(if ($Warns.Count -eq 1) { "" } else { "s" }) }
+    if ($Fails.Count -gt 0) { $Parts += "{0} FAILED" -f $Fails.Count }
+    if ($Infos.Count -gt 0) { $Parts += "{0} n/a" -f $Infos.Count }
+
+    $Colour = "Green"
+    if ($Warns.Count -gt 0) { $Colour = "Yellow" }
+    if ($Fails.Count -gt 0) { $Colour = "Red" }
+
+    Write-Host ("  {0,-14} {1}" -f $Script:SectionName, ($Parts -join ", ")) -ForegroundColor $Colour
+
+    # Only what needs action. INFO and PASS are counted, not listed.
+    $Show = if ($Detailed) { $Slice } else { @($Slice | Where-Object { $_.Status -eq "WARN" -or $_.Status -eq "FAIL" }) }
+    foreach ($R in $Show) {
+        $RowColour = "DarkGray"
+        if ($R.Status -eq "WARN") { $RowColour = "Yellow" }
+        elseif ($R.Status -eq "FAIL") { $RowColour = "Red" }
+        Write-Host ("      {0,-5} {1} - {2}" -f $R.Status, $R.Name, $R.Detail) -ForegroundColor $RowColour
+        if ($R.Fix -and ($R.Status -eq "WARN" -or $R.Status -eq "FAIL")) {
+            Write-Host ("            fix: {0}" -f $R.Fix) -ForegroundColor DarkGray
+        }
+    }
 }
 
 function Write-Section {
     param([string]$Title)
-    Write-Host ""
-    Write-Host ("--- {0} " -f $Title).PadRight(92, "-") -ForegroundColor Cyan
+    Complete-Section
+    $Script:SectionName = $Title
+    $Script:SectionStart = $Script:Results.Count
 }
 
 $Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Test-LdgcrmReadiness"
 
 try {
 
-Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host " LDGCRM READINESS CHECK" -ForegroundColor Cyan
-Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "Read-only. Nothing is written, changed or fixed." -ForegroundColor Yellow
-
 $TargetAlias = ""
 if (-not $SkipOrgChecks) {
     $TargetAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
-    Write-Host ("Target: {0} ({1})" -f $Environment, $TargetAlias)
+}
+
+Write-Host ""
+Write-Host "LDGCRM READINESS CHECK" -ForegroundColor Cyan
+if ($SkipOrgChecks) {
+    Write-Host "Read-only. Org checks skipped (-SkipOrgChecks)." -ForegroundColor DarkGray
 }
 else {
-    Write-Host "Target: (org checks skipped)" -ForegroundColor DarkGray
+    Write-Host ("Read-only. Target {0} ({1})." -f $Environment, $TargetAlias) -ForegroundColor DarkGray
 }
+Write-Host ""
 
 $Root = Get-LdgcrmRoot
 
 # ============================================================================
 #  1. BUNDLE AND CONFIGURATION
 # ============================================================================
-Write-Section "1. Bundle and configuration"
+Write-Section "Config"
 
 $EnvFile = Join-Path $Root ".env"
 if (Test-Path -LiteralPath $EnvFile) {
@@ -244,7 +249,7 @@ else {
 # ============================================================================
 #  2. AIRTABLE PULL
 # ============================================================================
-Write-Section "2. Airtable pull"
+Write-Section "Airtable"
 
 $ExportDir = Join-Path $Root "data\airtable-exports"
 $Catalog = @(Get-LdgcrmAirtableTableCatalog)
@@ -361,7 +366,7 @@ else {
 # ============================================================================
 #  3. ENVIRONMENTS
 # ============================================================================
-Write-Section "3. Environments"
+Write-Section "Environments"
 
 if ($SkipOrgChecks) {
     Add-Result -Category "Environment" -Name "Environment probe" -Status "INFO" -Detail "skipped (-SkipOrgChecks)"
@@ -423,7 +428,7 @@ if (-not $SkipOrgChecks) {
     # ------------------------------------------------------------------------
     #  4. ACCESS
     # ------------------------------------------------------------------------
-    Write-Section "4. Salesforce access"
+    Write-Section "Access"
 
     # Identify the running user from the CLI, then look up what that user can
     # actually do. Profile and UserType matter: an ACTIVE user can still be
@@ -467,7 +472,7 @@ if (-not $SkipOrgChecks) {
     # ------------------------------------------------------------------------
     #  5. METADATA
     # ------------------------------------------------------------------------
-    Write-Section "5. Objects, fields and permissions"
+    Write-Section "Metadata"
 
     $LoadDir = Join-Path $Root "data\salesforce-loads"
 
@@ -569,7 +574,7 @@ if (-not $SkipOrgChecks) {
     # ------------------------------------------------------------------------
     # Reported, never changed. The load enforces these itself; duplicating the
     # enforcement here would mean two places to keep honest.
-    Write-Section "6. Automation (reported - the load enforces these itself)"
+    Write-Section "Automation"
 
     try {
         $Segments = @(Invoke-SalesforceQuery `
@@ -679,50 +684,28 @@ if (-not $SkipOrgChecks) {
 # ============================================================================
 #  SUMMARY
 # ============================================================================
+Complete-Section
+
 $Failed = @($Script:Results | Where-Object { $_.Status -eq "FAIL" })
 $Warned = @($Script:Results | Where-Object { $_.Status -eq "WARN" })
 $Passed = @($Script:Results | Where-Object { $_.Status -eq "PASS" })
-
-Write-Host ""
-Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host " READINESS SUMMARY" -ForegroundColor Cyan
-Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host ("  Passed   {0}" -f $Passed.Count) -ForegroundColor Green
-Write-Host ("  Warnings {0}" -f $Warned.Count) -ForegroundColor Yellow
-Write-Host ("  Failed   {0}" -f $Failed.Count) -ForegroundColor $(if ($Failed.Count -gt 0) { "Red" } else { "Green" })
-
-if ($Warned.Count -gt 0) {
-    Write-Host ""
-    Write-Host "WARNINGS - will not stop a load, but read them:" -ForegroundColor Yellow
-    foreach ($R in $Warned) {
-        Write-Host ("  - [{0}] {1}: {2}" -f $R.Category, $R.Name, $R.Detail) -ForegroundColor Yellow
-        if ($R.Fix) { Write-Host ("      fix: {0}" -f $R.Fix) -ForegroundColor DarkGray }
-    }
-}
-
-if ($Failed.Count -gt 0) {
-    Write-Host ""
-    Write-Host "FAILURES - fix these before loading:" -ForegroundColor Red
-    foreach ($R in $Failed) {
-        Write-Host ("  - [{0}] {1}: {2}" -f $R.Category, $R.Name, $R.Detail) -ForegroundColor Red
-        if ($R.Fix) { Write-Host ("      fix: {0}" -f $R.Fix) -ForegroundColor DarkGray }
-    }
-}
 
 $ReportPath = Join-Path (Get-LogDirectory -Category "data-migration") ("readiness-{0}.csv" -f $Timestamp)
 $Script:Results | Export-Csv -LiteralPath $ReportPath -NoTypeInformation -Encoding UTF8
 
 Write-Host ""
-Write-Host "Full result: $ReportPath"
-Write-Host ""
-
 if ($Failed.Count -gt 0) {
-    Write-Host "NOT READY." -ForegroundColor Red
+    Write-Host ("NOT READY - {0} failed, {1} ok" -f $Failed.Count, $Passed.Count) -ForegroundColor Red
+    Write-Host "All results: $ReportPath" -ForegroundColor DarkGray
     exit 1
 }
 
-Write-Host "READY." -ForegroundColor Green
+$WarnSuffix = ""
+if ($Warned.Count -gt 0) {
+    $WarnSuffix = ", {0} warning{1}" -f $Warned.Count, $(if ($Warned.Count -eq 1) { "" } else { "s" })
+}
+Write-Host ("READY - {0} ok{1}" -f $Passed.Count, $WarnSuffix) -ForegroundColor Green
+Write-Host "All results: $ReportPath" -ForegroundColor DarkGray
 
 }
 finally {

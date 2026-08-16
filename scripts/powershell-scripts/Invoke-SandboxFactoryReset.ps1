@@ -473,10 +473,9 @@ function Invoke-AccountBootstrapStep {
     Write-Host "A production Account export is available:"
     Write-Host "  $ExportPath"
     Write-Host ""
-    Write-Host "The pipeline reconciles onto EXISTING Accounts rather than creating"
-    Write-Host "them, so a cleaned org has nothing for the later loads to attach to."
-    Write-Host "Bootstrapping rebuilds the Account names and their parent hierarchy"
-    Write-Host "(several passes - ParentId is a self-lookup)."
+    Write-Host "Rebuilds Account names and the parent hierarchy from that export."
+    Write-Host "The later loads reconcile onto existing Accounts; without this there"
+    Write-Host "are none to attach to."
     Write-Host ""
 
     if (-not $AlreadyAnswered) {
@@ -838,12 +837,8 @@ foreach ($ObjectApiName in $Objects) {
         Write-Host "Object: $ObjectApiName" -ForegroundColor Red
         Write-Host "Error:  $($_.Exception.Message)" -ForegroundColor Red
         Write-Host ""
-        Write-Host "The script has stopped. Parent objects were not processed." `
-            -ForegroundColor Yellow
-        Write-Host "The Account bootstrap was NOT offered - bootstrapping on top of a" `
-            -ForegroundColor Yellow
-        Write-Host "half-deleted org would confuse the next run's preflight counts." `
-            -ForegroundColor Yellow
+        Write-Host "Stopped. Parent objects were not processed." -ForegroundColor Yellow
+        Write-Host "The Account bootstrap was not offered." -ForegroundColor Yellow
 
         $Results += [PSCustomObject]@{
             Object         = $ObjectApiName

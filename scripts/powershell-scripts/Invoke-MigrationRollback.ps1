@@ -265,9 +265,9 @@ if ((Test-Path -LiteralPath $PostLoadCountsFile) -and -not $PlanOnly) {
         Write-Host "THE ORG HAS CHANGED SINCE THIS RUN FINISHED:" -ForegroundColor Red
         foreach ($Item in $Drift) { Write-Host "  - $Item" -ForegroundColor Red }
         Write-Host ""
-        Write-Host "Rollback is scoped to everything tagged since this run's baseline, so anything" -ForegroundColor Yellow
-        Write-Host "loaded AFTER it would be deleted too, and any record edited since would be" -ForegroundColor Yellow
-        Write-Host "restored over. Re-run with -IgnoreDrift only if you intend exactly that." -ForegroundColor Yellow
+        Write-Host "Rollback covers everything tagged since this run's baseline. Records loaded" -ForegroundColor Yellow
+        Write-Host "after it will be deleted; records edited since will be overwritten." -ForegroundColor Yellow
+        Write-Host "Re-run with -IgnoreDrift to proceed." -ForegroundColor Yellow
 
         if (-not $IgnoreDrift) { exit 1 }
 
@@ -414,7 +414,7 @@ if (-not $SkipAccountRestore) {
     Write-Host ("  In pre-image but now deleted          {0:N0}" -f $AccountMissing)
 
     if ($AccountMissing -gt 0) {
-        Write-Host "  ^ these cannot be restored - rollback deletes, it cannot resurrect." -ForegroundColor Yellow
+        Write-Host "  ^ cannot be restored: rollback deletes and updates, it does not re-create." -ForegroundColor Yellow
     }
 }
 else {
@@ -432,8 +432,8 @@ Write-Host ("  HARD DELETE  {0,7:N0} record(s) created by this run" -f $TotalToD
 Write-Host ("  HARD DELETE  {0,7:N0} note(s)" -f $NoteIds.Count)
 Write-Host ("  UPDATE       {0,7:N0} Account(s) back to their pre-run values" -f $AccountChanges.Count)
 Write-Host ""
-Write-Host "  Deletes are PERMANENT - not the Recycle Bin - and Master-Detail children" -ForegroundColor Yellow
-Write-Host "  cascade, so more may go than the count above. Restoring Accounts overwrites" -ForegroundColor Yellow
+Write-Host "  Deletes are permanent, not the Recycle Bin. Master-Detail children cascade," -ForegroundColor Yellow
+Write-Host "  so the actual total may exceed the count above. Account restores overwrite" -ForegroundColor Yellow
 Write-Host "  any edit made since the run finished." -ForegroundColor Yellow
 
 # The rollback's own run directory, created by Start-ScriptLog. Deliberately

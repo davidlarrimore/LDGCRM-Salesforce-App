@@ -486,9 +486,7 @@ Write-Host ("{0,-48} {1,8:N0}" -f "Accounts currently in $OrgAlias", $ExistingTo
 Write-Host ("{0,-48} {1,8:N0}" -f "Planned Accounts already present by name", $AlreadyPresent)
 Write-Host ("{0,-48} {1,8:N0}" -f "Planned Accounts missing (will insert)", $ToInsert)
 Write-Host ""
-Write-Host "Parent links are resolved pass by pass and counted as they happen -" -ForegroundColor DarkGray
-Write-Host "they can't be totalled up front, because a parent's Id doesn't exist" -ForegroundColor DarkGray
-Write-Host "until the pass that creates it." -ForegroundColor DarkGray
+Write-Host "Parent links are counted per pass, not totalled up front." -ForegroundColor DarkGray
 
 New-Item -ItemType Directory -Path $RunDirectory -Force | Out-Null
 
@@ -1103,11 +1101,9 @@ for ($Pass = 1; $Pass -le $MaxPasses; $Pass++) {
         $Unparseable = ($Counts.Processed -eq 0 -and -not $Counts.JobId)
 
         if ($Unparseable) {
-            Write-Host ("  !! Could not read the job result for this pass. {0:N0} row(s) were submitted; " -f $InsertRows.Count) -ForegroundColor Red
-            Write-Host "     how many landed is UNKNOWN from here - the CLI returned a shape this script" -ForegroundColor Red
-            Write-Host "     does not recognise. They may well have inserted." -ForegroundColor Red
-            Write-Host "     DO NOT re-run this pass before checking the org: a second run would create" -ForegroundColor Red
-            Write-Host "     duplicate Accounts, and bootstrapped Accounts carry no external ID to dedupe on." -ForegroundColor Red
+            Write-Host ("  !! Could not read the job result. {0:N0} row(s) submitted, landed count UNKNOWN." -f $InsertRows.Count) -ForegroundColor Red
+            Write-Host "     Do not re-run this pass directly: bootstrapped Accounts have no external ID," -ForegroundColor Red
+            Write-Host "     so a second insert creates duplicates. Re-run the whole script instead." -ForegroundColor Red
             Write-Host ("     Check with: sf data query -q ""SELECT COUNT() FROM Account"" --target-org {0}" -f $OrgAlias) -ForegroundColor DarkGray
             $UnparseablePasses++
         }
@@ -1210,9 +1206,9 @@ if (-not $PlanOnly) {
 
     if ($UnparseablePasses -gt 0) {
         Write-Host ""
-        Write-Host ("  !! {0} pass(es) returned a Bulk result this script could not read, so the" -f $UnparseablePasses) -ForegroundColor Red
-        Write-Host "     'Accounts inserted' figure above is a FLOOR, not a total. The verification" -ForegroundColor Red
-        Write-Host "     line below is measured against the org and is the number to trust." -ForegroundColor Red
+        Write-Host ("  !! {0} pass(es) returned an unreadable Bulk result." -f $UnparseablePasses) -ForegroundColor Red
+        Write-Host "     'Accounts inserted' above is a minimum, not a total. Use the verified" -ForegroundColor Red
+        Write-Host "     count below, which is measured against the org." -ForegroundColor Red
     }
 
     if ($TotalInsertFailed -gt 0 -or $TotalUpdateFailed -gt 0) {

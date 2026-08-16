@@ -9,29 +9,17 @@
 
 function Get-LdgcrmAirtableTableCatalog {
     <#
-        THE single list of Airtable tables this project knows about, and the one
-        place to change when the base gains or loses one.
+        The Airtable tables this project pulls. Single source for
+        Get-AirtableExport.ps1 and Test-LdgcrmReadiness.ps1.
 
-        Lived inside Get-AirtableExport.ps1 as $DefaultTables until 2026-08-16,
-        when Test-LdgcrmReadiness.ps1 needed the same list. Copying it would have
-        created exactly the failure this catalog guards against: a table added to
-        the base, added to the puller, and silently absent from the readiness
-        check - so the check would report a complete pull while a table was
-        missing. One list, two readers.
+        Purpose = "Migration"  read by a transform. The Label is load-bearing:
+                               Get-AirtableTablePath opens "<Label>.json".
+        Purpose = "Backup"     pulled for a complete copy of the base only.
 
-        Purpose = "Migration"  the 10 tables a transform actually reads. THE
-                               LABEL IS LOAD-BEARING: Get-AirtableTablePath opens
-                               "<Label>.json" by that exact string, so renaming
-                               one breaks a transform.
-        Purpose = "Backup"     pulled only so the export is a faithful copy of
-                               the base. Nothing reads them; the Label just
-                               tracks the Airtable name.
+        Keyed on TableId, not name: Airtable names are user-editable and a
+        rename returns 403, indistinguishable from an auth failure.
 
-        Keyed on TableId, never on name - Airtable table names are user-editable
-        and a rename 403s a name-based request indistinguishably from an auth
-        failure. This has already happened once ("Partner Accounts" -> "Partners").
-
-        Returns a plain array; callers wrap in @() per the repo convention.
+        Returns a plain array; callers wrap in @().
     #>
 
     return @(
@@ -65,20 +53,13 @@ function Get-LdgcrmAirtableTableCatalog {
 
 function Get-LdgcrmExpectedActiveFlows {
     <#
-        THE NINE FLOWS THAT MUST BE ACTIVE FOR A LOAD TO BE CORRECT.
+        The nine Flows that must be active for a load to be correct. Single
+        source for Invoke-FullMigrationLoad.ps1 and Test-LdgcrmReadiness.ps1.
 
-        Hard-coded rather than read from sfdx/force-app/main/default/flows/,
-        which is not available to the bundle: it ships to Operations as a bare
-        /scripts folder with no sfdx/ above it. Same reasoning as the Airtable
-        table catalog above.
+        Hard-coded because the bundle ships without sfdx/, so
+        force-app/main/default/flows/ is not readable from here.
 
-        Moved here from Invoke-FullMigrationLoad.ps1 on 2026-08-16 so
-        Test-LdgcrmReadiness.ps1 reports on the same nine the load enforces.
-        Two lists would drift, and the drift would be invisible: the readiness
-        check would pass while the load blocked, or worse, the reverse.
-
-        Note LGDCRM_ on three of them. The transposed prefix is a real API-name
-        typo in the org, not a mistake in this list.
+        LGDCRM_ on three of them is a real API-name typo in the org.
 
         Returns a plain array; callers wrap in @().
     #>
@@ -98,18 +79,12 @@ function Get-LdgcrmExpectedActiveFlows {
 
 function Get-LdgcrmDevOnlyFlows {
     <#
-        THE INVERSE CHECK: these must NOT exist outside Dev.
+        Flows that must NOT exist outside Dev.
 
         LDGCRM_Screen_Flow_Developer_Data_Delete_Flow bulk-deletes Account,
         Partner Account, Application, Application Contact, Market Segment,
-        Opportunity and Opportunity Impediment records. It is a developer
-        convenience that stays Active in Dev, and was removed from
-        sfdx/manifest/package.xml and force-app on 2026-08-14 so it cannot be
-        swept into a change set regenerated from the manifest.
-
-        Asserting its ABSENCE rather than ignoring it is the point: finding it
-        in QA/Full/Prod means something carried it there and wants
-        investigating.
+        Opportunity and Opportunity Impediment records. Active in Dev by design;
+        its presence in QA/Full/Prod is a defect.
     #>
 
     return @(
@@ -228,22 +203,14 @@ function Import-AirtableTable {
         .fields). Throws a clear error pointing at Get-AirtableExport.ps1
         if the export hasn't been pulled yet.
 
-        ⚠️ CALLER CONTRACT: ASSIGN IT BARE. Do NOT wrap the call in @().
+        CALLER CONTRACT: assign bare. Do NOT wrap the call in @().
 
             $Rows = Import-AirtableTable -Label "Contacts"    # 1514 - correct
-            $Rows = @(Import-AirtableTable -Label "Contacts") # 1    - WRONG
+            $Rows = @(Import-AirtableTable -Label "Contacts") # 1    - wrong
 
-        The `return @(...)` below already protects the array from PowerShell's
-        output unrolling, so a second @() at the call site produces a
-        ONE-ELEMENT array CONTAINING the array: .Count reads 1 and the records
-        hide one level down. This is the repo-wide "return ,$Array and a
-        caller's @() are mutually exclusive" trap (CLAUDE.md); every existing
-        transform calls this bare, which is why they are all correct. Stated
-        here because Test-LdgcrmReadiness.ps1 got it wrong on 2026-08-16 and
-        cheerfully reported every Airtable table as holding exactly 1 row.
-
-        If you need the count defensively, assign first and wrap the VARIABLE:
-        @($Rows).Count is fine, @(Import-AirtableTable ...).Count is not.
+        The return below already blocks output unrolling, so a second @() at the
+        call site yields a one-element array containing the array. To count
+        defensively, assign first: @($Rows).Count is fine.
     #>
     param(
         [Parameter(Mandatory = $true)]

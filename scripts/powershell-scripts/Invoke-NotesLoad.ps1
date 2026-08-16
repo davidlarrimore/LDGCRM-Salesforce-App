@@ -319,8 +319,7 @@ if ($NoEditAccess.Count -gt 0) {
 
     Write-Host ""
     Write-Host "STOPPING: $($NoEditAccess.Count) parent record(s) are not editable by this user." -ForegroundColor Red
-    Write-Host "The org's ContentDocumentLink trigger would reject those links - and the" -ForegroundColor Red
-    Write-Host "notes would already exist, attached to nothing." -ForegroundColor Red
+    Write-Host "The ContentDocumentLink trigger rejects those links, leaving orphaned notes." -ForegroundColor Red
     Write-Host "  $AccessFile" -ForegroundColor Red
     $StepResult.Outcome = "failed"
     $StepResult.ErrorMessage = "$($NoEditAccess.Count) parent record(s) are not editable by this user; the org's ContentDocumentLink trigger would reject those links."
