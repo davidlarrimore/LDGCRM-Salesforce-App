@@ -9,15 +9,15 @@
 > source controlled *because* those are not: run output tells you what happened once, this tells you
 > where the programme is.
 
-**Last reviewed:** 2026-08-15 · **Target org:** `gsa-peo` (production, not yet authorized on any
+**Last reviewed:** 2026-08-16 · **Target org:** `gsa-peo` (production, not yet authorized on any
 dev machine).
 
 ---
 
 ## Where we are in one line
 
-**Every object except Meetings is built and proven in Dev, the pipeline has run clean in a second org,
-and every blocking config change has landed.** What stands between that and production is **no longer
+**Every object except Meetings is built and proven in Dev, the Account workstream is finished, and
+every blocking config change has landed.** What stands between that and production is **no longer
 engineering work of any kind**: it is a QA rehearsal that has to be redone, an Operations rehearsal in
 the Full sandbox that has not started, a production authorization nobody has requested, and a decision
 about Meetings.
@@ -39,7 +39,7 @@ closed when it has been demonstrated, not when the code exists.**
 | 2 | Meetings decided — build, defer, or drop | 🔴 **Blocked on a spike**, not on code | Project owner + SF admin |
 | 3 | Salesforce config changes landed | 🟢 **Done in Dev and QA** (verified 2026-08-15) — **nothing promoted to Full or Prod yet** | Salesforce config owner |
 | 4 | A full rehearsal in **QA**, end to end | 🟠 **Unblocked** — needs a factory reset and full reload | Engineering |
-| 5 | Airtable data quality at an accepted level | 🟡 **Down to 2 items**, one with 8 Airtable fixes outstanding | Airtable data owners |
+| 5 | Airtable data quality at an accepted level | 🟢 **No open Airtable asks** — the 2 remaining items are Salesforce config | Salesforce config owner |
 | 6 | The **Full** sandbox exists and Operations rehearse in it | 🟠 **Provisioned** (`PEOfL2STGp`) — the rehearsal has not happened | GSA IT / Operations |
 | 7 | Production authorized, scheduled, supervised | 🔴 **Not started** | Project owner + GSA IT |
 
@@ -131,20 +131,39 @@ near-nothing.
   external IDs resolve nothing and leave Market Segment blank everywhere, silently. This is why
   Market Segment is step 1 of the load rather than an assumed precondition.
 
+**One step in that checklist is mandatory and has no automated guard.** Two Accounts — `AmeriCorps`
+and `Millennium Challenge Corporation` — are matched by a **hand-applied external ID**, because
+Salesforce holds two Accounts of each name and only depth distinguishes them. The factory reset
+deletes tagged Accounts and the bootstrap recreates them untagged, so **skipping the re-tag silently
+withholds 5 records while the run still reports success.** Resolving the underlying duplicates (gate
+5's cleanup list) would remove the step entirely.
+
 Run it with [../scripts/docs/RELOAD-QA-CHECKLIST.md](../scripts/docs/RELOAD-QA-CHECKLIST.md).
 
 ---
 
-## 5. Airtable data quality — 🟡 down to two items
+## 5. Airtable data quality — 🟢 no open Airtable asks
 
 Tracked in
 [data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md](data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md),
 which lists **only what is still open**.
 
-| Item | Whose call |
-| --- | --- |
-| Airtable Accounts with no Salesforce match | Mostly **ours** — 8 fixes sit with the data owners; the rest is external-ID seeding, hierarchy gaps and 5 Accounts to create. See [engineering/ACCOUNT-MATCHING-WORKLIST.md](engineering/ACCOUNT-MATCHING-WORKLIST.md) |
-| `Gov Employees` is not a Salesforce picklist value | Salesforce config |
+**The Account matching workstream is finished.** 690 of 719 Airtable Account rows match an existing
+Salesforce Account, 9 are created by the load, and the remaining 20 carry no Opportunities, Partner
+Accounts or Applications — so by the project owner's standing rule they cost nothing.
+
+Both remaining items are **Salesforce config**, not Airtable:
+
+| Item | Cost | Whose call |
+| --- | --- | --- |
+| `Gov Employees` is not a Salesforce picklist value | 25 Opportunities lose a tag | Salesforce config |
+| Identity platforms: `CLEAR` missing, `Ping/Foregerock` misspelt | 8 Opportunities | Salesforce config |
+
+**A separate, non-blocking list now exists for Salesforce *data*:**
+[data-quality/SALESFORCE-ACCOUNT-CLEANUP.md](data-quality/SALESFORCE-ACCOUNT-CLEANUP.md) — duplicate
+and misfiled Accounts in the production org, to be worked **after** the migration. It costs no
+records today, but two of its duplicates force a **manual re-tagging step on every sandbox rebuild**
+(see gate 4), which resolving them would remove.
 
 **This gate never reaches zero, and it should not block production.** The pipeline is built to withhold
 rows it cannot place rather than guess, and to report exactly what it withheld and why. The decision to
