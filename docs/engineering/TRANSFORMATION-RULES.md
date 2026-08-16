@@ -153,6 +153,47 @@ wrong in this migration:
    far better than the source data can justify. Treat that as a prompt to ask where the data came
    from, not as good news.
 
+9. **⚠️ A field this pipeline never maps is invisible to every check the pipeline runs.** The whole
+   reporting apparatus — Bulk API results, `ExpectedFailurePatterns`, withheld-row counts, the review
+   CSVs, `SUMMARY.txt`, the run-over-run `findings.csv` diff — is organised around **rows**. A field
+   that was simply never added to a transform produces no row failure, no withheld row and no review
+   entry, because the column is not in the CSV at all. The load reports complete success and the
+   field is silently empty in the org, forever, on every run. This is the field-level twin of the
+   inactive-Flow problem in `CLAUDE.md`: *counts cannot see it, because it does not change any count.*
+
+   Found on 2026-08-16 on `LDGCRM_application__c.LDGCRM_Sent_Integration_Approval_Request__c` — 136
+   Applications, a straightforward Airtable checkbox, missing from the mapping table while the other
+   17 plain checkboxes in that same table were present. It had survived every load and every run
+   report since the object was built.
+
+   **The audit that finds it is column-based, not row-based**, and is worth re-running whenever an
+   object's transform changes materially:
+
+   - enumerate every `LDGCRM_`/`LGDCRM_` field from `sfdx/force-app/.../objects/*/fields/`;
+   - **drop the ones that cannot receive a write** — anything with a `<formula>` or
+     `<summaryOperation>` tag, plus `AutoNumber` (see #7), and anything whose `inlineHelpText` says a
+     Flow owns it (`LDGCRM_Opportunity_Impediment__c.LDGCRM_Blocked_Revenue__c` reads *"DO NOT
+     POPULATE THIS FIELD"*);
+   - diff the survivors against the **actual header row** of each `data/salesforce-loads/*.csv`,
+     resolving lookups to their `__r.LDGCRM_External_ID__c` form (see the next paragraph) so
+     relationship columns don't read as false gaps;
+   - for anything left, check the Airtable side before concluding anything — a gap with no source is
+     a different animal from a gap with 136 rows waiting.
+
+   Verify the field list against the live org as well as the repo (`FieldDefinition` via the Tooling
+   API, filtered by `EntityDefinition.QualifiedApiName`). Doing both is what catches **stale local
+   metadata**, which the repo cannot detect on its own: the 2026-08-16 audit found one file in
+   `sfdx/force-app` for a formula field that had been deprecated out of the org during the build, and
+   it was deleted locally. That direction of drift matters beyond a tidy repo — `sfdx/` is the source
+   org for change sets, so a component that exists only here is a component that can be promoted by
+   mistake.
+
+   Two distinctions that decide whether a gap is a defect, and both need checking before raising one:
+   **empty because nothing sources it** (`Contact.LDGCRM_Pronunciation__c`) and **empty because the
+   Salesforce field means something the source doesn't model** (`Opportunity.LDGCRM_Status__c`, whose
+   value set has no overlap with the Airtable column of the same name) are correct outcomes. Only a
+   populated Airtable column with a matching, writable, non-Flow-owned target is a bug.
+
 **When writing a lookup or Master-Detail field's value into a CSV, the column header is not the
 field's own API name.** Bulk API 2.0 resolves a parent by external ID only when the header uses the
 relationship name (replace the field's trailing `__c` with `__r`) followed by `.` and the external ID
@@ -1151,11 +1192,39 @@ matching an HTML-tag pattern are all angle-bracket-wrapped URLs (`<https://…>`
 | --- | --- |
 | `LDGCRM_Market_Segment__c` | Before-save Flow `LDGCRM_Opportunity_Before_Save_Assign_Account_and_Market_Segment` derives it from `Account.LDGCRM_Market_Segment__r` on create and on any `AccountId` change. Verified post-load: all 742 populated. |
 | `LDGCRM_Status_Summary_Modified_Datetime__c` | Owned by a before-save Flow that stamps it whenever `LDGCRM_Current_Status_Summary__c` changes. Any migrated value is stomped on the next update touching the summary, so writing it produces a misleading timestamp. |
+| `LDGCRM_Status__c` | **No Airtable source. Airtable's `Status` is the Stage, and already migrates as `StageName`** (user-confirmed 2026-08-16). See below — this one is worth reading before "fixing" it. |
 | `LDGCRM_Days_Since_Last_Activity__c`, `LDGCRM_Est_Annual_Revenue_fully_ramped__c`, `LDGCRM_Est_First_Year_Revenue__c`, `LDGCRM_Status_Summary_Indicator__c` | Formula fields. The two revenue ones compute *from* the estimate fields this script does set, so Airtable's own revenue columns aren't migrated — they recompute themselves. |
 | `priority_type__c` | **Do not write this field.** Un-prefixed, owned by TTS OTCRM, and shared with the `TTS_OTCRM_Opportunity` record type. Its *label* is "Priority Type", identical to the Airtable column name — which is exactly what makes it a trap. Airtable's Priority Type belongs in `LDGCRM_Level_of_Priority__c`; see below. |
 | `LDGCRM_Partner_Account__c` | **Structural mismatch — deliberately left blank pending a team decision, not an oversight.** See the dedicated analysis below. |
 | `Requested Features`, `Current Blockers`, `Opportunity Status Changes`, `Meetings`, `Opportunity Contacts`, `Applications` | Linked-record arrays that drive other objects/chunks (Meetings, OpportunityContactRole) or reference untracked tables. |
 | `Market Segment`, `Market Segment (from Account Name)`, `(c) *` rollups, `Created By`, `Updated?`, `Months in Status`, `Meeting Count`, `(legacy data) *` | Airtable-side rollups/computed/system columns, or superseded by the Flow-derived Market Segment. |
+
+### `LDGCRM_Status__c` is empty on purpose — Airtable's `Status` is the Stage
+
+**Settled 2026-08-16 (user-confirmed). Do not map Airtable's `Status` here.** This field will keep
+attracting attention because it is the one writable `LDGCRM_` field on Opportunity that receives
+nothing while an Airtable column of the *same name* is populated on **all 904 rows**. Both halves of
+that observation are true and the conclusion is still wrong.
+
+Airtable's `Status` holds exactly seven values — `Identified`, `Prospecting`, `Qualified`, `Scoped`,
+`Agreements`, `Closed Won`, `Closed Lost` — and those are **precisely** the `StageName` values
+defined by the `Login.gov` business process (`objects/Opportunity/businessProcesses/`). The transform
+already sends them there, correctly.
+
+`LDGCRM_Status__c` is a *finer-grained sub-status* whose value set is a different vocabulary
+altogether (`Not contacted`, `Set meeting`, `Assessing org-level qual`, `Draft proposal`, `Forms
+sent`, `GSA signatures in progress`, …) and which is **controlled by `StageName`** — its
+`<valueSet>` declares `<controllingField>StageName</controllingField>`, so each Stage exposes only
+its own subset. Airtable tracks nothing at that granularity. Verified against the whole base, not
+just the Opportunities table: the `Opportunity Status Changes` table's `New Status` and `Current
+Status` columns hold the same seven coarse values (plus four one-off typos/strays), and no other
+pulled table carries the fine vocabulary.
+
+So the field is empty because the source system does not model the concept — the same category as
+Contact's `LDGCRM_Pronunciation__c`, and **not** the category of the `Integration Request Approval
+Sent` defect, which was a real source silently going nowhere. The tell that separates them: here the
+Salesforce *value set* has no overlap with the Airtable values, which is what proves the columns are
+different concepts rather than the same one left unwired.
 
 ### Priority Type: the right field is `LDGCRM_Level_of_Priority__c` — MIGRATING as of 2026-08-14
 
@@ -1398,6 +1467,17 @@ historically unreliable in change sets, so the values may need adding manually i
 | `Contact Type` | `Role` | One record per value. |
 | `Primary` | `IsPrimary` | At most one per Opportunity; Salesforce propagates across that contact's roles. |
 | *(row id + role)* | `LDGCRM_External_ID__c` | Traceability only — **cannot** be an upsert key. |
+| *(none)* | `LDGCRM_Date_Added__c`, `LDGCRM_Date_Archived__c` | **Not migrated — settled, do not re-raise.** See below. |
+
+**The two date fields are dead by design (user, 2026-08-16).** `LDGCRM_Date_Added__c` ("Date contact
+was added to Salesforce") and `LDGCRM_Date_Archived__c` ("Date contact was archived") are
+**bad architecture the build left behind**, not a migration gap — the project owner's ruling. This is
+worth recording precisely because `Date_Added` looks like an easy win from the data side: Airtable's
+Opportunity Contacts `Created` is populated on **520 of 520** rows and would drop straight in. It
+should not be. A Salesforce audit-style field describing when a record entered *Salesforce* is not
+the same fact as when a row was created in *Airtable*, and backfilling it with the source system's
+timestamp would make the field lie in a way nobody could later detect. `Date_Archived` has no
+Airtable source at all. Leave both empty.
 
 ### Load results
 
@@ -1869,6 +1949,11 @@ for a human decision.
 and Partner Account there are **no Flows on Contact**, so no field is Flow-owned — but see the
 Operational gotchas about what *is* there instead.
 
+**`LDGCRM_Pronunciation__c` has no Airtable source** (checked 2026-08-16 against all 47 Contacts
+columns). Text(50), "How to pronounce the contact's name" — nothing in Airtable records it. The field
+stays empty by necessity, not by choice, and it is the *only* writable `LDGCRM_` field on Contact
+that receives nothing.
+
 ### The 4 failures: an org-level duplicate rule
 
 `DUPLICATES_DETECTED` on First + Last name, from a duplicate rule that is **not in this repo** (same
@@ -2123,11 +2208,25 @@ of "bad data":
 unchecked — these are true Airtable checkboxes and map straightforwardly, present→`true`):
 `Account Manager Approved`, `Agreement Finalization Email Sent`, `Customer Support Meeting Deemed
 Unnecessary`, `Finalized Application Details`, `Fraud Meeting Deemed Unnecessary`, `IdV Upgrade?`,
-`Confirmed pre-launch or launch day activities`, `Launch Day Activities Completed`, `Launch
-Coordinators Kick-off Call`, `Launch Kick-off Meeting Unnecessary`, `Launch Tested`, `Launch to
-Production Completed by OE`, `Marketing/Comms Strategy`, `Requested Contact Center Reporting`,
-`Security Meeting Deemed Unnecessary`, `Coordinated Optional Follow-up Tech Sync`, `UX Meeting
-Deemed Unnecessary` → their correspondingly-named `LDGCRM_*__c` Checkbox fields.
+`Integration Request Approval Sent`, `Confirmed pre-launch or launch day activities`, `Launch Day
+Activities Completed`, `Launch Coordinators Kick-off Call`, `Launch Kick-off Meeting Unnecessary`,
+`Launch Tested`, `Launch to Production Completed by OE`, `Marketing/Comms Strategy`, `Requested
+Contact Center Reporting`, `Security Meeting Deemed Unnecessary`, `Coordinated Optional Follow-up
+Tech Sync`, `UX Meeting Deemed Unnecessary` → their correspondingly-named `LDGCRM_*__c` Checkbox
+fields.
+
+> ⚠️ **`Integration Request Approval Sent` → `LDGCRM_Sent_Integration_Approval_Request__c` was
+> MISSING from this list until 2026-08-16**, costing the checkbox on **136 Applications**. It is the
+> shape of omission this pipeline's counts cannot see: the column was absent from the upsert CSV
+> entirely, so nothing failed, nothing was withheld, no review row was written, and the load reported
+> success — a missing *column* is invisible in a way a missing *row* is not. Nothing in the code or
+> this document had ever recorded a reason to exclude it; it was simply never added alongside the
+> other 17 plain checkboxes in the same table. Found by auditing every writable `LDGCRM_` field
+> against the actual load-CSV headers
+> rather than by anything the run output said. **When adding a checkbox here, the test is that the
+> field appears as a column in `data/salesforce-loads/LDGCRM_application__c-upsert.csv`** — the
+> `$PresenceBooleanFields` table in `Build-ApplicationLoad.ps1` is the single source, consumed
+> generically, so a one-line entry is the whole change.
 
 **Booleans derived from presence of a *linked-record* column, not a literal checkbox** (confirmed by
 sampling — values are `rec...` IDs pointing at the not-yet-migrated Meetings table, or in Security
@@ -2611,10 +2710,18 @@ this document): `Notes` (a literal Notes column — the strongest possible candi
   named Airtable source columns already mapped above). **User-confirmed (2026-08-13): does not need
   to transfer** — closed, not just deferred.
 
-**Salesforce fields with no Airtable source at all:** `LDGCRM_Annual_Revenue_Amount__c` only. No
-Airtable column resembling `revenue` exists on any pulled table; presumed populated by another system.
-That remains an assumption rather than a confirmed fact — worth checking with whoever owns the Partner
-Portal integration before treating it as settled.
+**Salesforce fields with no Airtable source at all** (re-derived 2026-08-16 by checking every
+writable `LDGCRM_` field on this object against the Applications table's 81 columns):
+
+- `LDGCRM_Annual_Revenue_Amount__c` — no Airtable column resembling `revenue` exists on any pulled
+  table; presumed populated by another system. That remains an assumption rather than a confirmed
+  fact — worth checking with whoever owns the Partner Portal integration before treating it as
+  settled.
+- `LDGCRM_Support_Information__c` (LongTextArea, "Contact or support/helpdesk information for this
+  application") — no Airtable column carries helpdesk or support-contact detail. Deliberately empty,
+  not missed. If a source ever appears, note that the nearest-looking candidates (`Notes`, `Launch
+  Notes`) are already spoken for as `ContentNote` candidates and are journal text, not support
+  contacts.
 
 > ⚠️ **Corrected 2026-08-13.** This inventory previously listed
 > `LDGCRM_P3_Partner_Portal_Team_Name__c` and `LDGCRM_P3_Team_UUID__c` here too — twice, once as

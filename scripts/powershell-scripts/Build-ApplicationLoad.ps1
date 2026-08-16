@@ -13,9 +13,22 @@
     is optional and needs Opportunity loaded (not built yet) to resolve; rows
     load fine without it, that lookup just stays blank until Opportunity exists.
 
-    Does not query Salesforce - purely an offline Airtable JSON -> CSV
-    transform, like Impediment (no User-resolution or reconciliation needed
-    here, unlike Account/Partner Account).
+    READS Salesforce (read-only) and writes local files only - it never writes
+    to the org, that is Invoke-SalesforceLoad.ps1. This was an offline
+    transform when first written; it is not one now. Five preflight reads:
+      - the fallback owner User (Resolve-FallbackOwnerId);
+      - the Partner Accounts that actually exist, with their owners, so a row
+        whose required parent is missing is SKIPPED rather than submitted as a
+        guaranteed failure, and so the owner can pass down;
+      - the Opportunities that actually exist, so an unresolvable optional
+        lookup is blanked rather than failing the row;
+      - the live definitions of the two partner-portal team fields, whose
+        `unique` flag decides whether those columns are written at all (see
+        the UNIQUE-CONSTRAINT PREFLIGHT block);
+      - the Applications already in the org, for the Broker App Parent second
+        pass.
+    Each one adapts the output to the org's current state, so a plain re-run
+    picks up whatever has landed since - no code change needed.
 
     Fields NOT written, deliberately (see docs/engineering/TRANSFORMATION-RULES.md for why each
     one specifically):
@@ -164,6 +177,7 @@ $PresenceBooleanFields = @(
     @{ Airtable = "Finalized Application Details"; Sf = "LDGCRM_Finalized_Application_Details__c" }
     @{ Airtable = "Fraud Meeting Deemed Unnecessary"; Sf = "LDGCRM_No_Fraud_Meeting__c" }
     @{ Airtable = "IdV Upgrade?"; Sf = "LDGCRM_IDV_Upgrade__c" }
+    @{ Airtable = "Integration Request Approval Sent"; Sf = "LDGCRM_Sent_Integration_Approval_Request__c" }
     @{ Airtable = "Confirmed pre-launch or launch day activities"; Sf = "LDGCRM_Launch_Activities_Confirmed__c" }
     @{ Airtable = "Launch Day Activities Completed"; Sf = "LDGCRM_Launch_Activities_Completed__c" }
     @{ Airtable = "Launch Coordinators Kick-off Call"; Sf = "LDGCRM_Launch_Coordinators_Kickoff_Call__c" }
