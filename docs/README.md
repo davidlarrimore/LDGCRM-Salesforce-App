@@ -68,14 +68,20 @@ valid on the field but not the record type, a linked-record column that turns ou
 
 ## The source data is wrong → [`data-quality/`](data-quality/)
 
-[data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md](data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) —
-written for the people who own the Airtable base, not for engineers. Every item is something that
-**unblocks records** if fixed, ordered by how many.
+| Document | Audience | Holds |
+| --- | --- | --- |
+| [data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md](data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) | The people who own the **Airtable base**, not engineers | Open asks that **unblock records** if fixed, ordered by how many |
+| [data-quality/SALESFORCE-ACCOUNT-CLEANUP.md](data-quality/SALESFORCE-ACCOUNT-CLEANUP.md) | The **GSA Salesforce team** who own Account data in production | Duplicate and misfiled **Accounts in Salesforce**. To be worked **after** the production migration — nothing in it blocks the load |
 
-> **The Salesforce-side equivalent is
-> [engineering/SALESFORCE-CHANGE-REQUESTS.md](engineering/SALESFORCE-CHANGE-REQUESTS.md).** When a
-> load is blocked by a *field setting* rather than by the data, it belongs there — the pipeline
-> cannot route around it, because metadata moves by change set only.
+**Three documents, three different owners — put an item with the one who can fix it:**
+
+- **Airtable data** is wrong → the Airtable list.
+- **Salesforce data** is wrong → the Account cleanup list. The migration reconciles onto Accounts it
+  did not create, so a duplicate Account in the org is not something the pipeline can route around
+  cleanly.
+- A **Salesforce field setting** blocks a load →
+  [engineering/SALESFORCE-CHANGE-REQUESTS.md](engineering/SALESFORCE-CHANGE-REQUESTS.md). Metadata
+  moves by change set only, so the pipeline cannot fix it at all.
 
 Every transform's review CSVs feed this list. Findings sitting unread in `scripts/logs/` are exactly
 what it exists to prevent — see [../scripts/logs/README.md](../scripts/logs/README.md).

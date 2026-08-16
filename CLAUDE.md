@@ -276,6 +276,24 @@ into `scripts/data/airtable-exports/<Table>.json` (one file per table, overwritt
 below). This replaced an earlier manual CSV/XLSX export-zip workflow; don't recreate that structure —
 the JSON pull is the only source of truth for Airtable data in this repo now.
 
+**The pull is a BACKUP OF THE WHOLE BASE, not just the migration's inputs** (widened 2026-08-16 at the
+project owner's direction). It pulls **all 22 tables**; only **10** are read by the transforms, and the
+other 12 exist purely so the pull is a faithful copy. `$DefaultTables` marks each one `Migration` or
+`Backup`. **A `Migration` label is load-bearing** — `Get-AirtableTablePath` opens `<Label>.json` by that
+exact string, so renaming one breaks a transform; a `Backup` label is just a filename.
+`-MigrationOnly` pulls the 10 when you only want to refresh load inputs.
+
+Because that list is hardcoded, **a table added to the base later would simply never be pulled, and
+nothing would say so** — the same silent shape of failure as an inactive Flow. So after every pull the
+script asks `GET /v0/meta/bases/{baseId}/tables` what the base actually holds and reports any table it
+missed (ready to paste into `$DefaultTables`), any it expected that has gone, and any renamed. It runs
+*after* the data is written and is **never fatal**: it needs `schema.bases:read`, and a token that
+pulls every record perfectly well may still be unable to list tables, so a self-check that cannot run
+must not fail a good pull. `-SkipCoverageCheck` turns it off.
+
+**The folder is overwritten by the next pull** — it is a current-state mirror, not a retained backup.
+Copy it elsewhere if a particular snapshot needs keeping.
+
 **An export can go stale in ways that change a column's SHAPE, not just its values** — Airtable
 converted Opportunities' `Existing Identity Platforms` / `Alternative Identity Platforms` from linked
 records (`rec...` IDs) to plain multi-selects (vendor names). A transform written for one shape reads
@@ -305,8 +323,9 @@ environment; nothing else in this repo reads it.
   Accounts" table was renamed to "Partners" in Airtable, breaking a name-keyed pull — Airtable returns
   403 uniformly for "no permission" and "table doesn't exist/isn't visible", so a rename looks
   identical to an auth failure until you check). `Get-AirtableExport.ps1`'s `$DefaultTables` hardcodes
-  the current table-ID mapping (captured 2026-08-12) as the single source of truth — update it there,
-  not here, if a table is renamed/added/removed.
+  the current table-ID mapping as the single source of truth — update it there, not here, if a table
+  is renamed/added/removed. A rename needs no action at all: the pull is keyed on ID, and the script
+  reports the drift as information rather than a problem.
 - Discover table names/IDs via the metadata endpoint: `GET /v0/meta/bases/{baseId}/tables` (needs the
   `schema.bases:read` scope — separate from `data.records:read`, so a 403 here doesn't mean the record
   endpoints are broken too).
@@ -731,9 +750,10 @@ Current scripts:
   API (one JSON file per table, paginated via `offset`) into `scripts/data/airtable-exports/<Table>.json`,
   **overwriting** the previous pull each run (a timestamped transcript + `pull-summary-<timestamp>.csv`
   still land in `scripts/logs/data-migration/` via `Common.ps1`, so run history isn't lost, just the data
-  itself isn't duplicated per run). See "Airtable API" above for auth/connection details. `-Tables`
-  limits the pull to a subset; defaults to all ten tables in the "Airtable table → Salesforce object"
-  mapping above.
+  itself isn't duplicated per run). See "Airtable API" above for auth/connection details. Defaults to
+  **all 22 tables in the base** — it is a backup, not just a migration input. `-MigrationOnly` narrows
+  it to the 10 in the "Airtable table → Salesforce object" mapping above; `-Tables` names an explicit
+  subset. A post-pull coverage check reports any table the base holds that the script does not.
 - `scripts/powershell-scripts/Build-*.ps1` — one transform per object, each reading the Airtable JSON
   (and, where it has lookups, querying gsa-peo read-only) and writing a load-ready CSV to
   `scripts/data/salesforce-loads/` plus review CSVs to `scripts/logs/data-migration/`. Built so far:
@@ -896,7 +916,7 @@ right place rather than growing this file or `docs/README.md`:
 | **`scripts/README.md`** | People **running** a migration — the bundle's front door | Routes to the runbooks below; environments, layout, the two traps |
 | **`scripts/docs/`** | People **running** a migration, assuming no prior knowledge | `SETUP.md`, `RUNNING-A-LOAD.md`, `TROUBLESHOOTING.md`, `ROLLBACK.md`, `RELOAD-QA-CHECKLIST.md` |
 | `docs/engineering/` | People **changing** the pipeline | `ARCHITECTURE.md` (was `docs/README.md`), `TRANSFORMATION-RULES.md`, `BACKLOG.md`, `SALESFORCE-CHANGE-REQUESTS.md` |
-| `docs/data-quality/` | The **Airtable data owners** — not developers | `AIRTABLE-DATA-QUALITY-REQUESTS.md` |
+| `docs/data-quality/` | The **data owners** — not developers | `AIRTABLE-DATA-QUALITY-REQUESTS.md` (Airtable owners) and `SALESFORCE-ACCOUNT-CLEANUP.md` (the GSA Salesforce team — duplicate/misfiled Accounts, to be worked **after** the production migration) |
 | `docs/*.html` | **Stakeholders** | The current dated status report. Never edit an old one to refresh it — generate a new dated one |
 | `scripts/logs/README.md` | Anyone reading run output | What each kind of run leaves behind |
 
@@ -936,6 +956,7 @@ today:
 | Document | Holds only |
 | --- | --- |
 | `docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md` | Currently-open asks that **cost records**. Its absence *is* the confirmation a fix landed |
+| `docs/data-quality/SALESFORCE-ACCOUNT-CLEANUP.md` | Duplicate/misfiled Accounts still present in the production org. Delete an item once it is resolved |
 | `docs/engineering/SALESFORCE-CHANGE-REQUESTS.md` | Config changes not yet promoted. Delete a CR once it is in every org |
 | `docs/engineering/BACKLOG.md` | Work agreed but **not yet built**. A built item is deleted, not marked done |
 | `docs/PRODUCTION-READINESS.md` | Current gate status. No struck-through gates, no superseded run write-ups |
