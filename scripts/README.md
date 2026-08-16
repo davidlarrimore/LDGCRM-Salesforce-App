@@ -128,7 +128,8 @@ powershell-scripts/   EVERY script. One folder, no sub-folders.
   Invoke-*.ps1          Write: load, reset, bootstrap, roll back.
 docs/                 The runbooks in the table above.
 data/                 Inputs and staged output. Gitignored.
-  airtable-exports/     One JSON file per Airtable table, overwritten each pull.
+  airtable-exports/     One JSON file per Airtable table - all 22, so the pull
+                        backs up the base. Overwritten each pull.
   prod-accounts/        The production Account export. Dev/QA only.
   salesforce-loads/     Load-ready CSVs the transforms produce.
 logs/                 One folder per run. Gitignored.

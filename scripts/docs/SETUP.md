@@ -159,10 +159,14 @@ Access Token (PAT)**, which starts with `pat...`.
 6. Copy the token **immediately** — Airtable shows it once and never again.
 
 > **Both scopes are needed, and for different things.** `data.records:read` is what the pull
-> actually uses. `schema.bases:read` is what lets you look up table IDs and names via the metadata
-> API when a table gets renamed — which has already happened once here (see
-> [TROUBLESHOOTING.md](TROUBLESHOOTING.md#airtable-returns-403)). A token missing the second scope
-> works fine until the day you need to diagnose a 403, and then leaves you guessing.
+> actually uses. `schema.bases:read` does two jobs: it lets you look up table IDs and names via the
+> metadata API when a table gets renamed — which has already happened once here (see
+> [TROUBLESHOOTING.md](TROUBLESHOOTING.md#airtable-returns-403)) — and it powers the pull's
+> **coverage check**, which reports any table in the base the export is not backing up.
+>
+> Without the second scope the pull still works and still writes every table it knows about. What
+> you lose is the check that the list is still complete, so a table added to the base later would go
+> unbacked-up silently. The run says so rather than pretending it checked.
 
 ### Step 3 — Fill in `.env`
 
@@ -205,7 +209,7 @@ information about Login.gov applicants sourced from Airtable. Do not commit anyt
 
 | Directory | Contents |
 | --- | --- |
-| `data/airtable-exports/` | Raw Airtable pull, one JSON file per table, **overwritten every pull** |
+| `data/airtable-exports/` | Raw Airtable pull, one JSON file per table (all 22 — it backs up the whole base, not just the 10 the load reads), **overwritten every pull** |
 | `data/salesforce-loads/` | Load-ready CSVs produced by the transforms |
 | `logs/data-migration/` | Run transcripts, review CSVs, restore points |
 | `logs/cleanup/` | Records deleted by a factory reset — the only audit trail of what went |

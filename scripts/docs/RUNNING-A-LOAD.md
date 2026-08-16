@@ -238,10 +238,15 @@ Sometimes you want a single object — re-running a transform after an Airtable 
 
 ```powershell
 # 1. Pull fresh Airtable data (OVERWRITES data/airtable-exports/)
+#    Defaults to all 22 tables - the pull backs up the whole base.
 .\powershell-scripts\Get-AirtableExport.ps1
 
-# ...or just one or two tables
-.\powershell-scripts\Get-AirtableExport.ps1 -Tables "Contacts,Opportunities"
+# ...or only the 10 tables the load actually reads
+.\powershell-scripts\Get-AirtableExport.ps1 -MigrationOnly
+
+# ...or just one or two tables. SEPARATE ARGUMENTS, not one comma-joined
+# string - "Contacts,Opportunities" binds as a single label and is rejected.
+.\powershell-scripts\Get-AirtableExport.ps1 -Tables "Contacts","Opportunities"
 
 # 2. Transform (read-only — safe to run any time)
 .\powershell-scripts\Build-OpportunityLoad.ps1 -Environment Dev

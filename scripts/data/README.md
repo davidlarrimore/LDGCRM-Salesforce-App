@@ -6,9 +6,11 @@ files can contain PII from Login.gov applicants and partner contacts.
 
 - `airtable-exports/` — one JSON file per Airtable table (`<Table>.json`), written by
   `powershell-scripts/Get-AirtableExport.ps1`, which pulls straight from the Airtable REST API.
-  Each run overwrites these in place: they reflect current Airtable state, not a history of past
-  pulls. Requires `AIRTABLE_API_KEY`/`AIRTABLE_BASE_ID` in this bundle's `.env` (copy
-  `.env.example`, which is beside it and documents how to get a token).
+  **All 22 tables in the base, not just the 10 the load reads** — the pull doubles as a backup of
+  the base. Each run overwrites these in place: they reflect current Airtable state, not a history
+  of past pulls, so copy the folder elsewhere if you need to keep a particular snapshot. Requires
+  `AIRTABLE_API_KEY`/`AIRTABLE_BASE_ID` in this bundle's `.env` (copy `.env.example`, which is
+  beside it and documents how to get a token).
 - `prod-accounts/` — the production Account export that `Invoke-AccountBootstrap.ps1` rebuilds a
   **Dev or QA** sandbox's Account tree from. Any of `.xls`, `.xlsx` or `.csv`; the filename does not
   matter and the newest file wins. **See [`prod-accounts/README.md`](prod-accounts/README.md)** —

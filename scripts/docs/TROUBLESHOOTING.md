@@ -333,8 +333,9 @@ are indistinguishable from the response, so work through the causes in order:
    account-wide.
 3. **A table was renamed.** This has actually happened — "Partner Accounts" became "Partners" and
    broke a name-keyed pull. `Get-AirtableExport.ps1` uses **table IDs** rather than names for exactly
-   this reason, since names are user-editable. If a table was added or removed, update
-   `$DefaultTables` in that script.
+   this reason, since names are user-editable, so a rename no longer breaks anything — the pull
+   simply notes that its label differs from Airtable's current name. If a table was added or removed,
+   update `$DefaultTables` in that script; the coverage check below prints the line to paste in.
 4. **The token is the deprecated kind.** It must start with `pat`, not `key`.
 
 List what the token can actually see (needs `schema.bases:read`):
@@ -345,6 +346,27 @@ Invoke-RestMethod -Uri "https://api.airtable.com/v0/meta/bases/appCPBIq0sFQUZUSY
     -Headers @{ Authorization = "Bearer $env:AIRTABLE_API_KEY" } |
     Select-Object -ExpandProperty tables | Select-Object id, name
 ```
+
+---
+
+## The pull warns that tables are not backed up
+
+The export is a **backup of the whole base**, so it pulls all 22 tables even though only 10 feed the
+load. That list is hardcoded in `$DefaultTables`, which means a table **added to the base later would
+never be pulled and nothing would say so**. The coverage check exists to make that impossible: after
+each pull it asks Airtable what the base actually holds and compares.
+
+If it reports uncovered tables, it prints the exact line to paste into `$DefaultTables` — use
+`Purpose = "Backup"` unless a transform is going to read the table, since a `Migration` label is
+opened by name and cannot be changed freely afterwards.
+
+It can also report the reverse — a table the script expects that the base no longer has. That means
+the table was deleted, or the token lost sight of it. Check which before removing the entry: a
+permissions change looks identical to a deletion.
+
+If the check itself cannot run, the token is missing `schema.bases:read`. **The pull still succeeded**
+— every table the script knows about was written. What you lost is the assurance that the list is
+still complete. Add the scope, or pass `-SkipCoverageCheck` to silence it deliberately.
 
 ---
 
