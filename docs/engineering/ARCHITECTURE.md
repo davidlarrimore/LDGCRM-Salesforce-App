@@ -86,7 +86,7 @@ hard-codes an alias any more.
 | --- | --- | --- | --- | --- |
 | `Dev` *(default)* | `peodv8dvn` | PEOdV8DVn | `https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com` | Day-to-day development and pipeline testing |
 | `QA` | `peodv15dvn` | PEOdV15DVn | `https://gsa-peo--peodv15dvn.sandbox.my.salesforce.com` | Full end-to-end migration rehearsal |
-| `Full` | *not yet provisioned* | TBD | TBD | Operations team integration testing — the scripts **and** the change sets, immediately before production |
+| `Full` | `peofl2stgp` | PEOfL2STGp | `https://gsa-peo--peofl2stgp.sandbox.my.salesforce.com` | Operations team integration testing — the scripts **and** the change sets, immediately before production. *(Provisioned; not authorized on this machine)* |
 | `Prod` | `gsa-peo` | — | *(not authorized on this machine)* | The live GSA PEO org |
 
 **The convention: an alias is the org's own sandbox name.** Chosen 2026-08-13 precisely because an
@@ -342,7 +342,7 @@ not happen without that coordination.
 covers pipeline architecture, build status, and how to run things.
 
 **Before running a full wipe-and-reload, work through
-[`RELOAD-QA-CHECKLIST.md`](../operations/RELOAD-QA-CHECKLIST.md)** — the operational runbook: pre-flight, baseline
+[`RELOAD-QA-CHECKLIST.md`](../../scripts/docs/RELOAD-QA-CHECKLIST.md)** — the operational runbook: pre-flight, baseline
 capture, delete order, the ownership test-batch gate, per-object load verification, and a
 side-effect sweep. It exists because ownership is set by the transforms at load time and cannot be
 verified any other way.
@@ -353,14 +353,11 @@ written for the data owner, not developers — see
 script's skipped/unmapped review CSVs should feed into this list as they're found, not just sit in
 `scripts/logs/data-migration/` unnoticed.
 
-**For the stakeholder-facing status report — written for the Login.gov Partnerships lead, not for
-engineers — see
-[`migration-load-report-2026-08-14.html`](../migration-load-report-2026-08-14.html)**, the tracked
-source; render the PDF from it with `Export-ReportPdf.ps1` before sending.
-
-**Only the current report is kept.** Superseded editions are removed rather than retained: their
-numbers go stale within hours, and a stale report in the repo is more likely to be re-sent by
-mistake than to be useful. Programme status over time belongs in
+**Stakeholder-facing status reports are generated on demand, not kept.** Write a dated
+`docs/migration-load-report-<date>.html` for the Login.gov Partnerships lead when one is asked for,
+render the PDF from it with `Export-ReportPdf.ps1`, send the PDF, then delete both when they are
+superseded — their numbers go stale within hours, and a stale report in the repo is more likely to be
+re-sent by mistake than to be useful. Programme status over time belongs in
 [`PRODUCTION-READINESS.md`](../PRODUCTION-READINESS.md), which is maintained rather than
 snapshotted.
 
@@ -788,8 +785,8 @@ deploy that reported "Succeeded" having deployed 0 components, so `Invoke-Ldgcrm
 
 ### Why it is not promoted by change set either
 
-CR-6's fix (add `Email` to the matching rule) was built and verified in Dev, then abandoned as a
-promotion path. A change set cannot carry a matching-rule change at all:
+The obvious fix — add `Email` to the matching rule — was built and verified in Dev, then abandoned as
+a promotion path. A change set cannot carry a matching-rule change at all:
 
 | Target state | Error |
 | --- | --- |
@@ -812,7 +809,7 @@ rather than blocks.
 These are TTS OTCRM's rules, not this app's — but **TTS OTCRM is defunct** (project owner,
 2026-08-15) and its metadata will eventually be removed wholesale, so there is no owning team to
 clear this with and no live users behind the rule. Deactivating it is the same action in Prod as in a
-sandbox. That wholesale removal is a separate future exercise and not this migration's job. See CR-6.
+sandbox. That wholesale removal is a separate future exercise and not this migration's job.
 
 ## Running what's built so far
 

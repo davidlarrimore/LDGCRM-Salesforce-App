@@ -222,11 +222,11 @@ and open the individual files for the rows. These patterns are what it classifie
 **A file matching none of these is still reported**, under "unclassified review output" — a new
 transform inventing a new suffix must show up as unrecognised rather than vanish. If you add one,
 add it to `$Script:LoadFindingKinds` in
-[`data-migration/Common.LoadReport.ps1`](../data-migration/Common.LoadReport.ps1).
+[`powershell-scripts/Common.LoadReport.ps1`](../powershell-scripts/Common.LoadReport.ps1).
 
 **Read these after every run.** Findings left unread here are the failure mode they exist to
-prevent; anything new belongs in
-[`docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md`](../docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md).
+prevent. Anything new — a row withheld for a reason not seen before, a count that moved without an
+explanation — goes back to the migration team, who own the source-data fix list.
 
 ---
 
@@ -246,4 +246,4 @@ Before deleting old runs, check you are not throwing away the only handle on som
 Restore points for runs that have since been superseded are otherwise safe to remove.
 
 For how to interpret what you find here, see
-[`docs/operations/TROUBLESHOOTING.md`](../docs/operations/TROUBLESHOOTING.md).
+[`docs/operations/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md).

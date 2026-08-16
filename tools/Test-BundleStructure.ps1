@@ -170,10 +170,11 @@ $Table = Get-LdgcrmEnvironmentTable
 Assert-Check -Condition ($Table["Prod"].Alias -eq "gsa-peo" -and $Table["Prod"].IsProduction) `
              -What "Prod is alias 'gsa-peo' and flagged as production"
 
-# THE FULL-SANDBOX PATH, WHICH NOTHING ELSE CAN REACH. Full has no alias yet, so
-# a real reset against it throws on alias resolution long before the Account
-# filter matters - meaning without this, the code protecting a copy of
-# production would first run unobserved against a copy of production.
+# THE FULL-SANDBOX PATH, WHICH NOTHING ELSE CAN REACH. Full is provisioned
+# (PEOfL2STGp) but is not authorized on a dev machine, so a real reset against it
+# throws on alias resolution long before the Account filter matters - meaning
+# without this, the code protecting a copy of production would first run
+# unobserved against a copy of production.
 $Sample = @("LDGCRM_Application_Contact__c", "Contact", "Account", "LDGCRM_Market_Segment__c")
 
 foreach ($Case in @(

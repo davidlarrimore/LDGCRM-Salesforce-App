@@ -62,7 +62,7 @@ Every script takes `-Environment Dev|QA|Full|Prod` and looks the actual org alia
 | --- | --- | --- |
 | `Dev` *(default)* | `peodv8dvn` | Day-to-day development and pipeline testing |
 | `QA` | `peodv15dvn` | Full end-to-end migration rehearsal |
-| `Full` | *not provisioned yet* | Operations dress rehearsal, immediately before production |
+| `Full` | `peofl2stgp` | Operations dress rehearsal, immediately before production. **Real Accounts — never rebuilt** |
 | `Prod` | `gsa-peo` | **PRODUCTION. Real Login.gov partner data.** |
 
 > ### ⚠️ `gsa-peo` means PRODUCTION
@@ -264,7 +264,7 @@ agreed end state is both switched off.
 > of its metadata and rules will eventually be removed. So there is no team to clear this with and no
 > live users behind the rule; deactivating it is removing a blocker to Login.gov CRM going live, in
 > every environment including Prod. Recorded so this reads as a decision rather than something nobody
-> thought to ask about. See `docs/engineering/SALESFORCE-CHANGE-REQUESTS.md`, CR-6.
+> thought to ask about.
 
 ---
 

@@ -3,156 +3,20 @@
 > **Who this is for:** engineers picking up the next piece of work, and anyone asking "is this
 > already known?" Each item records the decisions it still needs, not just the task.
 
-Work that is agreed but not yet built. This is the engineering-facing companion to the
-[stakeholder report](../migration-load-report-2026-08-14.html); overall readiness for the
-production load is tracked in [PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md), per-object build status
-lives in [ARCHITECTURE.md](ARCHITECTURE.md) and the field-level detail in
-[TRANSFORMATION-RULES.md](TRANSFORMATION-RULES.md).
+**Work that is agreed but not yet built.** Built work is removed from this file rather than marked
+done — git carries the history, per-object build status lives in
+[ARCHITECTURE.md](ARCHITECTURE.md), field-level detail in
+[TRANSFORMATION-RULES.md](TRANSFORMATION-RULES.md), and overall readiness in
+[PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md).
 
 Ordered roughly by value, not by effort.
 
 ---
 
-## 1. Assign record owners from Airtable, not the loading user
-
-**Status: BUILT and LOADED 2026-08-13.** All four decisions below were answered by the Partnerships
-lead on 2026-08-13, implemented in the existing `Build-*.ps1` transforms, and proven by a full
-wipe-and-reload the same day. Measured results replace the predicted ones below.
-**Raised:** 2026-08-13 by the Partnerships lead.
-
-### Decisions taken (2026-08-13)
-
-1. **Fallback owner:** `peter.marks@gsa.gov`. *(Revised from "the loading user" once it was confirmed
-   GSA IT Operations runs the production load — see below.)*
-2. **Applications** take their **Partner Account's** owner (*not* Airtable's `Account Owner`, which
-   is a rollup from the parent Account).
-3. **Contacts** inherit their **Account's** owner.
-4. **Existing Accounts are left alone** — but the rules are baked into the core transforms rather
-   than applied as a one-off backfill, because a **full wipe and reload** was planned for the same
-   day. There is deliberately no `Build-OwnershipBackfill.ps1`.
-
-### How it was implemented
-
-Two shared resolvers in `Common.DataMigration.ps1`, used by every transform:
-`Resolve-SalesforceOwnerIds` (email → active User, fixing three silent traps the hand-rolled version
-had) and `Resolve-FallbackOwnerId`, which resolves `-FallbackOwnerEmail` at run time and **throws**
-if it doesn't match an active User.
-
-**The fallback is written explicitly, not left blank — this reversed the original design.** Blank
-meant "whoever ran the load", which was fine while that was the intended owner and wrong the moment
-GSA IT Operations took over the production run. Cost of the reversal: a re-run now re-asserts the
-fallback owner, so a manual reassignment of a fallback-owned record gets reverted. Full rationale in
-[`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)'s "Record ownership" section.
-
-**Status update 2026-08-13: LOADED and verified.** The full reload ran and ownership is now real data
-in Dev, not a prediction. Measured coverage:
-
-| Object | Own owner | Fallback | Predicted before loading |
-| --- | --- | --- | --- |
-| Opportunity | 471 | 271 | 471 / 271 ✅ |
-| `LDGCRM_application__c` | **361** | **327** | 511 / 177 ❌ — see below |
-| Contact | 1,548 | 0 | 1,553 / 0 — but see the warning |
-| `LDGCRM_Impediment__c` | 0 | 39 | 0 / 39 ✅ |
-| `LDGCRM_Application_Contact__c` | 0 | 1,878 | 0 / 1,880 ✅ |
-| Meetings (when built) | 1,315 of 1,845 | 530 | *(not built — still a prediction)* |
-
-**Two things only a real load could establish:**
-
-1. **Application was 511/177 in prediction and is 361/327 in fact.** 150 Applications inherit an owner
-   who is *active* but cannot own records — a Chatter Free user. Salesforce rejected them with
-   `OP_WITH_INVALID_USER_TYPE_EXCEPTION`. Fixed by filtering owner resolution on
-   `UserType = 'Standard'` in all four places a User Id becomes an `OwnerId`. Full detail in
-   [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md).
-2. **Contact ownership is now demonstrable, and it confirms the D2 concern precisely.** Of 1,548
-   Contacts, **1,426 (92%) are owned by `SystemUser DataLoader`** and 122 by the loading user. The
-   analysis predicted ~92% under a service account or one person; the measurement is 92%. The rule
-   works as designed and produces ownership data that carries almost no information. That is now
-   evidence for revisiting D2, not an argument about it.
-
-**⚠️ Contact ownership can't be verified in the sandbox, and may not be worth having in production.**
-The Account bootstrap loads Name + hierarchy only, so nearly every sandbox Account is owned by the
-loading user and Contacts inherit *that*. It cannot easily be fixed either: the production export
-names Account owners by display name, not email. And in production, 92% of Accounts are owned by
-`SystemUser DataLoader` or one individual — so inheritance would put 92% of Contacts under one of
-those two. Confirmed as-is on 2026-08-13; revisit if ownership reporting proves misleading.
-
-### Original analysis (kept for reference)
-
-### The problem
-
-Every record this migration creates is currently owned by whoever ran the load — in practice a single
-person. Verified in gsa-peo:
-
-| Object | Current owner |
-| --- | --- |
-| Contact (1,936) | all one user |
-| Opportunity (742) | all one user |
-| `LDGCRM_application__c` (688) | all one user |
-| `LDGCRM_Impediment__c` (39) | all one user |
-| Account (588) | mixed — these were *matched*, not created, so pre-existing owners survived |
-
-That makes ownership-based reporting, sharing rules and "my records" views meaningless for everything
-the migration created. Note the sharing model matters here: Account, Contact, Opportunity and the
-three `LDGCRM_` objects all have org-wide-default-restricted sharing with owner-based sharing rules
-(see `CLAUDE.md`), so owner is not cosmetic — it decides who can see the record.
-
-### The agreed business rule
-
-> If the Airtable owner has a matching Salesforce User, assign the record to them. If not, fall back
-> to a single default owner (the migration/integration user).
-
-Simple, and it degrades safely: no record is ever left unowned, and no owner is ever invented.
-
-### What the source data supports
-
-Owner emails resolved against **active** Salesforce Users. gsa-peo appends `.invalid` to every
-sandbox user's email (standard sandbox behaviour), so matching must strip that suffix — this is
-already handled in `Build-PartnerAccountLoad.ps1` and can be reused.
-
-| Object | Airtable column | Distinct people | Resolve to a User | No User |
-| --- | --- | --- | --- | --- |
-| Opportunity | `Pod Opportunity Lead` | 15 | 11 → **541 opportunities** | 4 → **285 opportunities** |
-| Partner Account | `Account Owner` | 7 | 5 → 62 rows | 2 → 25 rows |
-| Application | `Account Owner` | 7 | 5 → 847 rows | 2 → 155 rows |
-| Account | *(none found)* | — | — | — |
-| Contact | *(none found)* | — | — | — |
-
-So roughly **two-thirds of Opportunities would get their real owner immediately**, with the remainder
-falling back cleanly.
-
-The four unresolvable Opportunity leads are `elizabeth.mays@gsa.gov` (157 opportunities),
-`gabriel.vorleto@gsa.gov` (105), `tony.parrilla@gsa.gov` (15) and `sierra.stewart@gsa.gov` (8). The
-first two are **already on the data-quality list** from the Partner Account owner analysis — the same
-people block ownership in two places, so provisioning or reassigning them fixes both.
-
-### Things to get right when building this
-
-- **`LDGCRM_Partner_Account__c` has no `OwnerId`.** It's a Master-Detail child of Account and inherits
-  its parent's owner. Setting the Account owner correctly is what fixes Partner Account ownership —
-  there is nothing to set on the child. It *does* have a separate custom `LDGCRM_Partner_Account_Owner__c`
-  User lookup, which the migration already populates; that is a different field from record ownership
-  and both may need to be right.
-- **Application's `Account Owner` is a rollup from the Account**, not the Application's own owner (it
-  is excluded from the transform for exactly that reason — see `TRANSFORMATION-RULES.md`). Using it as
-  the Application's owner is a judgement call that needs confirming, not an obvious mapping.
-- **Account owners are not sourced from Airtable at all** and Accounts already carry real owners in
-  Salesforce. The migration should almost certainly *not* touch Account ownership — confirm before
-  building.
-- **Contact has no owner column in Airtable.** Decide whether Contacts should inherit their Account's
-  owner, or stay with the default.
-- **Setting `OwnerId` on a Master-Detail parent cascades** to its children. Worth checking the record
-  counts this touches before running it broadly.
-
-### Open questions for the Partnerships lead
-
-~~All four answered 2026-08-13 — see "Decisions taken" above.~~
-
----
-
-## 2. Meetings (1,845 Airtable rows, 0 loaded) — approach changed 2026-08-13
+## 1. Meetings (~1,850 Airtable rows, 0 loaded) — approach changed, now blocked on a spike
 
 **Status: deferred by decision, and no longer a straight transform.** It now depends on an org
-configuration change that sits outside this repo. **The reload should proceed without Meetings.**
+configuration change that sits outside this repo. **A reload should proceed without Meetings.**
 
 ### Why the original approach was rejected
 
@@ -161,7 +25,7 @@ require both. Every option for closing that gap invents data: a fixed 09:00 star
 1,604 meetings all claiming to begin at 9am, and even an all-day event asserts a shape the source
 never recorded.
 
-**The decision (2026-08-13): don't synthesize the time — get the real one.**
+**The decision: don't synthesize the time — get the real one.**
 
 ### The agreed approach
 
@@ -208,11 +72,9 @@ organizer has an active Salesforce user with a connected calendar.
 
 From the ownership analysis: **1,315 of 1,845 meetings have a Meeting Leader who resolves to an
 active Salesforce User.** The remaining 530 are led by people who are deactivated or have no user at
-all (`elizabeth.mays@gsa.gov` alone leads 182). **Those meetings can never sync**, because there is
-no calendar to connect. That is a ceiling of roughly **71%**, before any matching accuracy is
-considered — and it overlaps exactly with the missing-logins item in
-[`AIRTABLE-DATA-QUALITY-REQUESTS.md`](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md), so provisioning those users
-raises this ceiling as well as fixing record ownership.
+all. **Those meetings can never sync**, because there is no calendar to connect. That is a ceiling of
+roughly **71%**, before any matching accuracy is considered — and provisioning those users raises this
+ceiling as well as fixing record ownership.
 
 ---
 
@@ -259,14 +121,12 @@ main thing to settle once the spike reports back:
 
 - **(a) Don't migrate them.** Cleanest, loses ~2 years of meeting summaries and action items.
 - **(b) Attach them as Notes** to their Account or Opportunity. Preserves `Summary` / `Action Items`
-  / `Agenda` verbatim without pretending a calendar event existed. Fits naturally with the Notes
-  chunk (item 4) and needs no invented times — **currently the most attractive option.**
+  / `Agenda` verbatim without pretending a calendar event existed. Fits naturally with the existing
+  Notes chunk and needs no invented times — **currently the most attractive option.**
 - **(c) Create an all-day Event as a fallback.** Returns to the fabrication this decision rejected,
   but only for records that would otherwise be lost.
 
-### Decisions still inherited from the original design
-
-These do not go away — they apply to whatever record ultimately carries the meeting:
+### Decisions that apply to whatever record ultimately carries the meeting
 
 - **`Meeting Type` doesn't fit the field.** `LDGCRM_Meeting_Type__c` is a **single-value restricted
   picklist**; Airtable's is a **multi-select** whose values largely don't match. 566 meetings carry a
@@ -287,345 +147,47 @@ for Event/Task triggers before the first load**, per the standing rule that burn
 
 ---
 
-## 3. Broker application relationships (second pass)
+## 2. Is Contact ownership worth carrying into production? — open decision
 
-**Status: BUILT and LOADED 2026-08-13 — 63/63, 0 failures.** The ordering held: no
-`Foreign key external ID ... not found` errors, confirming the second pass resolves correctly once
-the main Application file is in the org.
+Contacts inherit their Account's owner, which is built and working. The open question is whether the
+result is *useful*.
 
-`LDGCRM_Broker_App_Parent__c` links an Application to its parent Application. It cannot go in the main
-upsert file: Bulk API does not resolve external-ID references between two rows of the same batch,
-proven when 68 rows failed with the parent sitting in the same file.
+**Measured in Dev: 92% of Contacts end up owned by `SystemUser DataLoader`.** The rule works exactly
+as designed and produces ownership data that carries almost no information, because in production 92%
+of Accounts are owned by that service account or by one individual — so inheritance concentrates
+Contacts under one of those two.
 
-**`Build-ApplicationLoad.ps1` now writes the second-pass file automatically**
-(`LDGCRM_application__c-broker-parent-upsert.csv`) — deliberately not a separate transform script,
-since a pass you have to remember to run is one you eventually forget. Only the *load* is separate,
-and it must come **after** the main Application load; the transform prints the exact command.
+It also cannot be meaningfully verified in a sandbox: the Account bootstrap loads name and hierarchy
+only, so nearly every sandbox Account is owned by the loading user and Contacts inherit *that*. The
+production export names Account owners by display name rather than email, so the bootstrap cannot
+easily be made to seed them either.
 
-A row is emitted only when both sides will exist once the main load finishes (planned set ∪ what's
-already in the org), so a re-run picks up newly-resolvable links with no code change.
+**Why this matters beyond reporting:** Account, Contact, Opportunity and the three `LDGCRM_` objects
+all have org-wide-default-restricted sharing with owner-based sharing rules, so owner is not cosmetic
+— it decides who can see the record.
 
-Of 70 Airtable rows carrying a Broker App Parent: **63 ready**, 6 waiting on an Application withheld
-by the Account data-quality issue, and **1 dropped as a self-reference** (`ACF Login.gov
-ACF-ockta-oidc` lists itself as its own parent). The self-reference is handled entirely in code and
-**not raised with the data owners**: it costs one optional lookup on one record that otherwise
-migrates fine, so it fails the "does this unblock anything?" test the data-quality list exists to
-meet. No longer cycles exist, and the deepest chain is 1, so no multi-pass hierarchy walk is needed
-(unlike the Account bootstrap, which goes four levels deep).
+**Decision needed:** keep Contact ownership as-is, or stop inheriting and leave Contacts on the
+fallback owner. Revisit if ownership reporting proves misleading in the Full sandbox.
 
 ---
 
-## 4. Notes (final chunk)
+## 3. Report on pipeline progress, not just record counts
 
-**Status: BUILT and LOADED 2026-08-13 — 537 created, 537 attached, 0 failures, 537 verified in the
-org.** Sharing landed as `ShareType=I` / `Visibility=InternalUsers` as decided. 200 notes remain
-withheld pending the Airtable Account fixes, and 59 placeholder values (`None`/`N/A`) are skipped by
-design.
+**Status:** partially addressed; keep current whenever a stakeholder report is written.
 
-**It failed on the first attempt in a way worth recording, because the failure mode is specific to
-this chunk.** `Invoke-SalesforceRestJson` piped `ConvertFrom-Json` straight out of the function, and
-PowerShell 5.1 emits a deserialized JSON array as a **single** pipeline item — so a 100-record
-response measured as `Count = 1`. The loader's own guard ("positional correlation is unsafe")
-correctly refused to match results to sources and aborted — but by then 100 notes existed in
-Salesforce, and the throw preceded the write of `created-note-ids.csv`, so the only handle on them
-was gone. They were identified by being the only `SNOTE` documents linked exclusively to a `User`,
-and hard-deleted before the retry.
-
-Two durable lessons: **assign `ConvertFrom-Json` output to a variable before returning it** (the
-`@()` caller convention cannot repair a collapse that happens upstream of it), and **write the
-created-id file before anything that can throw**, not after.
-
-Freeform Airtable columns with no dedicated Salesforce field become `ContentNote` records attached to
-their parent. Candidates identified so far: Partner Account `Account Description` and `Known Blockers`,
-Application `Notes` / `Launch Notes` / `IdV Upgrade Notes`. Mechanically different from every other
-chunk — `ContentNote.Content` is base64, and attaching is a second object (`ContentDocumentLink`).
-Re-derive the candidate list per table when this is built; don't assume the current list is complete.
-
-**This chunk may have to absorb Meetings.** Option (b) in item 2 — attaching unmatched meetings to
-their Account or Opportunity as Notes, preserving `Summary` / `Action Items` / `Agenda` without
-inventing a calendar event — is currently the most attractive answer for the meetings EAC can never
-recover (the 241 with no date, plus everything outside the retention window or led by someone with no
-Salesforce user). If that option is chosen, the volume here grows by up to ~1,800 records and Notes
-stops being a small final chunk. Settle item 2's spike before sizing this one.
+A stakeholder report should show how far the **automated loading process** has been built, not only
+how many records exist — the goal is a repeatable pipeline the Operations team can run, not a
+one-time data dump. Cover pull → transform → load → verify, and say which objects are automated end
+to end versus which still need a human step.
 
 ---
 
-## 4a. Rollback — BUILT 2026-08-13
+## 4. Re-running after Airtable cleanup
 
-**Status: built** — `scripts/powershell-scripts/Invoke-MigrationRollback.ps1`. The design below is what
-it implements; read it before running the script, particularly "What it will never be able to do".
-
-**One gap had to close first, and it was invisible until someone tried to use the restore point.**
-`Save-RestorePoint` captured baseline *counts* but not the *set* of external IDs already present per
-object — and a count cannot answer the only question a rollback must get right: did this run create
-this record, or was it already here? It now writes `external-ids/<Object>.csv` per object. That cost
-no extra queries: the tagged-count query was already reading exactly those rows and discarding
-everything but the row count.
-
-**Any run directory written before 2026-08-13 lacks that folder, and the script refuses to run
-against one** rather than assuming nothing was tagged beforehand. Missing data reads as unknown, and
-unknown must not authorise a delete.
-
-### The asymmetry that defines the whole problem
-
-**Undoing an insert is easy. Undoing an update is not.**
-
-Most of this migration *creates* records — delete them by external ID and the org is back where it
-started. That is what `Invoke-SandboxFactoryReset.ps1` already does.
-
-But the pipeline also **updates records it does not own**:
-
-| What | Overwrites | Recoverable by deleting? |
-| --- | --- | --- |
-| `Build-AccountReconciliation.ps1` | `LDGCRM_External_ID__c`, `Type`, Market Segment on **pre-existing** Accounts | **No** |
-| Ownership pass | `OwnerId` on Opportunity/Application/Contact | Only if the record is deleted entirely |
-| `Invoke-AccountBootstrap.ps1` | `ParentId` on Accounts that had none | **No** |
-
-Deleting a migrated record does not restore an updated one. Once those fields are overwritten the
-previous values are gone unless something wrote them down first — and until 2026-08-13 nothing did.
-`Invoke-FullMigrationLoad.ps1` now captures a **pre-image of every Account** plus baseline counts into
-`scripts/logs/data-migration/Invoke-FullMigrationLoad-<ts>/` before it writes anything. That file is the only thing that
-makes an Account rollback possible at all.
-
-### Why the factory reset is not the answer for production
-
-It deletes **everything carrying an external ID**, which in a sandbox is the same set the migration
-created. In production it is not: a second migration run would delete the *first* run's records too.
-A production rollback has to be **scoped to one run**, not to the external-ID filter. And the factory
-reset is deliberately blocked from production anyway.
-
-### What a rollback script should do
-
-1. Take a **run directory** (`Invoke-FullMigrationLoad-<ts>/`), not a set of objects — so it undoes exactly one run.
-2. **Delete only what that run created** — external IDs tagged in the org *now* and *absent* from the
-   pre-run baseline. Records that already existed are updated back, never deleted.
-   **Built against the org rather than the load CSVs, which was a change from this design.** The load
-   CSVs say what was *planned*: they can be overwritten by any later transform run, and they cannot
-   distinguish a row that was inserted from one that already existed and was merely updated. The set
-   difference above is measured on both sides.
-3. **Restore the Account pre-image** for the fields the migration overwrote.
-4. Delete notes from the run's `created-note-ids.csv` — `ContentNote` has no external ID, so that
-   file is the only handle on them.
-5. Reverse order: children and junctions before parents, same as the factory reset.
-6. Its own typed token (`-Confirmation "ROLLBACK"`), and the separate production token on top.
-
-**One safeguard added during the build that this design missed.** The rollback is scoped by a
-*baseline*, not by a run id — so if another load ran *after* the one being rolled back, that load's
-records are newer than this baseline too and would be deleted as though this run had created them.
-The script therefore compares the org's current totals against the run's own `post-load-counts.csv`
-and **stops if they disagree**, on the grounds that the operator is about to undo more than they
-think. `-IgnoreDrift` overrides it, deliberately awkwardly.
-
-```powershell
-# Always dry-run first - writes the full plan, changes nothing
-powershell scripts/powershell-scripts/Invoke-MigrationRollback.ps1 `
-    -Environment Dev -RunDirectory scripts/logs/data-migration/Invoke-FullMigrationLoad-<ts> -PlanOnly
-
-powershell scripts/powershell-scripts/Invoke-MigrationRollback.ps1 `
-    -Environment Dev -RunDirectory scripts/logs/data-migration/Invoke-FullMigrationLoad-<ts> -Confirmation "ROLLBACK"
-```
-
-### What it will never be able to do — state this before anyone relies on it
-
-- **Hard deletes are irreversible.** Rollback deletes; it cannot resurrect. Anything the factory
-  reset removed is gone short of Salesforce's paid Data Recovery service.
-- **It clobbers post-load human edits.** Restoring the Account pre-image overwrites whatever anyone
-  changed since. **Rollback has a shelf life** — it is safe in the minutes after a load and
-  increasingly destructive after users touch the data. That window, not the script, is the real
-  constraint.
-- **Cascades delete more than the run created.** Removing an Account takes its Master-Detail Partner
-  Accounts and their children with it, including any that pre-dated the run.
-- **Flows, triggers and roll-ups fire on the way back out**, and the FCIC and PureCloud automation is
-  outside this repo's control.
-
-### The honest recommendation for production
-
-A script-level rollback is a **best-effort tidy-up, not a safety net**. The actual safety net for a
-production migration is a backup taken immediately before the run and a rehearsed restore path —
-plus loading in stages small enough that "stop and fix forward" beats "undo". Build the script, but
-do not let its existence justify skipping the backup.
-
----
-
-## 5. Re-run after Airtable cleanup
-
-**Status:** ongoing, no engineering work required.
+**No engineering work required** — recorded here so nobody builds something for it.
 
 Every transform re-reads Airtable and re-queries Salesforce, so fixing the items in
-[`AIRTABLE-DATA-QUALITY-REQUESTS.md`](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) and re-running picks up the
-newly-valid records automatically. The largest single lever remains the **169 unmatched Accounts**,
-which cascade into Partner Accounts → Applications → Application-Contact links, and into Opportunities
-→ Opportunity-Impediment links.
-
----
-
-## 6. Report on automated-pipeline progress, not just record counts
-
-**Status:** partially addressed in the 2026-08-13 report; keep current.
-
-The stakeholder report should show how far the **automated loading process** has been built, not only
-how many records exist — the goal is a repeatable pipeline the Operations team can run, not a
-one-time data dump. The report now carries a pipeline-progress section covering pull → transform →
-load → verify for each object. Keep it updated as chunks are built, and keep reporting what is
-*automated* separately from what is *loaded*, since a chunk can be fully built yet mostly blocked by
-source data (Application is exactly that: built and proven, 65% loaded).
-
----
-
-## 7. Consolidated org pre-flight check — ✅ BUILT 2026-08-14
-
-**Status:** built as `scripts/powershell-scripts/Invoke-LoadPreflight.ps1`, in the **bundle** (not
-`tools/`) — Operations runs it, so it ships. Read-only by default; `-ActivateFlows` is the only
-thing it changes and is blocked in Prod at run time.
-
-### What it turned out to be for
-
-Narrower and sharper than the "check every field exists" sketch below, because a real incident
-defined it: **QA was loaded on 2026-08-14 with 8,740 records and 0 unexpected failures while every
-LDGCRM Flow in the org was switched off.** Nothing failed, nothing was withheld, and object counts
-matched Dev exactly — flow activation changes field *contents*, not row counts, so the Dev-vs-QA
-comparison passed too. The only visible symptom was Market Segment blank on all 92 Partner Accounts,
-842 Opportunities and 1,026 Applications, because the three before-save Flows never ran.
-
-**That is the failure mode it guards: not a load that breaks, but a load that succeeds against an
-org whose automation is off.** It checks three things — expected flows present and active; flows
-whose *latest* version is newer than the *active* one (deployed but never switched on, which passes
-a naive "is it active?" test); and an inverse check that `LDGCRM_Screen_Flow_Developer_Data_Delete_Flow`
-is **absent** outside Dev, since it bulk-deletes records and previously nothing but hand-picking
-change set contents kept it out.
-
-### The boundary this sits inside
-
-Standing rule: **metadata is not the Operations team's job, and this project is not responsible for
-pushing or pulling it.** Metadata moves between orgs by change set only, and the metadata tooling
-(`tools/metadata/`) is a development aid that does not ship.
-
-Activation is permitted inside that rule, per the project owner (2026-08-14): *"There is a
-difference between changing settings in the org via CLI and adding/updating core object definitions.
-We want change sets to migrate all xml, but allow for our pre-flight script to prep and validate the
-environment for a successful load."* Flipping `FlowDefinition.Metadata.activeVersionNumber` points
-at a version **already in the org** — it moves no XML and creates no component.
-
-Two design points worth keeping:
-
-- **Nothing is restored afterwards**, deliberately unlike the `TriggerControls__c` bypass. A flow
-  switched on so the load is correct must *stay* on, or the org resumes producing wrong data for
-  every record a human creates in the UI.
-- **Flow version numbers are per-org counters and are not comparable across orgs.** Dev on v4 and QA
-  on v2 is the ordinary result of four saves there and two deployments here. An earlier draft
-  asserted otherwise and was wrong. A clean pre-flight therefore means "on, and running the newest
-  version *this* org holds" — whether that version carries the intended logic is a change-set
-  question.
-
-### Still open
-
-The field/picklist/record-type checks sketched below are **not** built — the flow checks are. The
-open questions in the last section still apply if that part is picked up.
-
-### Why the field-level checks are still worth building
-
-The checks already exist, but scattered and implicit, so a missing prerequisite surfaces as a
-mid-load failure rather than a refusal to start:
-
-- `Build-ApplicationLoad.ps1` reads live field definitions to decide whether to send the two portal
-  team columns (they were `unique=true` and would have failed most of the load).
-- `Build-MarketSegmentLoad.ps1` exists because a required object was silently unloaded — the
-  pre-flight hard-failed on a count of zero while nothing created the records.
-- `Invoke-SalesforceLoad.ps1` verifies the `TriggerControls__c` switch exists before flipping it.
-- Record-type picklist narrowing is **not** visible to `sf sobject describe` and has failed a whole
-  test batch once already.
-- `priority_type__c` exists in Dev and **not in QA** — an org-to-org difference nothing checks for.
-
-A single step, run before anything is submitted, that reports every prerequisite as present/absent
-and refuses to continue on absent, would convert several classes of mid-load failure into a clear
-list handed to whoever builds the change set.
-
-### Shape for the unbuilt field-level part (proposed, not agreed)
-
-- `Test-OrgReadiness.ps1` in the bundle, read-only, no confirmation gate needed.
-- A declarative table of expectations per object: field API name, type, whether it must be writable,
-  required picklist values **per record type**, and any custom setting the load toggles.
-- Reuses `Assert-LdgcrmOrgTarget` for the banner and identity check.
-- Output in the run directory as a findings CSV, in the same shape the load report already reads,
-  so a failure lands in `SUMMARY.txt` rather than a separate place to remember to look.
-- Wired as step 0 of `Invoke-FullMigrationLoad.ps1`, skippable with an explicit flag for a resumed
-  run.
-
-### Open questions
-
-- Does it hard-fail, or warn and continue with the affected columns omitted? `Build-ApplicationLoad`
-  already does the latter for one specific case, deliberately, because omitting a column is safer
-  than blanking the org's value. A blanket hard-fail would remove that.
-- Where does the expectation table live — hand-maintained in the script, or generated from
-  `sfdx/force-app/` (which the bundle cannot read)? Hand-maintained is the only option that survives
-  the hand-off.
-
----
-
-## 8. Owners the pipeline cannot assign to — ✅ DECIDED AND ENFORCED 2026-08-15
-
-**Raised 2026-08-15.** The ownership resolver joins an Airtable collaborator's **email** to
-`User.Email` (and its sandbox `.invalid` form). Where the two spellings differ the person is
-indistinguishable from someone who has no account at all: the record falls back to the default
-owner, correctly, and nothing says why.
-
-**The known case is Tony Parrilla**, who owns 15 Opportunities and 15 Partner Accounts:
-
-| | Address |
-| --- | --- |
-| Airtable (`Pod Opportunity Lead`, `Account Owner`) | `tony.parrilla@gsa.gov` |
-| Salesforce Dev (`User.Email`, and the `Username` base) | `antonio.parrilla@gsa.gov` |
-
-The `.invalid` suffix is **not** the issue — the resolver already queries both forms. It is `tony`
-versus `antonio`, and his whole Salesforce identity uses the formal spelling.
-
-### The decision
-
-**`tony.parrilla@gsa.gov` is the correct address** (project owner, 2026-08-15). Airtable is right and
-**Salesforce is what must change** — its `User.Email` gets corrected, not the roster, not Airtable.
-
-### What pre-flight now does — check 7, Full and Prod only
-
-An owner marked `ExpectedInSalesforce=yes` whom the resolver cannot use is now sorted into three
-outcomes instead of one undifferentiated "absent":
-
-| Finding | Result |
-| --- | --- |
-| No User at that address **or** under that name | ⚠️ Warning — a provisioning gap only the business can close |
-| User exists **under a different email** | 🛑 **Blocks** |
-| User exists at the right address on a licence that **cannot own records** | 🛑 **Blocks** |
-
-**Why present-but-unusable blocks while an absence does not.** An absence is a staffing question, and
-the fallback is the correct outcome. A person who already exists but cannot be assigned to is a
-defect: their records should reach them and something small and fixable — a spelling, or a licence —
-is in the way. As warnings, both were indistinguishable from the legitimate absence printed directly
-above them in the same report.
-
-**Dev and QA are deliberately exempt**, because the whole roster check is inside the Full/Prod gate.
-They discard such owners as missing and assign the fallback owner, exactly as before (project owner,
-2026-08-15: *"Development or QA would discard them as being missing and auto assign Peter Marks"*).
-Those orgs are partial refreshes that carry no expectation these logins exist at all.
-
-### Two mechanics worth keeping
-
-- **The name probe is not filtered to `UserType = 'Standard'`,** unlike `Resolve-SalesforceOwnerIds`.
-  That filter is right for deciding who may *own* a record and wrong for deciding whether a person
-  *exists* — with it, Parrilla (active, Chatter Free, different address) reported as simply absent,
-  which is the exact confusion this was built to remove.
-- **The sandbox `.invalid` suffix is stripped before comparing addresses.** A Full sandbox appends it
-  to every `User.Email`, so a raw compare would flag *every* roster owner as a mismatch and the check
-  would mean nothing.
-- The name join stays weak on purpose: a display name is not an identifier, so a name matching 2+
-  active Users only warns. Exactly one match is what blocks.
-
-### Do not fix it with an alias table
-
-The tempting shortcut is an email-alias map in the pipeline. That hides the mismatch instead of
-resolving it, and it is the pattern this project has already ruled out for Airtable data problems.
-
-### Still unknown
-
-**How many others are affected.** Only Parrilla has been checked by hand; pre-flight will now find
-the rest on the first Full or Prod run rather than anyone sweeping for them. Verified against Dev's
-data: of the three roster owners the resolver cannot use, it correctly separates Elizabeth Mays
-(absent, warn) from Tony Parrilla (wrong email, block) and Shaunte Brown (Chatter Free, block).
+[`AIRTABLE-DATA-QUALITY-REQUESTS.md`](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) and
+re-running picks up the newly-valid records automatically. The largest single lever remains the
+unplaced Accounts — see
+[`ACCOUNT-MATCHING-WORKLIST.md`](ACCOUNT-MATCHING-WORKLIST.md).

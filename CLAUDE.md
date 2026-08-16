@@ -26,7 +26,7 @@ which org they are about to touch. It also carries **`AllowsAccountRebuild`**, s
 | --- | --- | --- | --- | --- | --- | --- |
 | `Dev` (default) | `peodv8dvn` | PEOdV8DVn | `https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com` | `https://gsa-peo--peodv8dvn.sandbox.lightning.force.com` | rebuilt | Development and pipeline testing. Everything documented below was done here. |
 | `QA` | `peodv15dvn` | PEOdV15DVn | `https://gsa-peo--peodv15dvn.sandbox.my.salesforce.com` | `https://gsa-peo--peodv15dvn.sandbox.lightning.force.com` | rebuilt | Full end-to-end migration rehearsal |
-| `Full` | *not provisioned yet* | TBD | TBD | TBD | **real** | Operations team integration testing: scripts + change sets, immediately before production |
+| `Full` | `peofl2stgp` | PEOfL2STGp | `https://gsa-peo--peofl2stgp.sandbox.my.salesforce.com` | `https://gsa-peo--peofl2stgp.sandbox.lightning.force.com` | **real** | Operations team integration testing: scripts + change sets, immediately before production |
 | `Prod` | `gsa-peo` | — | `https://gsa-peo.my.salesforce.com` | `https://gsa-peo.lightning.force.com` | **real** | Live GSA PEO org *(not authorized here)* |
 
 **An alias is the org's own sandbox name**, so it can be checked against the instance URL and cannot
@@ -72,6 +72,13 @@ Writes/deletes against `Prod` need the org alias typed at an extra guard
 so `-Environment QA` works. It can trail Dev by a change set — **never assume Dev's metadata state
 applies to QA**; verify against the org you are actually loading. Confirmed example: `priority_type__c`
 exists in Dev and **does not exist in QA at all**.
+
+**Full (`peofl2stgp`, sandbox `PEOfL2STGp`) is PROVISIONED and in the registry, but is NOT authorized
+on this machine** — only Dev and QA are. Those are different claims and the registry says which org
+Full *is*, not whether you can currently reach it: `Assert-LdgcrmOrgTarget` fails with "could not
+reach org alias", which is the correct outcome. Authorize with
+`sf org login web --alias peofl2stgp --instance-url https://gsa-peo--peofl2stgp.sandbox.my.salesforce.com`.
+**Anything saying Full is "not provisioned" is stale** — that was true until 2026-08-14.
 
 **QA was fully loaded on 2026-08-14: 8,740 records, 0 unexpected failures**, using the same two
 commands as Dev (factory reset, then `Invoke-FullMigrationLoad.ps1 -BootstrapAccounts`). Every object
@@ -529,10 +536,16 @@ stale cached answer; the Tooling API's `FieldDefinition` gave the truthful one.
 
 **Salesforce config changes the pipeline cannot make live in
 `docs/engineering/SALESFORCE-CHANGE-REQUESTS.md`** — the config-owner counterpart to the Airtable
-data-quality doc. **CR-1 and CR-2 both resolved 2026-08-14** — the Level 1 checklist item now scores `LDGCRM_P3_Team_UUID__c` (denominator unchanged at 9) and `LDGCRM_PP_Issuer_Strings__c` has been deleted; Salesforce cascaded the layout/permission-set/report-type cleanup. One remains:
-CR-3 was **accepted as-is on 2026-08-14** (project owner: it breaks nothing and the field is ignored once live) — **a blank `Launch Level` falls through the `CASE` in
-`LDGCRM_Launch_Checklist_Completion__c` to its else value of `1`, so 607 of 1,026 migrated
-Applications report 100% launch-complete purely because that field is empty.**
+data-quality doc, and like it, that file holds **only what is still open**. As of 2026-08-15 **every
+change request that blocked a load has landed in Dev and QA** (verified against both orgs, not
+against the change-set record); only two cosmetic tidy-ups remain. Full and Prod are unverified.
+
+**One settled decision that is now load-bearing in the pipeline:** a blank `Launch Level` falls
+through the `CASE` in `LDGCRM_Launch_Checklist_Completion__c` to its else value of `1`, so an
+Application with an empty Launch Level reports 100% launch-complete. The project owner **accepted
+this as-is** rather than changing the formula, which makes `Build-ApplicationLoad.ps1`'s default of
+`1 - Very Low Impact` the thing keeping the metric honest — **removing that default silently returns
+hundreds of Applications to reporting 100%.**
 
 **Current sandbox state (rebuilt 2026-08-13 — see `docs/engineering/ARCHITECTURE.md`'s "Production Account seed"
 section for the full rebuild):** the Account/Partner Account chain was deliberately hard-deleted
@@ -810,11 +823,12 @@ Run from inside `sfdx/`:
     `isActive`/`ruleStatus`, deploys it back to that same org, and then **decides whether to proceed
     on a verifying re-query, never on the deploy's own success report**. It blocks only if a rule is
     still active afterwards. **Nothing is restored** — unlike the `TriggerControls__c` bypass, these
-    stay off. The CR-6 plan to add `Email` and promote it by change set was abandoned: a change set
-    cannot carry a matching-rule change, because Salesforce refuses to modify a rule that is Active
-    in the target *and* refuses to change a definition and a status in one deployment, and a change
-    set always carries the source org's status with no way to edit it. It is TTS OTCRM's rule, but
-    **TTS OTCRM is defunct** (user, 2026-08-15), so this needs no cross-team sign-off. See CR-6.
+    stay off. The plan to add `Email` to the matching rule and promote it by change set was
+    abandoned: a change set cannot carry a matching-rule change, because Salesforce refuses to modify
+    a rule that is Active in the target *and* refuses to change a definition and a status in one
+    deployment, and a change set always carries the source org's status with no way to edit it. It is
+    TTS OTCRM's rule, but **TTS OTCRM is defunct** (user, 2026-08-15), so this needs no cross-team
+    sign-off.
 
   Useful live-org checks before a first load of any object:
   `sf data query --use-tooling-api -q "SELECT Name, Status, TableEnumOrId FROM ApexTrigger WHERE TableEnumOrId = '<Object>'"`
@@ -905,26 +919,37 @@ reports are removed rather than retained: their numbers are wrong within hours, 
 the repo is likelier to be re-sent by mistake than to be useful. Status over time belongs in
 `PRODUCTION-READINESS.md`, which is maintained rather than snapshotted.
 
-### Tracking what's been resolved (standing convention — REVISED 2026-08-14, supersedes 2026-08-13)
+### ⚠️ EVERY document records what is TRUE NOW, not how it got there
 
-**⚠️ This convention was reversed on 2026-08-14 (user-stated).** The previous rule was "mark items
-resolved in place and never remove them, plus keep a Resolved log". That produced a 1,100-line
-document where the open asks were outnumbered by closed ones and the reader had to work out which was
-which. **The new rule is the opposite:**
+**Standing convention, user-stated 2026-08-15, generalizing the 2026-08-14 rule that previously
+applied only to the data-quality document.** Completed work, resolved items, superseded status and
+run history are **deleted, not struck through, not archived in a "Resolved log", not marked ✅.**
+Git carries the history; per-run detail lives in each run's `SUMMARY.txt`.
 
-- `docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md` **documents only what is currently open.**
-  When an item is fixed, **delete it** — no ✅ markers, no in-place status history, no Resolved log,
-  no "was 172 → now 155" trails. Re-measure the remaining items against the current export in the
-  same change so every number in the file describes today. The document states this rule in its own
-  header, so a data owner who fixed something knows that its absence *is* the confirmation.
-  - History has not been lost, it has moved: git carries the full record, per-run detail lives in
-    each run's `SUMMARY.txt`, and load-over-load movement belongs in `RELOAD-QA-CHECKLIST.md`.
-  - **Do not re-introduce a status-history section here.** It was removed deliberately.
-- `scripts/docs/RELOAD-QA-CHECKLIST.md` — update the matching expectation **in the same change**.
-  A resolved item usually invalidates a row count, an "expect N skipped", a known-empty field, or
-  makes an optional step mandatory. A checklist saying "expect 142 blocked" must not outlive the fix
-  that unblocked them. **This half of the convention is unchanged**, and the checklist *is* where
-  run-to-run trend belongs.
+The reason is the one that forced the original reversal: closed items outnumber open ones within
+days, and a reader then has to work out which is which. A 1,100-line data-quality doc and a 630-line
+backlog of built work are what this rule exists to prevent.
+
+Applies to all of these, and re-measure the survivors in the same change so every number describes
+today:
+
+| Document | Holds only |
+| --- | --- |
+| `docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md` | Currently-open asks that **cost records**. Its absence *is* the confirmation a fix landed |
+| `docs/engineering/SALESFORCE-CHANGE-REQUESTS.md` | Config changes not yet promoted. Delete a CR once it is in every org |
+| `docs/engineering/BACKLOG.md` | Work agreed but **not yet built**. A built item is deleted, not marked done |
+| `docs/PRODUCTION-READINESS.md` | Current gate status. No struck-through gates, no superseded run write-ups |
+| `docs/*.html` | Nothing, normally — reports are generated on demand and removed once superseded |
+
+**The one exception is a RULE.** A business or transformation rule stays even after it is
+implemented, because it describes how the system must behave, not what happened. Those live in
+`docs/engineering/TRANSFORMATION-RULES.md` ("Settled business rules") and must not be deleted as
+"completed" — deleting one invites it being re-litigated as an open question.
+
+`scripts/docs/RELOAD-QA-CHECKLIST.md` — update the matching expectation **in the same change**. A
+resolved item usually invalidates a row count, an "expect N skipped", a known-empty field, or makes
+an optional step mandatory. A checklist saying "expect 142 blocked" must not outlive the fix that
+unblocked them. Keep **one** current baseline, not a stack of superseded ones.
 
 ## Skills
 

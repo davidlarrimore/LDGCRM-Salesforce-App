@@ -22,7 +22,6 @@ Two kinds of work live here:
 | Look up what a field maps to | [docs/engineering/TRANSFORMATION-RULES.md](docs/engineering/TRANSFORMATION-RULES.md) |
 | Fix something in the Airtable source data | [docs/data-quality/](docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) |
 | **See where the project is** — what's left before production | **[docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md)** |
-| Read the status report | [docs/migration-load-report-2026-08-14.html](docs/migration-load-report-2026-08-14.html) — render the PDF before sending |
 | Change the Salesforce app itself | [Salesforce app changes](#salesforce-app-changes), below |
 
 Full index: **[docs/engineering/ARCHITECTURE.md](docs/engineering/ARCHITECTURE.md)**.
@@ -38,7 +37,7 @@ itself. **You never pass a Salesforce username or alias by hand.**
 | --- | --- | --- |
 | `Dev` *(default)* | `peodv8dvn` | Day-to-day development and pipeline testing |
 | `QA` | `peodv15dvn` | Full end-to-end migration rehearsal |
-| `Full` | *not yet provisioned* | Operations dress rehearsal, immediately before production |
+| `Full` | `peofl2stgp` | Operations dress rehearsal, immediately before production. **Real Accounts — never rebuilt** |
 | `Prod` | `gsa-peo` | **The live GSA PEO org. Real partner data.** |
 
 > ### ⚠️ `gsa-peo` means production

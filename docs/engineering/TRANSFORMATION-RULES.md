@@ -10,7 +10,7 @@
 >
 > **Not an engineer?** If the source data looks wrong, go to
 > [../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md).
-> If you need to run a load, go to [../operations/RUNNING-A-LOAD.md](../operations/RUNNING-A-LOAD.md).
+> If you need to run a load, go to [../../scripts/docs/RUNNING-A-LOAD.md](../../scripts/docs/RUNNING-A-LOAD.md).
 
 This is the authoritative, field-by-field record of how each Airtable table's columns become each
 Salesforce object's fields in this migration — every mapping decision, every excluded field, and
@@ -349,7 +349,7 @@ therefore near-meaningless as loaded — not because the rule misfires, but beca
 ownership it inherits from carries almost no information.
 
 This is now an evidenced decision rather than an argument, and it is the strongest available input to
-D2 in [`RELOAD-QA-CHECKLIST.md`](../operations/RELOAD-QA-CHECKLIST.md): keep the rule, drop the inheritance in
+D2 in [`RELOAD-QA-CHECKLIST.md`](../../scripts/docs/RELOAD-QA-CHECKLIST.md): keep the rule, drop the inheritance in
 favour of the named fallback, or inherit only from real people. **No code change is proposed here —
 the rule was confirmed as-is on 2026-08-13 and this is evidence for revisiting it, not a decision to
 change it.**
@@ -1018,7 +1018,10 @@ failure, not a silent zero.**
 ### `LDGCRM_Technical_Checklist_URL__c` — renamed twice on 2026-08-14; both old names are dead
 
 The current API name is **`LDGCRM_Technical_Checklist_URL__c`**. It got there in two steps on the
-same day, and **both earlier spellings are gone from the org**:
+same day. **Both earlier spellings are gone from Dev — but they still exist in QA**, because a change
+set adds a field and cannot delete one. They hold no data and are deliberately being left alone.
+**Always write the current name; never fall back to a spelling because the target org happens to have
+it.**
 
 | | Wrong how | Why it mattered |
 | --- | --- | --- |
@@ -2296,8 +2299,9 @@ now a genuine 90%.
   Salesforce. The count is reported at build time (`Launch Level DEFAULTED to 1`) and that is the only
   record of it.
 - **It protects migrated records, not the org.** Anything created later with a blank level still
-  reports 100%. The formula fix is CR-3 in
-  [SALESFORCE-CHANGE-REQUESTS.md](SALESFORCE-CHANGE-REQUESTS.md).
+  reports 100%. **The project owner accepted the formula as-is** rather than fixing it, on the basis
+  that it breaks nothing and the field is ignored once the app is live — which makes this default the
+  only thing keeping the metric honest for migrated records. Do not remove it.
 
 A value that is present but outside 1–5 is also defaulted rather than blanked — same reasoning — but
 written to a review CSV so an unexpected value cannot hide inside the default. 0 rows hit that today.
@@ -2426,8 +2430,8 @@ and **847 Applications have more than one**. Its own help text describes it as a
 maintain by hand against ZenDesk/GitHub. Three independent reasons, any one sufficient.
 
 **Superseded 2026-08-13:** the project owner confirmed this data is not being migrated and **the
-field is to be retired entirely.** That is not a plain delete — see **CR-2** in
-[SALESFORCE-CHANGE-REQUESTS.md](SALESFORCE-CHANGE-REQUESTS.md):
+field was retired entirely.** It could not be a plain delete, and the reason is worth keeping because
+it generalizes — a field that looks unused can still be load-bearing inside a formula:
 
 - `LDGCRM_Level_1_Complete_Pct__c` counts it as **1 of 9** checklist items. Since the migration never
   populates it, every migrated Application forfeits that item — a hard ceiling of 89%, with an

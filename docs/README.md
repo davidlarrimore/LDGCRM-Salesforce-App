@@ -85,32 +85,24 @@ easier to ignore.
 
 ---
 
-## I want the status report → the dated reports in this folder
+## I want the status report → generate one
 
-| File | |
-| --- | --- |
-| **[migration-load-report-2026-08-14.html](migration-load-report-2026-08-14.html)** | **Current.** Written for the Partnerships lead, not for engineers |
+**There is no report in the repo, by design.** Reports are point-in-time snapshots and both Airtable
+and the org stay in active use — counts have moved several times within a single day — so a report is
+written when one is asked for and removed once it is superseded. For where the programme stands, use
+**[PRODUCTION-READINESS.md](PRODUCTION-READINESS.md)**, which is maintained rather than snapshotted.
 
-**Only the HTML is tracked — it is the source. The PDF is generated and is not in a fresh clone.**
-Render it before sending:
+To produce one: write `migration-load-report-<date>.html` in this folder, aimed at the Partnerships
+lead rather than at engineers, then render it:
 
 ```powershell
-tools\Export-ReportPdf.ps1 -HtmlPath docs\migration-load-report-2026-08-14.html
+tools\Export-ReportPdf.ps1 -HtmlPath docs\migration-load-report-<date>.html
 ```
 
 **Send the PDF, not the HTML.** Google Drive renders a standalone `.html` as raw markup.
 `Export-ReportPdf.ps1` verifies the page count — a failed render still writes a valid-looking
-one-page file, which is exactly the failure that makes an unverified PDF dangerous to send.
-
-These are **point-in-time snapshots, deliberately dated in the filename.** Both Airtable and the org
-stay in active use and the counts have moved several times within a single day. Never edit an old
-report to refresh it; generate a new dated one.
-
-> **Only the current report is kept** (changed 2026-08-13). Superseded reports used to be retained as
-> the record of what was sent; they are now removed, because the numbers in them are wrong within
-> hours and a stale report in the repo is more likely to be re-sent by mistake than to be useful.
-> For programme status over time, use **[PRODUCTION-READINESS.md](PRODUCTION-READINESS.md)**, which
-> is maintained rather than snapshotted.
+one-page file, which is exactly the failure that makes an unverified PDF dangerous to send. The PDF
+is gitignored; never edit an old report to refresh it.
 
 ---
 
