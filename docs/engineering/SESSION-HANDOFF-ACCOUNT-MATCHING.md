@@ -13,9 +13,9 @@ Every remaining item is ours.
 | | |
 | --- | --- |
 | Airtable Account rows | **719** |
-| Matched | **682** |
+| Matched | **683** |
 | Unmatched | 16 |
-| Ambiguous | 22 |
+| Ambiguous | 20 |
 | Unresolved rows carrying **no** Opportunities / Partner Accounts / Applications | **31 — ignored by rule** |
 | Unresolved rows carrying real records | **7** |
 
@@ -26,11 +26,24 @@ Applications does not need matching.** Contacts and Meetings reach Salesforce
 *through* those, so a row carrying only them costs nothing on its own. That took
 the actionable pile from 36 review items to 7.
 
-### The 7 that remain, all ours
+### ⚠️ Leave the duplicate ITC Account alone
+
+The org holds **two** International Trade Commission Accounts:
+`U.S. International Trade Commission` (`001cq00000V5xQRAAZ`) and
+`U.S International Trade Commission` (`001cq00000V5xQWAAZ`, missing a full stop).
+The project owner has no rights to delete the second, and it does not matter:
+Airtable's row matches the correct one **character for character**, so the
+duplicate is never tagged and nothing migrates into it. It sits inert.
+
+**Do not "tidy" its name to match the good one.** They currently differ exactly
+and are identical once punctuation is stripped; making them exactly equal would
+put the row back into ambiguity and strand 14 records. `Test-AccountMatching.ps1`
+pins this.
+
+### The 6 that remain, all ours
 
 | Airtable row | Records | What it needs |
 | --- | --- | --- |
-| `U.S. International Trade Commission` | 14 | **Merge the duplicate Salesforce Account** — `U.S International Trade Commission` (`001cq00000V5xQWAAZ`, missing a full stop) into `U.S. International Trade Commission` (`001cq00000V5xQRAAZ`). Both normalise identically, so the matcher correctly refuses to guess. Airtable is already clean — the duplicate row was deleted and its meeting moved. |
 | `Conflict & Stabilization Operations` | 1 | Present in the production export, **missing from Dev**. Airtable is correct. Fix Dev's bootstrap. |
 | `Office to Monitor and Combat Trafficking in Persons` | 1 | Same. |
 | `DC Pre-trial Services` | 1 | Genuinely new — create |
@@ -109,7 +122,6 @@ into the orchestrator but has **never run live**.
 
 ## Suggested next steps
 
-1. Merge the duplicate ITC Account in Salesforce — unblocks 14 records.
-2. Finish Dev's bootstrap so the two State bureaus stop looking absent.
+1. Finish Dev's bootstrap so the two State bureaus stop looking absent.
 3. Re-run `Build-AccountCreationLoad.ps1 -PlanOnly`, confirm the create list, load it.
 4. Run the reconciliation load, then the full migration.

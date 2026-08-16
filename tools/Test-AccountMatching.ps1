@@ -190,6 +190,18 @@ else {
     Assert-Equals "  and again, with an agency named" $Result.Verdict 'Confirm'
 
     Write-Host ""
+    Write-Host "An exact name beats its own punctuation variants" -ForegroundColor Cyan
+
+    # The org holds both "U.S. International Trade Commission" and "U.S
+    # International Trade Commission" - different exactly, identical loosely.
+    # Testing exact OR loose in one pass let the variant outvote the exact
+    # match, so a row matching one character for character was reported
+    # ambiguous and 14 records stayed behind a duplicate nobody could delete.
+    $Result = Resolve-LdgcrmAccount -Index $Index -Name 'U.S. International Trade Commission' -ParentName ''
+    Assert-Equals "an exact name still matches despite a near-duplicate" $Result.Verdict 'Match'
+    Assert-Equals "  and to the correctly spelled record" $Result.Account.Name 'U.S. International Trade Commission'
+
+    Write-Host ""
     Write-Host "Claiming must not break the hierarchy" -ForegroundColor Cyan
 
     # Removing a claimed Account from the index once broke agency resolution for

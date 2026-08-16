@@ -506,17 +506,41 @@ function Resolve-LdgcrmAccount {
     # reconciliation to five minutes.
     $Unclaimed = @($Index.Accounts | Where-Object { -not $Index.Claimed.ContainsKey($_.LdgcrmKey) })
 
-    # ---------- no agency named: the whole export, but never auto-matched ----------
+    # ---------- no agency named: the whole org ----------
     if ($Pool.Count -eq 0) {
-        $Hit = @($Unclaimed | Where-Object {
-            (Get-LdgcrmNameExact -Name $_.Name) -eq $Exact -or (Get-LdgcrmNameLoose -Name $_.Name) -eq $Loose
-        })
+
+        # EXACT BEFORE LOOSE, and separately - the same precedence the in-agency
+        # path uses. Testing "exact OR loose" in one pass collapses the two, so a
+        # single exact match is outvoted by its own punctuation variants: the org
+        # holds both "U.S. International Trade Commission" and "U.S
+        # International Trade Commission", which are DIFFERENT exactly and
+        # IDENTICAL loosely. The row matched one of them character for
+        # character and was still reported as ambiguous, stranding 14 records
+        # behind a duplicate nobody had permission to delete.
+        $Hit = @($Unclaimed | Where-Object { (Get-LdgcrmNameExact -Name $_.Name) -eq $Exact })
         if ($Hit.Count -eq 1) {
-            $Result.Verdict = "Match"; $Result.Account = $Hit[0]; $Result.Route = "exact name; Airtable names no parent"
+            $Result.Verdict = "Match"; $Result.Account = $Hit[0]
+            $Result.Route = "exact name, character for character; Airtable names no parent"
+            return $Result
+        }
+
+        # Two Accounts named EXACTLY the same is a genuine duplicate, and no
+        # amount of precedence resolves it.
+        if ($Hit.Count -gt 1) {
+            $Result.Verdict = "Confirm"; $Result.Candidates = $Hit
+            $Result.Route = "several Accounts carry exactly this name"
+            return $Result
+        }
+
+        $Hit = @($Unclaimed | Where-Object { (Get-LdgcrmNameLoose -Name $_.Name) -eq $Loose })
+        if ($Hit.Count -eq 1) {
+            $Result.Verdict = "Match"; $Result.Account = $Hit[0]
+            $Result.Route = "name matches once punctuation is ignored; Airtable names no parent"
             return $Result
         }
         if ($Hit.Count -gt 1) {
-            $Result.Verdict = "Confirm"; $Result.Candidates = $Hit; $Result.Route = "several Accounts share this name"
+            $Result.Verdict = "Confirm"; $Result.Candidates = $Hit
+            $Result.Route = "several Accounts share this name apart from punctuation"
             return $Result
         }
     }
