@@ -56,11 +56,39 @@ retarget to production. Queries below use `<alias>`; substitute the one you are 
 
 ```powershell
 .\powershell-scripts\Invoke-SandboxFactoryReset.ps1 -Environment Dev -BootstrapAccounts
+# ⚠️ STOP - run the bootstrap a SECOND time and confirm it reports 0 missing. See below.
 # ⚠️ STOP - re-apply the two manual Account tags here, BEFORE the load. See below.
 .\powershell-scripts\Invoke-FullMigrationLoad.ps1   -Environment Dev -Confirmation "LOAD"
 ```
 
 Then **read `SUMMARY.txt`** in the run directory before anything else. It is the report, not a log.
+
+### ⚠️ MANDATORY after the bootstrap: run it AGAIN and confirm 0 missing
+
+**The bootstrap can lose rows silently.** On a large insert the `sf` CLI sometimes returns a job
+result the script cannot parse. It says so — *"Could not read the job result for this pass… how many
+landed is UNKNOWN"* — and correctly refuses to guess, but it **cannot tell you which rows are
+missing**, and the run still exits 0.
+
+Measured on 2026-08-16: QA submitted **590** distinct Accounts across passes 1–3, two of those passes
+returned an unreadable result, and **589 landed**. `Office to Monitor and Combat Trafficking in
+Persons` vanished with no error. The same Account had gone missing from Dev earlier for the same
+reason, and was wrongly blamed on the production export.
+
+**The fix is simply to run the bootstrap again.** It is idempotent, inserts only what is absent, and
+a small batch returns a readable result:
+
+```powershell
+.\powershell-scripts\Invoke-AccountBootstrap.ps1 -Environment <env> -Confirmation "BOOTSTRAP"
+```
+
+**Confirm it reports `Planned Accounts missing (will insert)  0`.** If it inserts anything, run it a
+third time until that line reads 0. Do **not** skip this because the first run "looked fine" — a
+silent loss looks exactly like success.
+
+> ⚠️ **Never re-run a single pass by hand from its CSV.** Bootstrapped Accounts carry no external ID,
+> so there is nothing to deduplicate on and a second insert creates duplicate Accounts. Re-run the
+> whole script, which re-reads the org first.
 
 ### ⚠️ MANDATORY between the reset and the load: re-tag AmeriCorps and MCC
 

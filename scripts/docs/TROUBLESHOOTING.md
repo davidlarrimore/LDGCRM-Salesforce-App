@@ -435,6 +435,45 @@ Specific things that have produced plausible-but-wrong numbers:
   records) never return to zero. Measure deltas.
 - **The org's Flows were switched off.** Counts are *right* and field contents are empty — see the
   next section, which is the worst version of this because every count agrees.
+- **The bootstrap lost rows to an unreadable Bulk result** — see the next-but-one section.
+- **A re-run's `-OnlySteps` list omitted a step that needed re-running.** Fixing an Account and
+  re-running only the steps *below* it leaves anything the earlier steps withheld still withheld.
+  Measured 2026-08-16: tagging two Accounts and resuming from `PartnerAccount` recovered the
+  Opportunities and the Application but not the **8 Contacts** the Contact step had withheld for the
+  same reason — nor the 8 junction rows beneath them. **Work out which steps withheld rows because
+  of the thing you just fixed, not just which steps come after it.** `SUMMARY.txt`'s ROWS WITHHELD
+  section, grouped by reason, is how you tell.
+
+---
+
+## The bootstrap inserted fewer Accounts than it submitted, and said so vaguely
+
+`Invoke-AccountBootstrap.ps1` prints *"Could not read the job result for this pass… how many landed
+is UNKNOWN from here"* and the run still exits 0. That warning is honest — the `sf` CLI returned a
+shape it cannot parse — but it **cannot name the missing rows**, so nothing tells you which Account
+is absent.
+
+Measured 2026-08-16 in QA: 590 distinct Accounts submitted across three passes, two of them
+unreadable, **589 landed**. `Office to Monitor and Combat Trafficking in Persons` disappeared without
+an error. The same Account had previously gone missing in Dev and was wrongly blamed on the
+production export.
+
+**Fix: run the bootstrap again and confirm `Planned Accounts missing (will insert)  0`.** It is
+idempotent and re-reads the org first, so it inserts only what is genuinely absent, and a small batch
+returns a readable result. Repeat until that line reads 0.
+
+⚠️ **Never re-submit a single pass CSV by hand.** Bootstrapped Accounts carry no external ID, so
+there is nothing to deduplicate on and you will create duplicate Accounts.
+
+To see exactly what is missing, compare the pass CSVs against the org:
+
+```powershell
+$d = "<the bootstrap run directory>"
+$org = (sf data query -q "SELECT Name FROM Account" --target-org <alias> --json | ConvertFrom-Json).result.records
+$have = @{}; foreach ($a in $org) { $have[$a.Name] = $true }
+Get-ChildItem $d -Filter "pass-*-insert.csv" | ForEach-Object { Import-Csv $_.FullName } |
+    Where-Object { -not $have.ContainsKey($_.Name) } | Select-Object Name
+```
 
 ---
 

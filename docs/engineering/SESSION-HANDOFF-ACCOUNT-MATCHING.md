@@ -155,6 +155,43 @@ pins this.
 6. **Name new Accounts the way the org already does** — bare name, or the agency
    suffix where the bare name is taken. The suffix map is learned from production.
 
+## ⚠️ The bootstrap can lose Accounts SILENTLY — always run it twice
+
+**Found 2026-08-16 in QA, and it explains an earlier wrong conclusion.**
+`Invoke-AccountBootstrap.ps1` submitted **590** distinct Accounts across three
+passes; two passes returned a Bulk result the script could not parse, and
+**589 landed**. `Office to Monitor and Combat Trafficking in Persons` vanished
+with no error and the run exited 0.
+
+The script's warning is honest — it says the insert count is a floor and refuses
+to guess — but it **cannot name the missing rows**, so nothing surfaces them.
+
+**This is what actually made Dev "short ~17 Accounts", not the production
+export.** An earlier draft of this handoff blamed the export and named this exact
+bureau as looking absent. Re-running the bootstrap inserted it with
+`inserted 1, failed 0`, so the row was always valid.
+
+**Always run the bootstrap a second time and confirm
+`Planned Accounts missing (will insert)  0`.** It is idempotent and re-reads the
+org first. `scripts/docs/RELOAD-QA-CHECKLIST.md` and `TROUBLESHOOTING.md` both
+carry the step and a snippet for listing what is absent.
+
+⚠️ **Never re-submit a pass CSV by hand** — bootstrapped Accounts carry no
+external ID, so a second insert creates duplicates with nothing to dedupe on.
+
+## ⚠️ A partial re-run must cover the steps that WITHHELD, not just the later ones
+
+**Cost 16 records in Dev on 2026-08-16.** After tagging AmeriCorps and MCC the
+load was resumed with `-OnlySteps PartnerAccount,…` — everything *below* Account.
+That recovered the Opportunities, the Partner Account and the Application, but
+**not the 8 Contacts the Contact step had withheld for the very same reason**,
+nor the 8 junction rows beneath them. Dev and QA then disagreed on exactly those
+three objects.
+
+`SUMMARY.txt`'s ROWS WITHHELD section groups by reason. **Read it and pick the
+steps whose withheld reason matches the thing you fixed** — step order is not the
+criterion.
+
 ## Traps already hit — do not re-discover
 
 - **The index must be IMMUTABLE.** Claiming is tracked separately and filtered at
