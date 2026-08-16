@@ -56,10 +56,49 @@ retarget to production. Queries below use `<alias>`; substitute the one you are 
 
 ```powershell
 .\powershell-scripts\Invoke-SandboxFactoryReset.ps1 -Environment Dev -BootstrapAccounts
+# ⚠️ STOP - re-apply the two manual Account tags here, BEFORE the load. See below.
 .\powershell-scripts\Invoke-FullMigrationLoad.ps1   -Environment Dev -Confirmation "LOAD"
 ```
 
 Then **read `SUMMARY.txt`** in the run directory before anything else. It is the report, not a log.
+
+### ⚠️ MANDATORY between the reset and the load: re-tag AmeriCorps and MCC
+
+**The reset destroys these two tags and nothing reports it.** Salesforce holds two Accounts named
+`AmeriCorps` and two named `Millennium Challenge Corporation`; the correct one is **top level**, and
+it is identified by hand because the names are character-identical. The factory reset hard-deletes
+Accounts carrying an external ID, and the bootstrap recreates them **untagged**.
+
+Skip this and **5 records are silently withheld** — Opportunities `MyAmericorps`, `Grantee and
+Sponsor Portal` and `MCC`, Partner Account `AC`, and Application `AmeriCorps Grantee and Sponsor
+Portal (Ernst & Young…)`. The load still reports success; the Partner Account failure is classified
+*expected*. There is no automated check for this.
+
+**The Account Ids differ per org and change on every rebuild — always re-query, never paste.**
+
+```powershell
+# 1. Find the two TOP-LEVEL Accounts (ParentId = null is what makes them correct)
+sf data query --target-org <alias> -q "SELECT Id, Name, ParentId FROM Account WHERE Name IN ('AmeriCorps','Millennium Challenge Corporation') ORDER BY Name"
+
+# 2. Build a two-row CSV of Id,LDGCRM_External_ID__c using the ParentId = null rows:
+#      <top-level AmeriCorps Id>,recLIsbBAhuXuc1OR
+#      <top-level MCC Id>,recdA0Zjx6ihcKKHa
+# 3. Apply it
+.\powershell-scripts\Invoke-SalesforceLoad.ps1 -Environment <env> -ObjectApiName "Account" `
+    -CsvFile "<absolute path to the CSV>" -Operation Update -Confirmation "LOAD"
+
+# 4. VERIFY - the tags must be on the top-level records, and only those
+sf data query --target-org <alias> -q "SELECT Id, Name, ParentId, LDGCRM_External_ID__c FROM Account WHERE LDGCRM_External_ID__c IN ('recLIsbBAhuXuc1OR','recdA0Zjx6ihcKKHa')"
+```
+
+`-CsvFile` needs an **absolute** path — a relative one resolves against your shell's working
+directory, not the bundle, and the script stops with "CSV file not found".
+
+Why the top-level record is the right one, with sources, is in
+`docs/engineering/TRANSFORMATION-RULES.md`, "AmeriCorps and Millennium Challenge Corporation —
+tagged by hand". **Do not re-decide it from the Account names**: the wrong record in each pair looks
+plausible (AmeriCorps is funded through the Labor appropriations act; the Secretary of State chairs
+MCC's board), and both bodies are in fact independent agencies.
 
 ---
 
@@ -90,9 +129,13 @@ owners touch the base.
 # Airtable side - counts straight from the current pull
 Get-ChildItem .\data\airtable-exports\*.json | ForEach-Object {
     $n = (Get-Content $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json).Count
-    "{0,-24} {1,6}" -f $_.BaseName, $n
+    "{0,-30} {1,6}" -f $_.BaseName, $n
 }
 ```
+
+> This lists **all 22 tables**, because the pull backs up the whole base. Only the 10 in the table
+> below migrate; the rest have no Salesforce counterpart and no row here. A file you cannot find in
+> the table is backup-only, not an object someone forgot to load.
 
 ```
 # Salesforce side - only rows this migration created
@@ -299,8 +342,9 @@ number should change, the fix is not verifiable and the claim it landed is not e
 - ⚠️ **`LDGCRM_application__c` dropped 1,045 → 1,033 and it is not explained.** It moved while every
   parent object improved, which is the shape of a regression rather than data movement. **Diagnose
   before re-baselining it away.**
-- **Unplaced Airtable Accounts** — cascades into roughly 130 records. Most need an external ID seeded
-  onto an existing Salesforce Account, not an Airtable edit. See `ACCOUNT-MATCHING-WORKLIST.md`.
+- **Unplaced Airtable Accounts** — **resolved.** 690 of 719 rows match and 9 are created by the load;
+  the remaining 20 carry no Opportunities, Partner Accounts or Applications and cost nothing. Two
+  needed a manual tag — see the re-tagging step above, which you must not skip.
 - **Meetings** — deferred by decision, blocked on an Einstein Activity Capture spike.
 - **Opportunity owners that do not resolve** land on the fallback owner. Pre-flight reports who,
   before a Full or Prod run.

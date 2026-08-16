@@ -47,6 +47,8 @@ detail for each lives in its object's section below.
 | **A URL that is over 255 characters, or is not a URL, is left BLANK** | 2026-08-15 | Not truncated — a truncated URL does not work. 255 is a Salesforce hard limit on a Url field and cannot be raised by metadata. The affected links are being stored outside Salesforce by the business. **Not a data-quality ask**; the record loads either way. |
 | **Contacts recorded under two different email addresses stay as two records** | 2026-08-15 | Deferred by the business pending confirmation from each account owner of the current address. Merging on name would assert that two addresses belong to one person. Revisit only when the business asks. |
 | **Issuer strings with no linked Application are left alone** | 2026-08-15 | 7 rows. They may be partner-portal test entries created by the onboarding engineers; the business is checking provenance before anything is deleted. Nothing is lost by leaving them — they have nowhere to land and no record depends on them. |
+| **A Decommissioned Application with no Partner Agreement is not migrated** | 2026-08-16 | 6 Applications, and with them 16 `LDGCRM_Application_Contact__c` rows. `LDGCRM_Partner_Account__c` is a **required** Lookup and there is nothing to put in it. **Not a data-quality ask** — see [the section below](#decommissioned-applications-with-no-partner-agreement-6-rows). |
+| **AmeriCorps and Millennium Challenge Corporation are the TOP-LEVEL Accounts** | 2026-08-16 | Salesforce holds two Accounts of each name; the correct one is top level, not the copy filed under Labor / State. **Tagged by hand, and a factory reset undoes it** — see [the section below](#americorps-and-millennium-challenge-corporation-tagged-by-hand). |
 
 ### ⚠️ What belongs in the data-quality document, and what does not
 
@@ -736,6 +738,76 @@ not something the script auto-resolves.
   relationship form required for external-ID resolution (see General Principle above) — this would
   have failed the load outright (invalid Id) rather than merely mismatching, so it likely would have
   been caught at load time regardless, but the value bug would not have been.
+
+### AmeriCorps and Millennium Challenge Corporation — tagged by hand
+
+**Settled 2026-08-16 by the project owner, after public research.** These are the only two Airtable
+Account rows the cascade cannot resolve that also cost records.
+
+**This is a Salesforce data defect, not an Airtable one.** Airtable holds exactly **one** row for
+each, correctly filed with **no parent**. Salesforce production holds **two Accounts of each name** —
+character-identical, so nothing in the name distinguishes them:
+
+| Name | Prod Id | Level | Parent | Last modified | Last activity |
+| --- | --- | --- | --- | --- | --- |
+| AmeriCorps | `0013d00000Bfmup` | Level 1 | — | **12/10/2024** | 2/29/2024 |
+| AmeriCorps | `0013d00000Bfm3D` | Level 3 or below | Department of Labor | 5/26/2023 | *none* |
+| Millennium Challenge Corporation | `0013d00000BjNj1` | Level 1 | — | **12/10/2024** | *none* |
+| Millennium Challenge Corporation | `0013d00000BPxAA` | Level 3 or below | Department of State | 4/19/2023 | *none* |
+
+**The top-level record is correct in both cases.** Both bodies are independent federal agencies:
+
+- **AmeriCorps** is *"an independent agency of the United States government"*
+  ([Wikipedia](https://en.wikipedia.org/wiki/AmeriCorps),
+  [USAGov](https://www.usa.gov/agencies/americorps)), formerly the Corporation for National and
+  Community Service. **It is not part of the Department of Labor.** The misfiling has an
+  understandable cause: its appropriations run through the *Departments of Labor, Health and Human
+  Services, and Education, and Related Agencies Appropriations Act*
+  ([CRS RL33931](https://www.congress.gov/crs-product/RL33931)) — a budget pathway, not an
+  organizational parent.
+- **Millennium Challenge Corporation** is *"an independent agency separate from the State Department
+  and USAID"* ([Wikipedia](https://en.wikipedia.org/wiki/Millennium_Challenge_Corporation),
+  [CRS RL32427](https://www.congress.gov/crs-product/RL32427)). **It is not a State bureau.** Again
+  the misfiling looks plausible: the **Secretary of State chairs its Board of Directors**.
+
+⚠️ **In both cases the WRONG record has a reason that looks right at a glance.** That is why this is
+written down rather than left to judgement — the same mistake is easy to make again, in either
+direction.
+
+Two further signals agree, independent of the public record: each stale copy carries the legacy
+`Level 3 or below` value while the correct one carries a real `Level 1` (that value appears on only
+40 of 1,369 production Accounts, and on exactly one copy in 14 of the 22 duplicated names); and the
+AmeriCorps top-level record is the only one of the four with any recorded activity.
+
+⚠️ **Do not read anything into the Last Modified date.** Both top-level records show 10 December
+2024, which looks like a deliberate cleanup until you count: **1,208 of 1,369 Accounts (88%) carry
+that same date.** It is a mass update and discriminates nothing. An earlier draft of this section
+cited it as evidence; it is not.
+
+**Why the cascade cannot do this itself.** The Airtable row names no parent, so
+`Resolve-LdgcrmAccount` takes the "no agency named" path, finds two exact-name hits and returns
+`Confirm — several Accounts carry exactly this name`. It returns *before* reaching the top-level
+acceptance rule, so it never notices that only one candidate is top level. Left alone this costs
+**5 records**: Opportunities `MyAmericorps` and `Grantee and Sponsor Portal`, Partner Account `AC`,
+Application `AmeriCorps Grantee and Sponsor Portal (Ernst & Young…)`, and Opportunity `MCC`.
+
+#### ⚠️ The tag does not survive a factory reset — RE-APPLY IT AFTER EVERY REBUILD
+
+`LDGCRM_External_ID__c` is set **by hand** on these two Accounts. In Dev and QA
+`Invoke-SandboxFactoryReset.ps1` hard-deletes Accounts whose external ID is populated, and
+`Invoke-AccountBootstrap.ps1` recreates them **untagged** — so a rebuild silently returns these five
+records to "withheld", with no error anywhere. `RELOAD-QA-CHECKLIST.md` carries the step.
+
+**The Account Ids are per-org.** Do not copy the ones below to another org — re-query by name and
+parent. In Dev as of 2026-08-16:
+
+| Airtable row | Tag this Account | Leave untagged |
+| --- | --- | --- |
+| `recLIsbBAhuXuc1OR` AmeriCorps | `001cq00000V6WwKAAV` (top level) | `001cq00000V6WwZAAV` (under Dept of Labor) |
+| `recdA0Zjx6ihcKKHa` Millennium Challenge Corporation | `001cq00000V6WwlAAF` (top level) | `001cq00000V6WwcAAF` (under Dept of State) |
+
+The underlying fix is a production data cleanup — deleting or merging the two stale Accounts — which
+is not this pipeline's to make. Until that happens the hand-tag is the whole mitigation.
 
 ---
 
@@ -2305,6 +2377,58 @@ now a genuine 90%.
 
 A value that is present but outside 1–5 is also defaulted rather than blanked — same reasoning — but
 written to a review CSV so an unexpected value cannot hide inside the default. 0 rows hit that today.
+
+### Decommissioned Applications with no Partner Agreement (6 rows)
+
+**Settled 2026-08-16 by the project owner: document them, do not migrate them, and do not raise them
+as a data-quality ask.**
+
+`LDGCRM_Partner_Account__c` is a **required** Lookup on `LDGCRM_application__c`. These six Airtable
+rows have no `Partner Agreement` link at all, so there is no value to put in it — the row cannot be
+created, regardless of what anyone decides about the data.
+
+**Why this is not alarming, which is the part worth keeping.** The instinct on reading "6
+Applications have no Partner Account" is that the link is unreliable across the object. It is not.
+Measured across all 1,058 Airtable Applications:
+
+| Status | Rows | Missing a Partner Agreement |
+| --- | --- | --- |
+| Active | 757 | **0** |
+| Partner Pause | 100 | **0** |
+| Decommissioned | 89 | **6** |
+| Not Active | 70 | **0** |
+| Pending Agreement | 15 | **0** |
+| Pending Launch | 13 | **0** |
+| Pending Partner Decommission | 7 | **0** |
+| Move to Production Request | 6 | **0** |
+| *(blank)* | 1 | **0** |
+
+**Every live Application has one.** The gap is confined to 6 of the 89 Decommissioned rows — apps
+switched off years ago whose agreement link was cleared or never recorded. It is not a systemic
+break, and it is not evidence that the link is unsafe to rely on elsewhere.
+
+The six, all `Status = Decommissioned`, each with exactly 1 issuer string and no Opportunity:
+
+| Airtable ID | Name | Go-live | Contacts |
+| --- | --- | --- | --- |
+| `recAs41zHppSgYbQx` | CBP I'm Ready | *never* | 0 |
+| `recEc0ZPNohhyPa1C` | SAMS (CBP) | 2020-03-31 | 0 |
+| `recYtmBDYC00PSJmf` | GSA Federal Advisory Committee Act Training | *never* | 1 |
+| `reccE9SCm1j33fUxv` | CCP Truck Staging | 2020-02-26 | 0 |
+| `reciCK1MICtE3AuEu` | SPEARS Opportunity Portal \| HUD Section 3 Opportunity Portal" | 2018-10-01 | **15** |
+| `recvE7vk8lgANARtY` | Army Contract Writing System's (ACWS) Vendor Self Service (VSS) | 2022-01-27 | 0 |
+
+**What it costs: 6 Applications and 16 `LDGCRM_Application_Contact__c` rows** — 15 of them from
+SPEARS alone, 1 from the GSA FACA Training app. The other four carry no contacts, so they cost only
+themselves. The Contacts still migrate; it is only the junction to these Applications that is lost,
+because a junction needs both sides.
+
+Two small things to know before anyone "fixes" one of these:
+
+- **The SPEARS name carries a stray trailing double-quote** in Airtable —
+  `…HUD Section 3 Opportunity Portal"`. It is in the source, not introduced by the transform.
+- **Restoring a Partner Agreement link is all that is needed.** No code change: the transform
+  withholds these by rule, so a re-run picks up any row that gains a link.
 
 ### Partner portal team — the source was in a table nobody was pulling
 
