@@ -26,6 +26,7 @@ You will be working with two systems and a set of PowerShell scripts that talk t
 | Requirement | Why | Check it |
 | --- | --- | --- |
 | **Windows PowerShell 5.1+** | Every script targets it | `$PSVersionTable.PSVersion` |
+| **Scripts allowed to run** | Windows blocks `.ps1` by default — **the first thing that stops you**, see below | `Get-ExecutionPolicy -List` |
 | **Salesforce CLI (`sf`)** v2+ | All Salesforce reads and writes | `sf --version` |
 | **Node.js 18+** | Only needed for `sfdx/` linting and tests | `node --version` |
 | **Git** | Cloning, and `core.longpaths` below | `git --version` |
@@ -36,6 +37,52 @@ missing.
 **PowerShell 7 (`pwsh`) is not required and not expected.** These scripts are written for Windows
 PowerShell 5.1 because that is what the team's machines have — on at least one, installing
 PowerShell 7 is blocked by Group Policy. They run fine under `pwsh` if you happen to have it.
+
+### ⚠️ One-time PowerShell setting — do this FIRST, or nothing runs
+
+**Windows blocks PowerShell scripts by default, and the error does not look like a setup problem.**
+On a machine that has never run scripts, the very first command in this bundle fails with:
+
+```
+.\powershell-scripts\Invoke-FullMigrationLoad.ps1 : File ... cannot be loaded because running
+scripts is disabled on this system.
+    + FullyQualifiedErrorId : UnauthorizedAccess
+```
+
+Nothing is wrong with the bundle, the org or your login. Windows PowerShell 5.1 defaults to
+`Restricted`, which refuses to run **any** `.ps1` file. Check what you have:
+
+```powershell
+Get-ExecutionPolicy -List
+```
+
+All scopes reading `Undefined` means `Restricted` is in force. Fix it once, per user — **no admin
+rights needed**:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+If your organisation sets the policy by Group Policy, `MachinePolicy` or `UserPolicy` will show a
+value instead of `Undefined` and the command above will not stick. In that case set it for the
+current window only, and expect to repeat it every session:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+> ⚠️ **If you got this bundle as a downloaded `.zip`, `RemoteSigned` alone is not enough.** Windows
+> marks every file extracted from an internet-downloaded archive, and `RemoteSigned` refuses marked
+> scripts unless they are signed. The symptom is the *same* error above, even after setting the
+> policy. Clear the mark once, from the bundle root:
+>
+> ```powershell
+> Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
+> ```
+>
+> This does not apply to a `git clone` — cloned files carry no mark. Check with
+> `Get-Item .\powershell-scripts\Common.ps1 -Stream Zone.Identifier`; "stream was not found" means
+> you are fine.
 
 ### One-time git setting on Windows
 
@@ -272,9 +319,23 @@ agreed end state is both switched off.
 
 ---
 
-## You're ready
+## You're ready — prove it
 
-Go to **[RUNNING-A-LOAD.md](RUNNING-A-LOAD.md)**.
+Everything above is verified by one read-only command. Run it before you trust any of it:
+
+```powershell
+.\powershell-scripts\Test-LdgcrmReadiness.ps1 -Environment Dev -AllEnvironments
+```
+
+It checks your `.env` and token shape, that every Airtable table was pulled and has rows, which orgs
+you can actually reach, who you are in the target org, and that every field the load writes exists
+and is writable there. It writes nothing and fixes nothing — each finding names the command that
+would. Ends in `READY.` or `NOT READY.`
+
+`-AllEnvironments` probes all four orgs; Full and Prod reporting "not authorized here" is expected on
+most machines, and is INFO rather than a failure.
+
+Then go to **[RUNNING-A-LOAD.md](RUNNING-A-LOAD.md)**.
 
 If you are doing a full wipe-and-reload of a sandbox rather than a normal load, go to
 [RELOAD-QA-CHECKLIST.md](RELOAD-QA-CHECKLIST.md) instead — it is the same pipeline with a great deal

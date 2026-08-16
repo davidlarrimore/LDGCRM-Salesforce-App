@@ -58,6 +58,9 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "Common.ps1")
+# For Get-LdgcrmAirtableTableCatalog - the shared table list this script pulls
+# and Test-LdgcrmReadiness.ps1 checks against.
+. (Join-Path $PSScriptRoot "Common.DataMigration.ps1")
 Import-DotEnv
 
 # ============================================================
@@ -87,33 +90,9 @@ if (-not $BaseId) {
 # Nothing reads them, so their Label just tracks the Airtable name. Adding one
 # costs a file; leaving one out costs a table nobody notices is missing --
 # which is what the coverage check at the end exists to catch.
-$DefaultTables = @(
-    # --- Read by the migration transforms. Labels are load-bearing. ---
-    [PSCustomObject]@{ Label = "Accounts"; TableId = "tbl0ZQdw6VfSOJ3lc"; Purpose = "Migration" },
-    [PSCustomObject]@{ Label = "Partner Accounts"; TableId = "tblmnsGxhrtPDmUOc"; Purpose = "Migration" },
-    [PSCustomObject]@{ Label = "Applications"; TableId = "tbl6oSxRSNMgxlPOv"; Purpose = "Migration" },
-    [PSCustomObject]@{ Label = "Contacts"; TableId = "tbl7TmpbaVsM4BoWX"; Purpose = "Migration" },
-    [PSCustomObject]@{ Label = "Opportunities"; TableId = "tblLK76R3rOsY7Bm0"; Purpose = "Migration" },
-    [PSCustomObject]@{ Label = "Opportunity Contacts"; TableId = "tbl6tVFthvVrdpNbf"; Purpose = "Migration" },
-    [PSCustomObject]@{ Label = "Impediments"; TableId = "tbl8j1PTFBUBAMcyq"; Purpose = "Migration" },
-    [PSCustomObject]@{ Label = "Market Segments"; TableId = "tblu0YYt8ffuWZ2ef"; Purpose = "Migration" },
-    [PSCustomObject]@{ Label = "Meetings"; TableId = "tblGEHJ83qdnLEc6M"; Purpose = "Migration" },
-    [PSCustomObject]@{ Label = "Issuer Strings"; TableId = "tbl8XAxD4G5uBEPMk"; Purpose = "Migration" },
-
-    # --- Backup only. Nothing in the pipeline reads these. ---
-    [PSCustomObject]@{ Label = "Programs"; TableId = "tblCgazDmq1KQiJVx"; Purpose = "Backup" },
-    [PSCustomObject]@{ Label = "Organizations"; TableId = "tblyepquUOM6q7Fu7"; Purpose = "Backup" },
-    [PSCustomObject]@{ Label = "Opportunity Status Changes"; TableId = "tblB0CY1Ojv7Kxw1L"; Purpose = "Backup" },
-    [PSCustomObject]@{ Label = "Market Segment Revenue"; TableId = "tblKItp6Zf6TjCy1A"; Purpose = "Backup" },
-    [PSCustomObject]@{ Label = "Agreement Actions"; TableId = "tbln1L5HKwhADiVQE"; Purpose = "Backup" },
-    [PSCustomObject]@{ Label = "Data Sharing Requests"; TableId = "tblQQrMPUhNy8keT4"; Purpose = "Backup" },
-    [PSCustomObject]@{ Label = "End User Feedback"; TableId = "tblzJ3ATL03ASc9Kg"; Purpose = "Backup" },
-    [PSCustomObject]@{ Label = "Account Health Status Change"; TableId = "tbliYD6IcL0ZikKvv"; Purpose = "Backup" },
-    [PSCustomObject]@{ Label = "Initiatives"; TableId = "tblkOtvH8vF4i7H3P"; Purpose = "Backup" },
-    [PSCustomObject]@{ Label = "Pod Metrics Entries"; TableId = "tblAWJ1BFJkOdSo7a"; Purpose = "Backup" },
-    [PSCustomObject]@{ Label = "Resources"; TableId = "tblJVxo5Ki4Ch3vRd"; Purpose = "Backup" },
-    [PSCustomObject]@{ Label = "OOO"; TableId = "tblAGArSaC563IsUy"; Purpose = "Backup" }
-)
+# Moved to Common.DataMigration.ps1 on 2026-08-16 so Test-LdgcrmReadiness.ps1
+# can check the same list this script pulls. Change the catalog there, not here.
+$DefaultTables = @(Get-LdgcrmAirtableTableCatalog)
 
 if ($Tables -and $Tables.Count -gt 0) {
     $SelectedTables = @($DefaultTables | Where-Object { $_.Label -in $Tables })

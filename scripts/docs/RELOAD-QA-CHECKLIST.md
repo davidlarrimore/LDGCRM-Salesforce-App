@@ -92,10 +92,27 @@ silent loss looks exactly like success.
 
 ### ⚠️ MANDATORY between the reset and the load: re-tag AmeriCorps and MCC
 
-**The reset destroys these two tags and nothing reports it.** Salesforce holds two Accounts named
+**The reset destroys these two tags and nothing reports it.** Production holds two Accounts named
 `AmeriCorps` and two named `Millennium Challenge Corporation`; the correct one is **top level**, and
 it is identified by hand because the names are character-identical. The factory reset hard-deletes
 Accounts carrying an external ID, and the bootstrap recreates them **untagged**.
+
+> ⚠️ **In a freshly reset sandbox you will find ONE of each, not two — this is expected.** The
+> tag marks the correct copy, and the tag is exactly what the reset deletes by, so the *correct*
+> record is destroyed and the misfiled one survives. The bootstrap then cannot restore it: the export
+> defines two Accounts of that name, so it reports the name under AMBIGUOUS-HIERARCHY REPAIR
+> (`InOrgNow 1, ExportDefines 2`) and **skips** it rather than guessing.
+>
+> The survivor is left with a blank `ParentId` — its old parent was itself deleted and re-created
+> with a new Id — so the level backfill scores it `Level 1`. **The net effect is the configuration
+> you want** (one Account, top level, no parent, matching Airtable's single row), and the step-1
+> query below still selects it correctly. Observed 2026-08-16: one `AmeriCorps` and one
+> `Millennium Challenge Corporation`, both `ParentId` blank and `Level 1`, with `Department of Labor`
+> and `Department of State` present as separate records they are correctly not parented to.
+>
+> **Do not conclude you are in the wrong org, and do not go looking for the second copy.** Tag the
+> one that is there. If you ever see *two* with one already top-level, you are in an org that has not
+> been reset — use the top-level one, as the rule says.
 
 Skip this and **5 records are silently withheld** — Opportunities `MyAmericorps`, `Grantee and
 Sponsor Portal` and `MCC`, Partner Account `AC`, and Application `AmeriCorps Grantee and Sponsor
@@ -121,6 +138,14 @@ sf data query --target-org <alias> -q "SELECT Id, Name, ParentId, LDGCRM_Externa
 
 `-CsvFile` needs an **absolute** path — a relative one resolves against your shell's working
 directory, not the bundle, and the script stops with "CSV file not found".
+
+> ⚠️ **There is probably already an `Account-manual-tag-update.csv` in `data/salesforce-loads/`, and
+> its Ids are dead.** That folder is not cleared between rebuilds, so the file left by the *previous*
+> rebuild looks exactly like the one you need. Confirmed 2026-08-16: the file on disk held
+> `001cn00000mRrXg…` while the org's AmeriCorps was `001cq00000V6WwK…`. An Update against a
+> non-existent Id fails rather than mis-tagging, so this costs a confusing error rather than bad data
+> — but **overwrite the file from your own step-1 query, never reuse it.** This is the same reason
+> step 1 exists at all.
 
 Why the top-level record is the right one, with sources, is in
 `docs/engineering/TRANSFORMATION-RULES.md`, "AmeriCorps and Millennium Challenge Corporation —
@@ -170,21 +195,57 @@ Get-ChildItem .\data\airtable-exports\*.json | ForEach-Object {
 sf data query -q "SELECT COUNT() FROM <Object> WHERE LDGCRM_External_ID__c != null" --target-org <alias>
 ```
 
-| Airtable table | → Salesforce object | Relationship | Last measured |
+| Airtable table | → Salesforce object | Relationship | Measured 2026-08-16 |
 | --- | --- | --- | --- |
-| Accounts | Account *(tagged)* | **Not 1:1.** Reconciled onto existing Accounts, never created. Gap = unplaced Accounts | 731 → 637 |
-| Partner Accounts | `LDGCRM_Partner_Account__c` | ≈1:1. Gap = parent Account unreconciled | 99 → 96 |
-| Contacts **+ Opportunity Contacts** | Contact | **Two tables in, merged on email.** Expect *more* than the Contacts export | 1,514 + 520 → 1,888 |
-| Opportunities | Opportunity | ≈1:1. Gap = Account unreconciled, or no Status | 904 → 887 |
-| Applications | `LDGCRM_application__c` | ≈1:1. Gap = parent Partner Account missing | 1,058 → 1,033 |
+| Accounts | Account *(tagged)* | **Not 1:1.** Reconciled onto existing Accounts, never created. Gap = unplaced Accounts | 719 → 700 |
+| Partner Accounts | `LDGCRM_Partner_Account__c` | ≈1:1. Gap = parent Account unreconciled | 99 → 99 |
+| Contacts **+ Opportunity Contacts** | Contact | **Two tables in, merged on email.** Expect *more* than the Contacts export | 1,514 + 520 → 1,918 |
+| Opportunities | Opportunity | ≈1:1. Gap = Account unreconciled, or no Status | 904 → 904 |
+| Applications | `LDGCRM_application__c` | ≈1:1. Gap = parent Partner Account missing | 1,058 → 1,052 |
 | Impediments | `LDGCRM_Impediment__c` | 1:1 **minus the `None` placeholder**, excluded by rule | 38 → 37 |
 | Impediments × Opportunities | `LDGCRM_Opportunity_Impediment__c` | One row per pair, `None` links excluded | — → 311 |
-| Applications × Contacts | `LDGCRM_Application_Contact__c` | One row per pair, composite key | — → 2,741 |
-| Opportunity Contacts | `OpportunityContactRole` | **Insert + read-then-diff**, never upsert | 520 → 588 |
-| *(freeform columns)* | `ContentNote` | Built last, from columns with no field | — → 721 |
+| Applications × Contacts | `LDGCRM_Application_Contact__c` | One row per pair, composite key | — → 2,793 |
+| Opportunity Contacts | `OpportunityContactRole` | **Insert + read-then-diff**, never upsert | 520 → 596 |
+| *(freeform columns)* | `ContentNote` | Built last, from columns with no field | — → 737 |
 | Market Segments | `LDGCRM_Market_Segment__c` | Keyed on **name**, not `rec…` | 7 → 5 |
 | Meetings | *(not migrated)* | Deferred by decision — see `BACKLOG.md` | 1,849 → 0 |
 | Issuer Strings | *(no object)* | Collapses onto Application's portal-team fields | 907 → n/a |
+
+> **Where these figures come from.** The Airtable side is measured from the 2026-08-16 pull. The
+> Salesforce side is the org **immediately before** the reset that precedes this reload — genuinely
+> measured, and materially better than the figures it replaced (Opportunity was 887, Application
+> 1,033, Partner Account 96), but it is the *stitched* state described under "Open items", not a
+> clean end-to-end run. **Re-stamp it from your own `SUMMARY.txt` when this reload finishes.**
+
+### ⚠️ One row is anchored and the rest drift — know which before you call a change a regression
+
+**Account is the stable one, and not for the reason it looks like.** It is rebuilt from a fixed
+**production export** (`data/prod-accounts/`, 1,342 rows), so its row count is reproducible across
+rebuilds and comparable across orgs. A moved Account count means the export changed or the bootstrap
+lost rows — both worth chasing.
+
+**What actually differs between Dev, QA and Full is ownership, not row count.** The bootstrap *does*
+set `OwnerId`, from the export's `Account Owner` display name, but only where that name resolves to a
+single **active** user in the target org. Every org has a different user population, so the same
+export produces different owners. Dev today: **760** Accounts owned by the operator who ran the
+bootstrap and **583** by `SystemUser DataLoader` — an artefact of this org, nothing like production's
+distribution. That cascades: Contact inherits its Account's owner, which is why **1,750 of 1,918**
+migrated Contacts sit under `SystemUser DataLoader` here. **Do not read Dev or QA ownership as a
+preview of production**, and do not treat a Dev/QA ownership difference as a defect.
+
+**Every Airtable-sourced row above will move before go-live, and that is normal.** Opportunity,
+Partner Account, Application, Application–Contact, Contact and Impediment all come from a base that
+is **still in daily operational use**. These counts are a snapshot, not a target. The figures above
+held steady across 2026-08-15/16 only because the data owners do not work weekends — expect them to
+drift again on the next working day.
+
+So the check is **not** "does the number match the table". It is:
+
+1. Does the Airtable side match the pull you just took? *(re-measure it, do not trust this table)*
+2. Is the gap between the two sides explained by section 2's withheld reasons?
+3. Did anything move **down** without a corresponding Airtable change? That is the regression shape.
+
+A count that rose because someone added Opportunities on Monday is the pipeline working.
 
 **Three of these look wrong and are not:**
 
@@ -246,6 +307,19 @@ sf data query -q "SELECT COUNT() FROM LDGCRM_application__c      WHERE LDGCRM_Ex
 ⚠️ **Re-running does not fix a blank.** All three Flows fire on create or parent change and the
 pipeline upserts, so a re-run is an update that will not re-trigger them. If these come back non-zero,
 you need a **factory reset and full reload**, not a re-run.
+
+⚠️ **Do not mistake the run's own output for this check.** Post-load validation prints two lines that
+look like it has already been done —
+
+```
+  Opportunity                            0 migrated record(s) with no Market Segment
+  LDGCRM_application__c                  0 migrated record(s) with no Market Segment
+```
+
+— but those are **reported, not enforced**: a non-zero value there does *not* add a problem and does
+*not* fail the run. They also cover only two of the three objects; **`LDGCRM_Partner_Account__c` is
+not printed at all.** Run all three queries above yourself. This is the exact check that would have
+caught the 2026-08-14 QA load, so it is the wrong one to delegate to a line you skimmed.
 
 ### 3b. Application — checklist and launch data
 
@@ -309,27 +383,21 @@ there is nothing to verify, not a check that was forgotten.
 **The second purpose of this document.** When something is fixed at source, this is where you confirm
 it reached Salesforce, then **delete the row** — a fix that has landed is not a check.
 
-### Currently in flight: 11 Airtable Account fixes
+### Nothing Account-shaped is currently in flight
 
-Sent to the data owners on 2026-08-15 — 9 merges, one wrong `Parent`, one rename. Full list in
-`AIRTABLE-DATA-QUALITY-REQUESTS.md` §1.
+The 11 Airtable Account fixes tracked here (9 merges, a wrong `Parent`, a rename) **have landed**, and
+the Salesforce-side unlock that went with them is done too — the Department of Justice
+`Environment and Natural Resources Division` Account no longer carries the USDA row's
+`LDGCRM_External_ID__c`. Verified 2026-08-16: the Airtable Accounts pull is **719** (was 731), and
+`AIRTABLE-DATA-QUALITY-REQUESTS.md` reports no open Airtable asks against Accounts.
 
-| After the fixes land, expect | Check |
-| --- | --- |
-| Airtable Accounts **down by 11 rows** | the pull count drops from 731 |
-| Unplaced Accounts **down**, and no new ones | `Account-reconciliation-unmatched-*.csv` + `…-ambiguous-*.csv` |
-| `DUPLICATE AIRTABLE ROW` findings **down to 0** | `SUMMARY.txt` section 4 |
-| Records previously stranded on the losing rows now load | Opportunity / Application / Contact counts up |
+You should therefore see the *result* of those fixes in this reload rather than checking for their
+arrival: Opportunity, Application and Partner Account all reconcile higher than the figures this
+document previously carried, which is what those merges were for.
 
-⚠️ **One of these needs a Salesforce-side action first, and Airtable alone will not release it.** The
-Department of Justice `Environment and Natural Resources Division` Account carries
-`LDGCRM_External_ID__c = recOTuuxYnWwBq9Fs` — the USDA row that wrongly claimed it. Reconciliation
-matches external ID **before** name, so **clear that value** or the correct DOJ row stays locked out
-however the Airtable merge goes.
-
-```
-sf data query -q "SELECT Id, Name, LDGCRM_External_ID__c FROM Account WHERE LDGCRM_External_ID__c = 'recOTuuxYnWwBq9Fs'" --target-org <alias>
-```
+Two small non-Account asks remain open and cost a handful of records each — a `Gov Employees` value on
+25 Opportunities and two identity-platform gaps. They are in
+`AIRTABLE-DATA-QUALITY-REQUESTS.md`; neither blocks a reload.
 
 ### The general shape
 
@@ -363,16 +431,10 @@ number should change, the fix is not verifiable and the claim it landed is not e
 
 ## Open items this reload will not close
 
-- ⚠️ **The current baseline is a stitched sequence of three partial runs, not one pass.** The load
-  halted, was resumed, and two steps were re-run afterwards. Every number is real, but it is **not a
-  defensible end-to-end baseline** — establish one on the next clean factory-reset-and-reload before
-  quoting figures to anyone.
-- ⚠️ **`LDGCRM_application__c` dropped 1,045 → 1,033 and it is not explained.** It moved while every
-  parent object improved, which is the shape of a regression rather than data movement. **Diagnose
-  before re-baselining it away.**
-- **Unplaced Airtable Accounts** — **resolved.** 690 of 719 rows match and 9 are created by the load;
-  the remaining 20 carry no Opportunities, Partner Accounts or Applications and cost nothing. Two
-  needed a manual tag — see the re-tagging step above, which you must not skip.
+- ⚠️ **The baseline in section 1 is still a stitched sequence, not one pass.** The load halted, was
+  resumed, and steps were re-run afterwards. Every number is real, but it is **not a defensible
+  end-to-end baseline.** This reload is how that gets fixed: stamp section 1 from your own
+  `SUMMARY.txt` when it finishes, and this bullet can go.
 - **Meetings** — deferred by decision, blocked on an Einstein Activity Capture spike.
 - **Opportunity owners that do not resolve** land on the fallback owner. Pre-flight reports who,
   before a Full or Prod run.

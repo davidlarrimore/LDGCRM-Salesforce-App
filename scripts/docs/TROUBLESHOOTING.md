@@ -7,6 +7,42 @@ user, or at the data when the problem is a file's encoding. That is what this pa
 
 ---
 
+## `running scripts is disabled on this system` — nothing runs at all
+
+```
+.\powershell-scripts\Invoke-FullMigrationLoad.ps1 : File ... cannot be loaded because running
+scripts is disabled on this system.
+    + FullyQualifiedErrorId : UnauthorizedAccess
+```
+
+**Nothing is wrong with the bundle, your org, or your login** — this fires before a single line of
+the script executes. Windows PowerShell 5.1 defaults to the `Restricted` execution policy, which
+refuses to run any `.ps1` file. A machine that has never run a PowerShell script hits this on the
+first command it is given.
+
+```powershell
+Get-ExecutionPolicy -List          # all scopes "Undefined" = Restricted is in force
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+No admin rights are needed. If `MachinePolicy` or `UserPolicy` shows a value, Group Policy is setting
+it and the line above will not stick — use `-Scope Process -ExecutionPolicy Bypass` each session
+instead.
+
+**If it still fails after setting the policy, and you got this folder as a downloaded `.zip`:**
+Windows marks every file extracted from an internet-downloaded archive, and `RemoteSigned` rejects
+marked scripts unless they are signed — producing the *identical* error. Clear the mark from the
+bundle root:
+
+```powershell
+Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
+```
+
+Cloned files carry no mark, so this only affects zip hand-offs. Full explanation in
+[SETUP.md](SETUP.md).
+
+---
+
 ## Reading the logs
 
 Everything a run produces lands under `logs/`, organised the same way `scripts/` is. It is

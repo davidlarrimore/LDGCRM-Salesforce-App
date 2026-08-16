@@ -34,6 +34,7 @@ means when you are working in an empty Dev or QA sandbox.
 | You want to… | Read |
 | --- | --- |
 | Install the tools and get credentials | [`docs/SETUP.md`](docs/SETUP.md) |
+| **Check everything is set up correctly** | `.\powershell-scripts\Test-LdgcrmReadiness.ps1` — read-only, safe anywhere. See [`docs/RUNNING-A-LOAD.md`](docs/RUNNING-A-LOAD.md#am-i-ready--the-readiness-check) |
 | Run a load | [`docs/RUNNING-A-LOAD.md`](docs/RUNNING-A-LOAD.md) |
 | Work out why something failed | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
 | Undo a load | [`docs/ROLLBACK.md`](docs/ROLLBACK.md) |
@@ -94,6 +95,14 @@ this folder, so it works wherever the folder happens to live.
 ```powershell
 # 0. Where you should be standing
 cd <wherever-this-folder-is>\scripts
+
+# 0b. ONE TIME PER MACHINE. Windows blocks .ps1 files by default and every
+#     command below fails with "running scripts is disabled on this system".
+#     No admin rights needed. See docs/SETUP.md if it does not stick.
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+#     ...and if you got this folder as a downloaded .zip, also clear the
+#     internet mark Windows puts on every extracted file:
+Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
 
 # 1. Authenticate to the sandbox, at its own My Domain URL (not test.salesforce.com)
 sf org login web --alias peodv8dvn `

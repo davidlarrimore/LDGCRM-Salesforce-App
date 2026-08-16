@@ -7,6 +7,206 @@
 # Targets Windows PowerShell 5.1 (no PowerShell 7-only syntax: no ??, ?., ternary
 # ?:, -AsHashtable, -Parallel, or multi-argument Join-Path).
 
+function Get-LdgcrmAirtableTableCatalog {
+    <#
+        THE single list of Airtable tables this project knows about, and the one
+        place to change when the base gains or loses one.
+
+        Lived inside Get-AirtableExport.ps1 as $DefaultTables until 2026-08-16,
+        when Test-LdgcrmReadiness.ps1 needed the same list. Copying it would have
+        created exactly the failure this catalog guards against: a table added to
+        the base, added to the puller, and silently absent from the readiness
+        check - so the check would report a complete pull while a table was
+        missing. One list, two readers.
+
+        Purpose = "Migration"  the 10 tables a transform actually reads. THE
+                               LABEL IS LOAD-BEARING: Get-AirtableTablePath opens
+                               "<Label>.json" by that exact string, so renaming
+                               one breaks a transform.
+        Purpose = "Backup"     pulled only so the export is a faithful copy of
+                               the base. Nothing reads them; the Label just
+                               tracks the Airtable name.
+
+        Keyed on TableId, never on name - Airtable table names are user-editable
+        and a rename 403s a name-based request indistinguishably from an auth
+        failure. This has already happened once ("Partner Accounts" -> "Partners").
+
+        Returns a plain array; callers wrap in @() per the repo convention.
+    #>
+
+    return @(
+        # --- Read by the migration transforms. Labels are load-bearing. ---
+        [PSCustomObject]@{ Label = "Accounts"; TableId = "tbl0ZQdw6VfSOJ3lc"; Purpose = "Migration" },
+        [PSCustomObject]@{ Label = "Partner Accounts"; TableId = "tblmnsGxhrtPDmUOc"; Purpose = "Migration" },
+        [PSCustomObject]@{ Label = "Applications"; TableId = "tbl6oSxRSNMgxlPOv"; Purpose = "Migration" },
+        [PSCustomObject]@{ Label = "Contacts"; TableId = "tbl7TmpbaVsM4BoWX"; Purpose = "Migration" },
+        [PSCustomObject]@{ Label = "Opportunities"; TableId = "tblLK76R3rOsY7Bm0"; Purpose = "Migration" },
+        [PSCustomObject]@{ Label = "Opportunity Contacts"; TableId = "tbl6tVFthvVrdpNbf"; Purpose = "Migration" },
+        [PSCustomObject]@{ Label = "Impediments"; TableId = "tbl8j1PTFBUBAMcyq"; Purpose = "Migration" },
+        [PSCustomObject]@{ Label = "Market Segments"; TableId = "tblu0YYt8ffuWZ2ef"; Purpose = "Migration" },
+        [PSCustomObject]@{ Label = "Meetings"; TableId = "tblGEHJ83qdnLEc6M"; Purpose = "Migration" },
+        [PSCustomObject]@{ Label = "Issuer Strings"; TableId = "tbl8XAxD4G5uBEPMk"; Purpose = "Migration" },
+
+        # --- Backup only. Nothing in the pipeline reads these. ---
+        [PSCustomObject]@{ Label = "Programs"; TableId = "tblCgazDmq1KQiJVx"; Purpose = "Backup" },
+        [PSCustomObject]@{ Label = "Organizations"; TableId = "tblyepquUOM6q7Fu7"; Purpose = "Backup" },
+        [PSCustomObject]@{ Label = "Opportunity Status Changes"; TableId = "tblB0CY1Ojv7Kxw1L"; Purpose = "Backup" },
+        [PSCustomObject]@{ Label = "Market Segment Revenue"; TableId = "tblKItp6Zf6TjCy1A"; Purpose = "Backup" },
+        [PSCustomObject]@{ Label = "Agreement Actions"; TableId = "tbln1L5HKwhADiVQE"; Purpose = "Backup" },
+        [PSCustomObject]@{ Label = "Data Sharing Requests"; TableId = "tblQQrMPUhNy8keT4"; Purpose = "Backup" },
+        [PSCustomObject]@{ Label = "End User Feedback"; TableId = "tblzJ3ATL03ASc9Kg"; Purpose = "Backup" },
+        [PSCustomObject]@{ Label = "Account Health Status Change"; TableId = "tbliYD6IcL0ZikKvv"; Purpose = "Backup" },
+        [PSCustomObject]@{ Label = "Initiatives"; TableId = "tblkOtvH8vF4i7H3P"; Purpose = "Backup" },
+        [PSCustomObject]@{ Label = "Pod Metrics Entries"; TableId = "tblAWJ1BFJkOdSo7a"; Purpose = "Backup" },
+        [PSCustomObject]@{ Label = "Resources"; TableId = "tblJVxo5Ki4Ch3vRd"; Purpose = "Backup" },
+        [PSCustomObject]@{ Label = "OOO"; TableId = "tblAGArSaC563IsUy"; Purpose = "Backup" }
+    )
+}
+
+function Get-LdgcrmExpectedActiveFlows {
+    <#
+        THE NINE FLOWS THAT MUST BE ACTIVE FOR A LOAD TO BE CORRECT.
+
+        Hard-coded rather than read from sfdx/force-app/main/default/flows/,
+        which is not available to the bundle: it ships to Operations as a bare
+        /scripts folder with no sfdx/ above it. Same reasoning as the Airtable
+        table catalog above.
+
+        Moved here from Invoke-FullMigrationLoad.ps1 on 2026-08-16 so
+        Test-LdgcrmReadiness.ps1 reports on the same nine the load enforces.
+        Two lists would drift, and the drift would be invisible: the readiness
+        check would pass while the load blocked, or worse, the reverse.
+
+        Note LGDCRM_ on three of them. The transposed prefix is a real API-name
+        typo in the org, not a mistake in this list.
+
+        Returns a plain array; callers wrap in @().
+    #>
+
+    return @(
+        "LDGCRM_ApplicationContact_BeforeSave_NewRecordDuplicateCheck"
+        "LDGCRM_Application_Before_Save_Assign_Market_Segment"
+        "LDGCRM_Opportunity_Before_Save_Assign_Account_and_Market_Segment"
+        "LDGCRM_Opportunity_Impediment_Before_Save_New_Record_Duplicate_Check"
+        "LDGCRM_Partner_Account_After_Save_Update_Re_Parent_Cascade"
+        "LDGCRM_Partner_Account_Before_Save_Create_Update_Market_Segment"
+        "LGDCRM_Opportunity_After_Save_Update_Opportunity_Impediments"
+        "LGDCRM_Opportunity_Before_Save_Update_Current_Status_Summary_DateTime"
+        "LGDCRM_Opportunity_Impediment_Before_Save_Update_Blocked_Revenue"
+    )
+}
+
+function Get-LdgcrmDevOnlyFlows {
+    <#
+        THE INVERSE CHECK: these must NOT exist outside Dev.
+
+        LDGCRM_Screen_Flow_Developer_Data_Delete_Flow bulk-deletes Account,
+        Partner Account, Application, Application Contact, Market Segment,
+        Opportunity and Opportunity Impediment records. It is a developer
+        convenience that stays Active in Dev, and was removed from
+        sfdx/manifest/package.xml and force-app on 2026-08-14 so it cannot be
+        swept into a change set regenerated from the manifest.
+
+        Asserting its ABSENCE rather than ignoring it is the point: finding it
+        in QA/Full/Prod means something carried it there and wants
+        investigating.
+    #>
+
+    return @(
+        "LDGCRM_Screen_Flow_Developer_Data_Delete_Flow"
+    )
+}
+
+function Invoke-LdgcrmToolingQuery {
+    <#
+        SOQL against the Tooling API. Invoke-SalesforceQuery does not pass
+        --use-tooling-api, and FlowDefinition/Flow exist only there.
+
+        CALLER CONTRACT: wrap the call in @(), same as Invoke-SalesforceQuery.
+    #>
+    param([string]$Soql, [string]$Org, [string]$Version)
+
+    # NEVER redirect stderr here (no 2>&1). PS 5.1 turns the CLI's
+    # "update available" banner into a NativeCommandError that kills the script
+    # and blames this line. See CLAUDE.md's PowerShell traps.
+    $Raw = & sf data query --target-org $Org --api-version $Version --query $Soql --use-tooling-api --json
+    if ($LASTEXITCODE -ne 0) { throw "Tooling query failed (exit $LASTEXITCODE): $Soql" }
+
+    $Parsed = $Raw | ConvertFrom-Json
+    if ($Parsed.status -ne 0) {
+        $Message = $Parsed.message
+        if ([string]::IsNullOrWhiteSpace($Message)) { $Message = "Unknown Salesforce CLI error." }
+        throw $Message
+    }
+    if ($null -eq $Parsed.result.records) { return @() }
+
+    # Same silent-truncation guard as Invoke-SalesforceQuery. Here a truncated
+    # page would report a flow as ABSENT when it merely fell off the end.
+    $Returned = @($Parsed.result.records).Count
+    $Total = [int]$Parsed.result.totalSize
+    if ($Returned -lt $Total) { throw "Tooling query returned $Returned of $Total records (truncated). SOQL: $Soql" }
+
+    # ASSIGN, THEN RETURN - piping ConvertFrom-Json straight out of a function
+    # collapses a JSON array into one pipeline item in PS 5.1, so the caller's
+    # @() measures Count = 1. This broke the Notes load on 2026-08-13.
+    $Records = $Parsed.result.records
+    return $Records
+}
+
+function Get-LdgcrmFlowState {
+    <#
+        One row per LDGCRM/LGDCRM FlowDefinition in the org, carrying active and
+        latest version NUMBERS. FlowDefinition stores version Ids, which are
+        useless in a report.
+
+        READ-ONLY, which is why it lives here while Set-LdgcrmFlowActiveVersion
+        stays in Invoke-FullMigrationLoad.ps1: the readiness check reports flow
+        state and must have no way to change it.
+
+        ON VERSION NUMBERS: a flow's VersionNumber is a PER-ORG counter. Every
+        save in the source org increments that org's sequence; every change set
+        deployment increments the target's independently. Dev on v4 while QA is
+        on v2 is the ordinary result of four saves there and two deployments
+        here - it does NOT mean QA is behind, and the numbers are not comparable
+        across orgs. Only ActiveVersion vs LatestVersion WITHIN one org means
+        anything.
+
+        CALLER CONTRACT: wrap the call in @().
+    #>
+    param([string]$Org, [string]$Version)
+
+    $Definitions = @(Invoke-LdgcrmToolingQuery -Org $Org -Version $Version -Soql (
+        "SELECT Id, DeveloperName, ActiveVersionId, LatestVersionId FROM FlowDefinition " +
+        "WHERE DeveloperName LIKE 'LDGCRM%' OR DeveloperName LIKE 'LGDCRM%'"))
+
+    $Versions = @(Invoke-LdgcrmToolingQuery -Org $Org -Version $Version -Soql (
+        "SELECT Id, VersionNumber FROM Flow " +
+        "WHERE Definition.DeveloperName LIKE 'LDGCRM%' OR Definition.DeveloperName LIKE 'LGDCRM%'"))
+
+    $NumberById = @{}
+    foreach ($V in $Versions) { $NumberById[$V.Id] = [int]$V.VersionNumber }
+
+    $Rows = New-Object System.Collections.Generic.List[object]
+    foreach ($D in $Definitions) {
+        $ActiveNumber = $null
+        $LatestNumber = $null
+        if ($D.ActiveVersionId -and $NumberById.ContainsKey($D.ActiveVersionId)) { $ActiveNumber = $NumberById[$D.ActiveVersionId] }
+        if ($D.LatestVersionId -and $NumberById.ContainsKey($D.LatestVersionId)) { $LatestNumber = $NumberById[$D.LatestVersionId] }
+
+        $Rows.Add([PSCustomObject]@{
+            DefinitionId  = $D.Id
+            DeveloperName = $D.DeveloperName
+            IsActive      = [bool]$D.ActiveVersionId
+            ActiveVersion = $ActiveNumber
+            LatestVersion = $LatestNumber
+        })
+    }
+
+    # Plain array + caller wraps in @() -> return bare. A `return ,$Rows` here
+    # would nest it one level down. See the Common.ps1 convention note.
+    return $Rows.ToArray()
+}
+
 function Get-AirtableExportPath {
     <#
         Resolves the path to a single table's pulled JSON export
@@ -27,6 +227,23 @@ function Import-AirtableTable {
         Airtable records (each a PSCustomObject with .id, .createdTime,
         .fields). Throws a clear error pointing at Get-AirtableExport.ps1
         if the export hasn't been pulled yet.
+
+        ⚠️ CALLER CONTRACT: ASSIGN IT BARE. Do NOT wrap the call in @().
+
+            $Rows = Import-AirtableTable -Label "Contacts"    # 1514 - correct
+            $Rows = @(Import-AirtableTable -Label "Contacts") # 1    - WRONG
+
+        The `return @(...)` below already protects the array from PowerShell's
+        output unrolling, so a second @() at the call site produces a
+        ONE-ELEMENT array CONTAINING the array: .Count reads 1 and the records
+        hide one level down. This is the repo-wide "return ,$Array and a
+        caller's @() are mutually exclusive" trap (CLAUDE.md); every existing
+        transform calls this bare, which is why they are all correct. Stated
+        here because Test-LdgcrmReadiness.ps1 got it wrong on 2026-08-16 and
+        cheerfully reported every Airtable table as holding exactly 1 row.
+
+        If you need the count defensively, assign first and wrap the VARIABLE:
+        @($Rows).Count is fine, @(Import-AirtableTable ...).Count is not.
     #>
     param(
         [Parameter(Mandatory = $true)]

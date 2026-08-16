@@ -102,7 +102,31 @@ param(
         NOT RESTORED AFTERWARDS, unlike the TriggerControls__c bypass. A flow
         that had to be on for the load to be correct must stay on.
     #>
-    [switch]$ActivateFlows
+    [switch]$ActivateFlows,
+
+    <#
+        Run the full readiness check (Test-LdgcrmReadiness.ps1) BEFORE pre-flight,
+        and stop if it reports any failure.
+
+        Pre-flight and readiness answer different questions and neither replaces
+        the other. Pre-flight asks "will this run behave correctly?" - Flows,
+        duplicate rules, the trigger switch, the fallback owner - and it always
+        runs, whether or not this switch is passed. Readiness asks the broader
+        "is this machine, this Airtable pull and this ORG SHAPE ready at all?":
+        every field the transforms write exists and is writable, every Migration
+        table was pulled and has rows, the identity-platform columns still have
+        the shape the transform expects, and which environments you can reach.
+
+        Off by default because it costs one describe per object (~30s) and
+        repeats work on a pipeline you have already run today. Worth passing on
+        the first load into an org you have not loaded before, after a change set
+        lands, or any time you are about to write to QA/Full/Prod - those are
+        precisely the cases where a field exists in Dev and nowhere else.
+
+        Read-only. It cannot fix anything, and passing it does not disarm any
+        pre-flight check.
+    #>
+    [switch]$Readiness
 )
 
 $ErrorActionPreference = "Stop"
@@ -244,46 +268,12 @@ $Steps = @(
     }
 )
 
-<#
-    THE NINE FLOWS THAT MUST BE ACTIVE FOR A LOAD TO BE CORRECT.
-
-    Hard-coded here, next to $Steps, for the same reason $Steps is: it is
-    per-run policy that wants reviewing in one place. The obvious alternative -
-    reading sfdx/force-app/main/default/flows/ - is not available to the bundle,
-    which ships to Operations as a bare /scripts folder with no sfdx/ above it.
-    Same pattern as $DefaultTables in Get-AirtableExport.ps1.
-
-    Note LGDCRM_ on three of them. The transposed prefix is a real API-name typo
-    in the org, not a mistake in this list.
-#>
-$ExpectedActiveFlows = @(
-    "LDGCRM_ApplicationContact_BeforeSave_NewRecordDuplicateCheck"
-    "LDGCRM_Application_Before_Save_Assign_Market_Segment"
-    "LDGCRM_Opportunity_Before_Save_Assign_Account_and_Market_Segment"
-    "LDGCRM_Opportunity_Impediment_Before_Save_New_Record_Duplicate_Check"
-    "LDGCRM_Partner_Account_After_Save_Update_Re_Parent_Cascade"
-    "LDGCRM_Partner_Account_Before_Save_Create_Update_Market_Segment"
-    "LGDCRM_Opportunity_After_Save_Update_Opportunity_Impediments"
-    "LGDCRM_Opportunity_Before_Save_Update_Current_Status_Summary_DateTime"
-    "LGDCRM_Opportunity_Impediment_Before_Save_Update_Blocked_Revenue"
-)
-
-<#
-    THE INVERSE CHECK: these must NOT exist outside Dev.
-
-    LDGCRM_Screen_Flow_Developer_Data_Delete_Flow bulk-deletes Account, Partner
-    Account, Application, Application Contact, Market Segment, Opportunity and
-    Opportunity Impediment records. It is a developer convenience that stays
-    Active in Dev, and was removed from sfdx/manifest/package.xml and force-app
-    on 2026-08-14 so it cannot be swept into a change set regenerated from the
-    manifest.
-
-    Asserting its ABSENCE rather than ignoring it is the point: finding it in
-    QA/Full/Prod means something carried it there and wants investigating.
-#>
-$DevOnlyFlows = @(
-    "LDGCRM_Screen_Flow_Developer_Data_Delete_Flow"
-)
+# The nine flows that must be active, and the Dev-only flow that must not
+# escape. Both lists moved to Common.DataMigration.ps1 on 2026-08-16 so
+# Test-LdgcrmReadiness.ps1 reports on exactly what this script enforces - two
+# copies would drift, and the drift would be invisible from either side.
+$ExpectedActiveFlows = @(Get-LdgcrmExpectedActiveFlows)
+$DevOnlyFlows = @(Get-LdgcrmDevOnlyFlows)
 
 function Get-StepProperty {
     param($Step, [string]$Key, $Default = "")
@@ -291,92 +281,10 @@ function Get-StepProperty {
     return $Default
 }
 
-function Invoke-LdgcrmToolingQuery {
-    <#
-        SOQL against the Tooling API. Invoke-SalesforceQuery
-        (Common.DataMigration.ps1) does not pass --use-tooling-api, and
-        FlowDefinition/Flow exist only there.
-
-        CALLER CONTRACT: wrap the call in @(), same as Invoke-SalesforceQuery.
-    #>
-    param([string]$Soql, [string]$Org, [string]$Version)
-
-    # NEVER redirect stderr here (no 2>&1). PS 5.1 turns the CLI's
-    # "update available" banner into a NativeCommandError that kills the script
-    # and blames this line. See CLAUDE.md's PowerShell traps.
-    $Raw = & sf data query --target-org $Org --api-version $Version --query $Soql --use-tooling-api --json
-    if ($LASTEXITCODE -ne 0) { throw "Tooling query failed (exit $LASTEXITCODE): $Soql" }
-
-    $Parsed = $Raw | ConvertFrom-Json
-    if ($Parsed.status -ne 0) {
-        $Message = $Parsed.message
-        if ([string]::IsNullOrWhiteSpace($Message)) { $Message = "Unknown Salesforce CLI error." }
-        throw $Message
-    }
-    if ($null -eq $Parsed.result.records) { return @() }
-
-    # Same silent-truncation guard as Invoke-SalesforceQuery. Here a truncated
-    # page would report a flow as ABSENT when it merely fell off the end.
-    $Returned = @($Parsed.result.records).Count
-    $Total = [int]$Parsed.result.totalSize
-    if ($Returned -lt $Total) { throw "Tooling query returned $Returned of $Total records (truncated). SOQL: $Soql" }
-
-    # ASSIGN, THEN RETURN - piping ConvertFrom-Json straight out of a function
-    # collapses a JSON array into one pipeline item in PS 5.1, so the caller's
-    # @() measures Count = 1. This broke the Notes load on 2026-08-13.
-    $Records = $Parsed.result.records
-    return $Records
-}
-
-function Get-LdgcrmFlowState {
-    <#
-        One row per LDGCRM/LGDCRM FlowDefinition in the org, carrying active and
-        latest version NUMBERS. FlowDefinition stores version Ids, which are
-        useless in a report.
-
-        ON VERSION NUMBERS: a flow's VersionNumber is a PER-ORG counter. Every
-        save in the source org increments that org's sequence; every change set
-        deployment increments the target's independently. Dev on v4 while QA is
-        on v2 is the ordinary result of four saves there and two deployments
-        here - it does NOT mean QA is behind, and the numbers are not comparable
-        across orgs. Only ActiveVersion vs LatestVersion WITHIN one org means
-        anything, and that is exactly what the stale check below uses.
-
-        CALLER CONTRACT: wrap the call in @().
-    #>
-    param([string]$Org, [string]$Version)
-
-    $Definitions = @(Invoke-LdgcrmToolingQuery -Org $Org -Version $Version -Soql (
-        "SELECT Id, DeveloperName, ActiveVersionId, LatestVersionId FROM FlowDefinition " +
-        "WHERE DeveloperName LIKE 'LDGCRM%' OR DeveloperName LIKE 'LGDCRM%'"))
-
-    $Versions = @(Invoke-LdgcrmToolingQuery -Org $Org -Version $Version -Soql (
-        "SELECT Id, VersionNumber FROM Flow " +
-        "WHERE Definition.DeveloperName LIKE 'LDGCRM%' OR Definition.DeveloperName LIKE 'LGDCRM%'"))
-
-    $NumberById = @{}
-    foreach ($V in $Versions) { $NumberById[$V.Id] = [int]$V.VersionNumber }
-
-    $Rows = New-Object System.Collections.Generic.List[object]
-    foreach ($D in $Definitions) {
-        $ActiveNumber = $null
-        $LatestNumber = $null
-        if ($D.ActiveVersionId -and $NumberById.ContainsKey($D.ActiveVersionId)) { $ActiveNumber = $NumberById[$D.ActiveVersionId] }
-        if ($D.LatestVersionId -and $NumberById.ContainsKey($D.LatestVersionId)) { $LatestNumber = $NumberById[$D.LatestVersionId] }
-
-        $Rows.Add([PSCustomObject]@{
-            DefinitionId  = $D.Id
-            DeveloperName = $D.DeveloperName
-            IsActive      = [bool]$D.ActiveVersionId
-            ActiveVersion = $ActiveNumber
-            LatestVersion = $LatestNumber
-        })
-    }
-
-    # Plain array + caller wraps in @() -> return bare. A `return ,$Rows` here
-    # would nest it one level down. See the Common.ps1 convention note.
-    return $Rows.ToArray()
-}
+# Invoke-LdgcrmToolingQuery and Get-LdgcrmFlowState moved to
+# Common.DataMigration.ps1 on 2026-08-16 - both are read-only and are now shared
+# with Test-LdgcrmReadiness.ps1. Set-LdgcrmFlowActiveVersion deliberately stays
+# here: it WRITES, and the readiness check must have no way to reach it.
 
 function Set-LdgcrmFlowActiveVersion {
     <#
@@ -1685,6 +1593,38 @@ $RunDirectory = Get-LogDirectory -Category "data-migration"
 if ($ActivateFlows -and $Environment -eq "Prod") {
     throw ("SAFETY STOP: -ActivateFlows is not available for -Environment Prod. Re-run without it to get " +
            "the pre-flight report, and hand any inactive flows to whoever owns production configuration.")
+}
+
+# --- optional readiness check ----------------------------------------------
+# Runs BEFORE pre-flight because it answers the earlier question: pre-flight
+# assumes the org is shaped correctly and checks whether the run will BEHAVE;
+# readiness checks the shape itself. A missing field is worth finding before
+# anything reads an Airtable export.
+#
+# Deliberately a child process, not an inlined copy of the checks: one
+# implementation, and it stays runnable on its own by an operator who just wants
+# to know where they stand. Read-only, so it runs identically under -PlanOnly.
+if ($Readiness) {
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host " READINESS CHECK (-Readiness)" -ForegroundColor Cyan
+    Write-Host "============================================================" -ForegroundColor Cyan
+
+    $ReadinessCode = Invoke-ChildScript `
+        -ScriptPath (Join-Path $PSScriptRoot "Test-LdgcrmReadiness.ps1") `
+        -Arguments @("-Environment", $Environment)
+
+    if ($ReadinessCode -ne 0) {
+        Write-Host ""
+        Write-Host "READINESS CHECK FAILED - nothing was run." -ForegroundColor Red
+        Write-Host "Fix the failures listed above, or re-run without -Readiness to skip it." -ForegroundColor Yellow
+        # Not honoured by -ContinueOnError. That switch is about a STEP failing
+        # partway through a load; this is a refusal to start at all.
+        exit 1
+    }
+
+    Write-Host ""
+    Write-Host "Readiness check passed." -ForegroundColor Green
 }
 
 $Findings = Invoke-PreflightChecks -Org $OrgAlias -Version "67.0" -Env $Environment
