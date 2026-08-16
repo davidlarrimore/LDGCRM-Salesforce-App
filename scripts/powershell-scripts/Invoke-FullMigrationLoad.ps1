@@ -589,7 +589,14 @@ function Invoke-PreflightChecks {
 
         Returns a hashtable of findings; the caller decides whether to stop.
     #>
-    param([string]$Org, [string]$Version, [string]$Env)
+    param(
+        [string]$Org,
+        [string]$Version,
+        [string]$Env,
+        # Names of the steps this run will actually execute. Lets a check warn
+        # only when the step that would fix the condition is being skipped.
+        [string[]]$SelectedSteps = @()
+    )
 
     $Findings = [ordered]@{ Blocking = @(); Warning = @() }
 
@@ -635,14 +642,20 @@ function Invoke-PreflightChecks {
         -OrgAlias $Org -ApiVersion $Version)
     $Resolvable = @($Segments | Where-Object { $_.LDGCRM_External_ID__c }).Count
 
+    # 0 resolvable is the normal state after a factory reset, which deletes the
+    # tagged segments. It only matters when the step that reloads them is not
+    # going to run, so the warning is conditional on that.
+    $LoadsMarketSegment = ($SelectedSteps -contains "MarketSegment")
+
     Write-Host ("  Market Segments        {0} present, {1} resolvable (external ID set)" -f $Segments.Count, $Resolvable)
 
-    if ($Resolvable -eq 0) {
-        Write-Host "                         none are resolvable yet - the MarketSegment step will fix this" -ForegroundColor DarkGray
-        $Findings.Warning += ("No LDGCRM_Market_Segment__c record carries an external ID, so nothing can resolve a " +
-                              "segment yet. The MarketSegment step loads them; if you have EXCLUDED that step " +
-                              "(-OnlySteps/-StartAtStep), every downstream record will load with a blank Market " +
-                              "Segment and nothing will error.")
+    if ($Resolvable -eq 0 -and -not $LoadsMarketSegment) {
+        $Findings.Warning += ("No LDGCRM_Market_Segment__c record carries an external ID and the MarketSegment " +
+                              "step is not in this run. Every downstream record will load with a blank Market " +
+                              "Segment, and nothing will error.")
+    }
+    elseif ($Resolvable -eq 0) {
+        Write-Host "                         loaded by step 1" -ForegroundColor DarkGray
     }
 
     # 3. Fallback owner. Every transform resolves it and throws if it can't -
@@ -1602,7 +1615,8 @@ if ($Readiness) {
     Write-Host "Readiness check passed." -ForegroundColor Green
 }
 
-$Findings = Invoke-PreflightChecks -Org $OrgAlias -Version "67.0" -Env $Environment
+$Findings = Invoke-PreflightChecks -Org $OrgAlias -Version "67.0" -Env $Environment `
+    -SelectedSteps @($Selected.Name)
 
 if ($Findings.Warning.Count -gt 0) {
     Write-Host ""

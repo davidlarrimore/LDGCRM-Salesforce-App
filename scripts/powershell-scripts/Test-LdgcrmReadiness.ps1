@@ -582,9 +582,11 @@ if (-not $SkipOrgChecks) {
             -OrgAlias $TargetAlias -ApiVersion $ApiVersion)
         $Resolvable = @($Segments | Where-Object { $_.LDGCRM_External_ID__c }).Count
         if ($Resolvable -eq 0) {
-            Add-Result -Category "Automation" -Name "Market Segments resolvable" -Status "WARN" `
-                -Detail ("{0} present, 0 carry an external id" -f $Segments.Count) `
-                -Fix "The MarketSegment step loads them. Only a problem if you EXCLUDE that step."
+            # Normal after a factory reset: the reset deletes the tagged
+            # segments and step 1 of the load recreates them. Only a problem if
+            # that step is skipped, which this script cannot know.
+            Add-Result -Category "Automation" -Name "Market Segments resolvable" -Status "INFO" `
+                -Detail ("{0} present, 0 tagged - loaded by the MarketSegment step" -f $Segments.Count)
         }
         else {
             Add-Result -Category "Automation" -Name "Market Segments resolvable" -Status "PASS" `
