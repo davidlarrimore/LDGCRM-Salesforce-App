@@ -112,7 +112,6 @@
         <members>LDGCRM_Login_gov_Market_Segments_with_Accounts_with_Opportunities</members>
         <members>LDGCRM_Login_gov_Market_Segments_with_Accounts_with_Partner_Accounts</members>
         <members>LDGCRM_Login_gov_Market_Segments_with_Partner_Accounts_with_Applications</members>
-        <members>LDGCRM_Login_gov_Market_Segments_with_Partner_Accounts_with_Opportunities</members>
         <members>LDGCRM_Login_gov_Opportunities_with_Activity</members>
         <members>LDGCRM_Login_gov_Opportunities_with_Impediments</members>
         <members>LDGCRM_Market_Segments</members>
@@ -126,6 +125,7 @@
         <members>LDGCRM_Application_Contact__c</members>
         <members>LDGCRM_Market_Segment__c</members>
         <members>LDGCRM_application__c</members>
+        <members>LDGCRM_Impediment__c</members>
         <name>SharingRules</name>
     </types>
     <types>
@@ -146,6 +146,7 @@
     </types>
     <types>
         <members>Login_gov_Opportunity_Path</members>
+        <members>LDGCRM_Application_Path</members>
         <name>PathAssistant</name>
     </types>
     <version>64.0</version>

@@ -15,6 +15,11 @@
         "reason": "Intentionally removed from the LDGCRM app and this repo (see commit 4b8195b)"
     },
     {
+        "type": "CustomApplication",
+        "name": "LDGCRM_Dev_Admin",
+        "reason": "OURS, but deliberately Dev-only - like LDGCRM_Screen_Flow_Developer_Data_Delete_Flow below, not an unrelated-app component. An admin app for working in the Dev sandbox; it must never be promoted. Its utility bar (LDGCRM_Dev_Admin_UtilityBar, above) was already ignored, so a retrieved copy of this app would reference a component this repo does not hold. Kept out of manifest/package.xml so it cannot be swept into a change set regenerated from the manifest - which also keeps the LDGCRM_Dev_Admin applicationVisibilities blocks out of the four GSA profiles."
+    },
+    {
         "type": "Flow",
         "name": "LDGCRM_Screen_Flow_Developer_Data_Delete_Flow",
         "reason": "OURS, but deliberately Dev-only - NOT an unrelated-app component like the rest of this file. A screen flow whose whole job is to bulk-delete Account, Partner Account, Application, Application Contact, Market Segment, Opportunity and Opportunity Impediment records. It stays Active in the Dev sandbox as a developer convenience; it must never be promoted. Removed from manifest/package.xml and force-app so it cannot be swept into a change set regenerated from the manifest, and listed here so Sync-Metadata.ps1 does not re-add it. Its ABSENCE from QA/Full/Prod is the expected state - finding it in a non-Dev org is a failure, not a note."
