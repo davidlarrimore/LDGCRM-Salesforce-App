@@ -9,32 +9,11 @@
 # =============================================================================
 # WHY THIS FILE EXISTS
 # =============================================================================
-# Until 2026-08-13 every script in this repo hard-coded the alias "gsa-peo",
-# and that alias pointed at the DEV SANDBOX (PEOdV8DVn). "gsa-peo" is the name
-# of the PRODUCTION org, so 146 references across 26 files read as though they
-# targeted production while actually targeting Dev. Nothing was ever mis-loaded
-# because of it, but the naming could not survive a second environment - and
-# there are now four.
+# There are four environments, and a hard-coded org alias cannot survive that.
+# The scheme: AN ALIAS IS THE ORG'S OWN SANDBOX NAME, so an alias cannot drift
+# from the org it names. Scripts never take a bare alias from a human; they
+# take -Environment Dev|QA|Full|Prod and resolve it here.
 #
-# The scheme (chosen 2026-08-13): AN ALIAS IS THE ORG'S OWN SANDBOX NAME, so an
-# alias cannot drift from the org it names. Scripts never take a bare alias
-# from a human; they take -Environment Dev|QA|Full|Prod and resolve it here.
-#
-# =============================================================================
-# THE gsa-peo HAZARD - READ THIS BEFORE RE-CREATING THAT ALIAS
-# =============================================================================
-# Under this scheme "gsa-peo" now means PRODUCTION. It previously meant Dev.
-# Any stale script, doc, or muscle-memory command line still saying
-# "--target-org gsa-peo" therefore points at production instead of the sandbox
-# it was written for - a silent retarget, in the dangerous direction.
-#
-# Two things keep that from biting:
-#   1. Every reference in this repo was updated in the same change.
-#   2. The local "gsa-peo" alias was DELETED (2026-08-13) and production has
-#      not been authorized. A stale reference fails loudly with "No
-#      authorization information found" instead of quietly writing to prod.
-#
-# Do not re-create a "gsa-peo" alias pointing anywhere other than production.
 # When production genuinely needs authorizing, see the auth runbook in
 # docs/SETUP.md ("Authorizing an org").
 # =============================================================================
@@ -116,8 +95,8 @@ function Get-LdgcrmEnvironmentTable {
             AllowsAccountRebuild = $false
         }
         Prod = [PSCustomObject]@{
-            # Deliberately not authorized on this machine. See the hazard note
-            # at the top of this file before creating this alias.
+            # Deliberately not authorized on this machine. See the auth runbook
+            # in docs/SETUP.md before creating this alias.
             Key                  = "Prod"
             Alias                = "gsa-peo"
             SandboxName          = ""

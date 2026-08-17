@@ -58,12 +58,6 @@ rejected at parameter-bind time, the same structural block the factory reset use
 production. Its `-ProductionConfirmation` parameter was removed: a flag whose only purpose is to
 approve something the script can no longer do reads as though a production path exists.
 
-**⚠️ `gsa-peo` used to mean the Dev sandbox and now means PRODUCTION** (changed 2026-08-13 — it was
-always the *production* org's name, while pointing at Dev). Any historical note, transcript, or
-command line saying `--target-org gsa-peo` was talking about **Dev**. The local `gsa-peo` alias was
-deleted and production isn't authorized here, so a stale reference fails loudly rather than writing
-to production. Prose in this file still saying "gsa-peo" for a past finding means the Dev sandbox.
-
 Writes/deletes against `Prod` need the org alias typed at an extra guard
 (`Assert-LdgcrmProductionConsent`) on top of the script's own confirmation. See `docs/engineering/ARCHITECTURE.md`,
 "Environments and org aliases", for the authorization runbook for a new sandbox.
@@ -378,7 +372,7 @@ value map, etc.) — this section is the short cross-object summary.
 
 | Airtable table | Salesforce object | Airtable link columns → Salesforce lookup |
 | --- | --- | --- |
-| Accounts | Account (`Federal` record type) | *(already migrated — see below)*; also `States + DC/PR` (checkbox) → `Type` (`"State"` if checked, else `"Federal"` — confirmed against gsa-peo's existing data, not just Airtable's field name; see below) |
+| Accounts | Account (`Federal` record type) | *(already migrated — see below)*; also `States + DC/PR` (checkbox) → `Type` (`"State"` if checked, else `"Federal"` — confirmed against Dev's existing data, not just Airtable's field name; see below) |
 | Partner Accounts | `LDGCRM_Partner_Account__c` | `Account Record ID` → `LDGCRM_Account__c` (Master-Detail, requires Account loaded first); `Name`/`LDGCRM_Agreement_Short_Name__c` ← `Agreement Short Name` (no dedicated Name column exists) |
 | Applications | `LDGCRM_application__c` (`LDGCRM_Application` record type — its only active record type) | `Partner Account Record ID (from Partner Agreement)` → `LDGCRM_Partner_Account__c` (required); `Opportunity Record ID` → `LDGCRM_Opportunity__c`; `Demographic Served` needed a Global Value Set expansion (6 → 25 values) — see `docs/engineering/TRANSFORMATION-RULES.md` for the full analysis and justification |
 | Contacts | Contact (`Federal` record type) | no direct Account/Application lookup on Contact itself — relationships go through the junctions below |
@@ -411,7 +405,7 @@ will fail a change set into any org lacking the field, independent of the migrat
 hold a state name but is actually a plain checkbox distinguishing state/DC/territory government
 Accounts from federal ones — it maps to the standard `Type` field, not a new custom field, and its
 value isn't "true"/"false", it's `"State"` vs `"Federal"`. This was confirmed empirically against
-gsa-peo's existing Accounts (54 already `Type="State"`, 530 already `Type="Federal"` — note
+Dev's existing Accounts (54 already `Type="State"`, 530 already `Type="Federal"` — note
 `"Federal"`, not the `Type` picklist's defined `"Federal Agency"` value, which only 3 records use;
 the field isn't restricted) before being encoded in `Build-AccountReconciliation.ps1`, rather than
 assumed from the Airtable column name. Treat every table in the mapping above the same way —
@@ -430,7 +424,7 @@ migrated.
 
 **Not every "no destination" Airtable column is actually excluded forever, though.** Freeform/
 journal-style columns with nowhere to land (e.g. Partner Accounts' `Account Description`, `Known
-Blockers`) become `ContentNote` records (Enhanced Notes — confirmed enabled in gsa-peo, not the
+Blockers`) become `ContentNote` records (Enhanced Notes — confirmed enabled in Dev, not the
 legacy `Note` object) attached to their parent record, in a dedicated **Notes chunk that has to be
 built last**, after every other object's records exist. This is forward-only — it does not apply to
 columns already migrated as dedicated fields (Partner Account's `Current Status Summary`,
@@ -512,7 +506,7 @@ object's picklist assumptions with a small test batch before a full load.
 the object including 3 pre-existing test records). 359 more Airtable rows are deliberately withheld
 until the duplicate/unmatched Account data is fixed in Airtable, and 92 loaded rows have a blank
 Opportunity lookup pending the Opportunity load — both resolve on a plain re-run of
-`Build-ApplicationLoad.ps1`, no code change needed. That script now queries gsa-peo (it is no longer a
+`Build-ApplicationLoad.ps1`, no code change needed. That script now queries the target org (it is no longer a
 purely offline transform) to skip rows whose parent Partner Account doesn't exist rather than
 submitting guaranteed failures. **`LDGCRM_Broker_App_Parent__c` is deliberately not loaded** — a
 self-referential lookup can't resolve within its own upsert batch and needs a second pass (not built).
@@ -755,7 +749,7 @@ Current scripts:
   it to the 10 in the "Airtable table → Salesforce object" mapping above; `-Tables` names an explicit
   subset. A post-pull coverage check reports any table the base holds that the script does not.
 - `scripts/powershell-scripts/Build-*.ps1` — one transform per object, each reading the Airtable JSON
-  (and, where it has lookups, querying gsa-peo read-only) and writing a load-ready CSV to
+  (and, where it has lookups, querying the target org read-only) and writing a load-ready CSV to
   `scripts/data/salesforce-loads/` plus review CSVs to `scripts/logs/data-migration/`. Built so far:
   `Build-AccountReconciliation.ps1`, `Build-PartnerAccountLoad.ps1`, `Build-ImpedimentLoad.ps1`,
   `Build-OpportunityLoad.ps1`, `Build-ApplicationLoad.ps1`, plus the one-off
@@ -833,7 +827,7 @@ Run from inside `sfdx/`:
   - **`purecloud.ContactWebHookv1`** (installed **managed** package, Genesys PureCloud) also fires on
     Contact insert. Its body returns `(hidden)` and it cannot be retrieved, so **what it does is
     unknowable from here**, and it has no kill switch. A webhook on Contact insert is an
-    outward-facing side effect this pipeline cannot inspect — user-confirmed inert in gsa-peo
+    outward-facing side effect this pipeline cannot inspect — user-confirmed inert in Dev
     (2026-08-13), but **re-confirm before any production run**.
   - An **org-level duplicate rule** on Contact (First + Last name) that rejected 4 records with
     `DUPLICATES_DETECTED`. Also not in the repo. **This is `OTCRM_Contact_Duplicate`, and as of
@@ -872,7 +866,7 @@ Run from inside `sfdx/`:
   an unrelated two-field metadata change (see `docs/engineering/TRANSFORMATION-RULES.md`'s
   Impediment section). **Workaround for metadata-only changes with no Apex/trigger component**, on
   this sandbox (not production): `sf project deploy start --test-level NoTestRun --target-org
-  gsa-peo` skips test execution entirely, sidestepping the recompilation cascade. This does *not*
+  peodv8dvn` skips test execution entirely, sidestepping the recompilation cascade. This does *not*
   fix the underlying problem — a deploy that actually includes Apex, or that must run tests for any
   other reason, is still blocked until someone who owns the FCIC app fixes
   `GSA_FCIC_AC_Manual_InitialBatch`.

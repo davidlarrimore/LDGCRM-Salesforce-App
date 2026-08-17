@@ -112,12 +112,6 @@ Every script takes `-Environment Dev|QA|Full|Prod` and looks the actual org alia
 | `Full` | `peofl2stgp` | Operations dress rehearsal, immediately before production. **Real Accounts — never rebuilt** |
 | `Prod` | `gsa-peo` | **PRODUCTION. Real Login.gov partner data.** |
 
-> ### ⚠️ `gsa-peo` means PRODUCTION
->
-> Until 2026-08-13 that alias pointed at the **Dev sandbox**, and a lot of older notes, transcripts
-> and command lines still say `--target-org gsa-peo` meaning Dev. **Any command you find that does
-> that is a silent retarget to production.** Treat finding one as a defect, not a typo.
->
 > Production is deliberately **not authorized** on development machines. If `sf org list` shows it,
 > something is wrong — stop and ask.
 

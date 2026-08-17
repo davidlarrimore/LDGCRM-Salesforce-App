@@ -40,16 +40,6 @@ itself. **You never pass a Salesforce username or alias by hand.**
 | `Full` | `peofl2stgp` | Operations dress rehearsal, immediately before production. **Real Accounts — never rebuilt** |
 | `Prod` | `gsa-peo` | **The live GSA PEO org. Real partner data.** |
 
-> ### ⚠️ `gsa-peo` means production
->
-> It changed meaning on 2026-08-13. It used to be the alias for the **Dev sandbox**, despite being
-> the *production* org's name. Any stale command line saying `--target-org gsa-peo` was talking about
-> Dev and is now **a silent retarget to production**. Treat finding one as a defect, not a typo.
->
-> The local alias was deleted and production is not authorized on development machines, so a stale
-> reference fails loudly rather than writing to production. Don't re-create it pointing anywhere
-> else.
-
 **An alias is the org's own sandbox name**, so it can be cross-checked and cannot quietly drift. The
 registry is [`scripts/powershell-scripts/Common.Orgs.ps1`](scripts/powershell-scripts/Common.Orgs.ps1); nothing else
 hard-codes an alias. Before reading or writing, every script asks the org for its own identity and

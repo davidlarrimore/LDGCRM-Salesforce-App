@@ -11,8 +11,7 @@
 # its own file but is dot-sourced from here so that every script already
 # dot-sourcing Common.ps1 gets Resolve-LdgcrmOrgAlias/Assert-LdgcrmOrgTarget
 # without a second line. Scripts must never hard-code an org alias again - see
-# the header of Common.Orgs.ps1 for why ("gsa-peo" used to mean the Dev
-# sandbox, and now means production).
+# the header of Common.Orgs.ps1 for why.
 . (Join-Path $PSScriptRoot "Common.Orgs.ps1")
 
 # Suppress the Salesforce CLI's "update available" banner. It writes to stderr

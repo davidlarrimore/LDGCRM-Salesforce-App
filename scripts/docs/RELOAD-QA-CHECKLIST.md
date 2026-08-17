@@ -40,8 +40,8 @@ the part most likely to be skipped.
 | `Prod` | `gsa-peo` | **PRODUCTION.** Not authorized locally |
 
 Scripts take `-Environment`, resolve the alias themselves, and prove it against the registry. **Never
-pass `--target-org` by hand** — any stale command line saying `--target-org gsa-peo` is a silent
-retarget to production. Queries below use `<alias>`; substitute the one you are actually verifying.
+pass `--target-org` by hand.** Queries below use `<alias>`; substitute the one you are actually
+verifying.
 
 > ### ⚠️ In a FULL sandbox, Accounts are not rebuilt
 >

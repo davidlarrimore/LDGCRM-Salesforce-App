@@ -37,10 +37,7 @@ Read in this order:
 | [../scripts/docs/ROLLBACK.md](../scripts/docs/ROLLBACK.md) | Undoing a load — and what it can never undo |
 | [../scripts/docs/RELOAD-QA-CHECKLIST.md](../scripts/docs/RELOAD-QA-CHECKLIST.md) | Full wipe-and-reload of a sandbox, with verification at every stage |
 
-> **Two things worth knowing before you touch anything.**
->
-> `gsa-peo` means **production**. It used to mean the Dev sandbox, and older notes still say so — any
-> command you find using it is a silent retarget to production.
+> **One thing worth knowing before you touch anything.**
 >
 > **Nothing writes to Salesforce except the load step.** Every `Build-*.ps1` transform is read-only,
 > so you can always see exactly what *would* be written before anything is.

@@ -56,13 +56,6 @@ the single source of truth.
 | `Full` | **PEOfL2STGp** | `peofl2stgp` | `gsa-peo--peofl2stgp.sandbox.lightning.force.com` | **Real — never touched** |
 | `Prod` | — | `gsa-peo` | `gsa-peo.lightning.force.com` | **Real — never touched** |
 
-> ### ⚠️ `gsa-peo` means PRODUCTION
->
-> It used to be the alias for the Dev sandbox. Any older note, transcript or
-> command line saying `--target-org gsa-peo` was talking about **Dev** — running
-> it today would target production. Read the hazard note at the top of
-> `powershell-scripts/Common.Orgs.ps1` before re-creating that alias.
-
 **An alias is the org's own sandbox name**, so it can be checked against the org
 it reaches. Every script calls `Assert-LdgcrmOrgTarget` before doing anything,
 which asks the org itself who it is (`Organization.IsSandbox`, plus its My

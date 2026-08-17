@@ -93,19 +93,6 @@ hard-codes an alias any more.
 `sf` alias is a local, mutable pointer that can be repointed by a stray `sf org login web`, and a
 name like `dev` gives you no way to notice. `peodv8dvn` can be checked against the instance URL.
 
-### ⚠️ `gsa-peo` changed meaning on 2026-08-13
-
-It used to be this repo's only alias, and it pointed at the **Dev sandbox** — while being the name
-of the **production** org. 146 references across 26 files read as though they targeted production
-and didn't. Under the new scheme `gsa-peo` means production, so a stale `--target-org gsa-peo` would
-be a silent retarget in the dangerous direction. Two things prevent that:
-
-1. Every reference in this repo was updated in the same change.
-2. The local `gsa-peo` alias was **deleted**, and production is not authorized on this machine. A
-   stale reference fails with "No authorization information found" instead of writing to production.
-
-Don't re-create a `gsa-peo` alias pointing anywhere but production.
-
 ### Authorizing a new environment
 
 The alias is always the sandbox's own name. Pass the sandbox's **own My Domain URL** as

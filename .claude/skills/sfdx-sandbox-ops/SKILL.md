@@ -15,10 +15,6 @@ Scripts take `-Environment Dev|QA|Full|Prod` (default `Dev`) and resolve the ali
 `scripts/powershell-scripts/Common.Orgs.ps1`. Never pass a bare `--target-org`/`-OrgAlias` to reach a registered
 environment — that skips the registry's identity checks.
 
-**`gsa-peo` means PRODUCTION** as of 2026-08-13; it used to be the alias for the Dev sandbox
-(`peodv8dvn`). Anything older referring to `gsa-peo` meant Dev. Never re-create that alias pointing
-at a sandbox.
-
 `Prod` is gated twice on scripts that may legitimately target it — `Assert-LdgcrmProductionConsent`
 requires the operator to type the org alias in full, *in addition to* the script's own typed
 confirmation. That is not optional and not something to route around.
