@@ -259,6 +259,7 @@ try {
         "$RootFolder/powershell-scripts/Common.Orgs.ps1",
         "$RootFolder/powershell-scripts/Invoke-FullMigrationLoad.ps1",
         "$RootFolder/powershell-scripts/Invoke-SandboxFactoryReset.ps1",
+        "$RootFolder/docs/OVERVIEW.md",
         "$RootFolder/docs/SETUP.md",
         "$RootFolder/docs/RUNNING-A-LOAD.md"
     )) {

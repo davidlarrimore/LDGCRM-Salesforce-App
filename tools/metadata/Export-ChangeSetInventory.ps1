@@ -674,7 +674,7 @@ function New-InventoryDocument {
     Add-Line "2. **A change set cannot delete anything.** Components removed in the source org survive in"
     Add-Line "   the target and appear in no deployment report. They must be deleted by hand in Setup."
     Add-Line "3. **A profile is merged, not replaced.** Permissions already in the target's profile stay,"
-    Add-Line "   so \"deployed successfully\" does not mean the target profile matches the source."
+    Add-Line '   so "deployed successfully" does not mean the target profile matches the source.'
     Add-Line "4. **Record-type picklist narrowing is enforced on load and is invisible to ``sf sobject"
     Add-Line "   describe``,** which reports field-level values only. Read"
     Add-Line "   ``objects/<Object>/recordTypes/<RecordType>.recordType-meta.xml`` instead - its ``fullName``"

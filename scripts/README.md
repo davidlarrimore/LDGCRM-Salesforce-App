@@ -1,31 +1,46 @@
 # Login.gov CRM migration — Airtable → Salesforce
 
-**Start here.** This folder is everything needed to pull data out of Airtable and
-load it into a Salesforce org. It is self-contained: it reads and writes only
-paths inside itself, so it runs correctly wherever it is placed.
+This folder is everything needed to move the Login.gov partnership team's data out of **Airtable**
+and into the GSA PEO **Salesforce** org. It is self-contained: it reads and writes only paths inside
+itself, so it runs correctly wherever it is placed.
 
-New to this? Read [`docs/SETUP.md`](docs/SETUP.md) first — it assumes no prior
-knowledge of the project.
+### 👉 New here? Read [`docs/OVERVIEW.md`](docs/OVERVIEW.md) first
+
+It assumes no knowledge of this project, Salesforce, Airtable or PowerShell, and explains what the
+migration is, what every folder and script does, what happens during a load, and how to tell whether
+it worked. Twenty minutes there will save you a day. **Everything below is the short version.**
 
 ---
 
 ## What this does
 
-The Login.gov partnership team tracked its work in Airtable. This pipeline moves
-that data into the GSA PEO Salesforce org: ten Airtable tables become Accounts,
-Contacts, Opportunities, Applications, Partner Accounts, Impediments, junction
-records, and Notes.
+The Login.gov partnership team tracked its work — agencies, applications, deals, the people involved,
+and the things blocking them — in an Airtable base. This pipeline moves that data into Salesforce,
+where it becomes Accounts, Contacts, Opportunities, and a set of custom objects prefixed `LDGCRM_`.
 
-Every record it creates carries `LDGCRM_External_ID__c`, holding the Airtable
-row's `rec...` ID. That is what makes the whole thing **re-runnable**: loads are
-upserts keyed on that field, so running a load twice updates rather than
-duplicates.
+It runs in three stages, and they are deliberately separate:
 
-**One important exception to the mental model: the migration does not create
-Accounts.** Accounts already exist in Salesforce and pre-date this project, so
-the pipeline *reconciles onto* them by name and external ID. See
-[`data/prod-accounts/README.md`](data/prod-accounts/README.md) for what that
-means when you are working in an empty Dev or QA sandbox.
+```
+   PULL                    TRANSFORM                      LOAD
+   ────                    ─────────                      ────
+   Airtable  ──────────►   Build-*.ps1        ──────────► Invoke-*.ps1
+   REST API                writes a CSV to disk           writes to Salesforce
+                           (READ-ONLY)                    (the only step that writes)
+```
+
+**Nothing writes to Salesforce except the load step.** You can always inspect exactly what *would* be
+written, as a plain CSV, before anything is.
+
+Every record it creates carries `LDGCRM_External_ID__c`, holding the Airtable row's `rec...` ID. That
+is what makes the whole thing **re-runnable**: loads are upserts keyed on that field, so running a
+load twice updates rather than duplicates. A load that goes wrong is normally fixed by fixing the
+cause and running it again.
+
+**One important exception to the mental model: the migration does not create Accounts.** Agencies
+already exist in Salesforce and pre-date this project, so the pipeline *reconciles onto* them by name
+and external ID, creating only the few that genuinely have nowhere to land. See
+[`data/prod-accounts/README.md`](data/prod-accounts/README.md) for what that means when you are
+working in an empty Dev or QA sandbox.
 
 ---
 
@@ -33,6 +48,8 @@ means when you are working in an empty Dev or QA sandbox.
 
 | You want to… | Read |
 | --- | --- |
+| **Understand the project before touching it** | [`docs/OVERVIEW.md`](docs/OVERVIEW.md) |
+| **Stand the app up in an org it has never run in** | [`docs/DEPLOYMENT-GUIDE.md`](docs/DEPLOYMENT-GUIDE.md) |
 | Install the tools and get credentials | [`docs/SETUP.md`](docs/SETUP.md) |
 | **Check everything is set up correctly** | `.\powershell-scripts\Test-LdgcrmReadiness.ps1` — read-only, safe anywhere. See [`docs/RUNNING-A-LOAD.md`](docs/RUNNING-A-LOAD.md#am-i-ready--the-readiness-check) |
 | Run a load | [`docs/RUNNING-A-LOAD.md`](docs/RUNNING-A-LOAD.md) |
@@ -43,47 +60,11 @@ means when you are working in an empty Dev or QA sandbox.
 
 ---
 
-## Environments
-
-Scripts never take a bare org alias. They take `-Environment`, and resolve it
-through the registry in [`powershell-scripts/Common.Orgs.ps1`](powershell-scripts/Common.Orgs.ps1) —
-the single source of truth.
-
-| `-Environment` | Sandbox | Alias | Browser URL | Accounts |
-| --- | --- | --- | --- | --- |
-| `Dev` *(default)* | PEOdV8DVn | `peodv8dvn` | `gsa-peo--peodv8dvn.sandbox.lightning.force.com` | Rebuilt from an export |
-| `QA` | PEOdV15DVn | `peodv15dvn` | `gsa-peo--peodv15dvn.sandbox.lightning.force.com` | Rebuilt from an export |
-| `Full` | **PEOfL2STGp** | `peofl2stgp` | `gsa-peo--peofl2stgp.sandbox.lightning.force.com` | **Real — never touched** |
-| `Prod` | — | `gsa-peo` | `gsa-peo.lightning.force.com` | **Real — never touched** |
-
-**An alias is the org's own sandbox name**, so it can be checked against the org
-it reaches. Every script calls `Assert-LdgcrmOrgTarget` before doing anything,
-which asks the org itself who it is (`Organization.IsSandbox`, plus its My
-Domain) and refuses to continue if the answer disagrees with the registry. A
-repointed alias stops the run instead of silently retargeting it.
-
-### Accounts are rebuilt in Dev and QA, and never anywhere else
-
-Dev and QA are empty developer sandboxes, so an Account universe has to be
-invented for them before anything else will attach. A **Full sandbox is a copy
-of production**, so its Accounts *are* the real records this migration
-reconciles onto — replacing them with a stale export would invalidate the very
-rehearsal the sandbox exists for.
-
-This is enforced in code, in one place (`Test-LdgcrmAccountRebuildAllowed`), and
-three scripts obey it: the factory reset drops Account from its delete list, the
-Account bootstrap refuses to start, and the orchestrator rejects
-`-BootstrapAccounts`. Every *other* object still resets normally in a Full
-sandbox — they carry an external ID because this migration made them.
-
----
-
 ## Quick start
 
-**Open PowerShell in this folder and stay here.** Every command in this README
-and in `docs/` is written relative to it — `.\powershell-scripts\Something.ps1`.
-Nothing needs to be run from a parent directory, and nothing resolves outside
-this folder, so it works wherever the folder happens to live.
+**Open PowerShell in this folder and stay here.** Every command in this README and in `docs/` is
+written relative to it — `.\powershell-scripts\Something.ps1`. Nothing resolves outside this folder,
+so it works wherever the folder happens to live.
 
 ```powershell
 # 0. Where you should be standing
@@ -105,15 +86,19 @@ sf org login web --alias peodv8dvn `
 #    You need an admin account on the base first - see docs/SETUP.md.
 Copy-Item .env.example .env
 
-# 3. See what a load would do. Runs every transform, writes NOTHING to Salesforce.
+# 3. Confirm the machine, the Airtable pull and the org are all ready.
+#    Read-only: writes nothing, fixes nothing, safe against any environment.
+.\powershell-scripts\Test-LdgcrmReadiness.ps1 -Environment Dev
+
+# 4. See what a load would do. Runs every transform, writes NOTHING to Salesforce.
 .\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment Dev -PlanOnly
 
-# 4. Apply it
-.\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment Dev
+# 5. Apply it
+.\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment Dev -Confirmation "LOAD"
 ```
 
-Always run `-PlanOnly` first. It is a genuine dry run: it executes every
-transform, captures a restore point, and reports what each step *would* load.
+Always run `-PlanOnly` first. It is a genuine dry run: it executes every transform against the real
+org, captures a restore point, and reports what each step *would* load — without writing anything.
 
 ---
 
@@ -123,12 +108,14 @@ transform, captures a restore point, and reports what each step *would* load.
 
 ```
 powershell-scripts/   EVERY script. One folder, no sub-folders.
-  Common.ps1            Shared helpers: logging, paths, the confirmation gate.
-  Common.Orgs.ps1       The environment registry - which org each name means.
+  Common.*.ps1          Shared code: logging, paths, the environment registry,
+                        the confirmation gate. Never run directly.
   Get-*.ps1             Pull from Airtable.
   Build-*.ps1           Transform. Read-only against Salesforce.
   Invoke-*.ps1          Write: load, reset, bootstrap, roll back.
+  Test-*.ps1            Check. Reads only.
 docs/                 The runbooks in the table above.
+reference/            Small hand-maintained business inputs. Tracked in git.
 data/                 Inputs and staged output. Gitignored.
   airtable-exports/     One JSON file per Airtable table - all 22, so the pull
                         backs up the base. Overwritten each pull.
@@ -139,67 +126,102 @@ logs/                 One folder per run. Gitignored.
 .env.example          The template. Committed, contains no secrets.
 ```
 
-**The scripts are deliberately in one flat folder.** They used to be split across
-`common/`, `cleanup/` and `data-migration/`, which implied a distinction that did
-not survive contact with the work — `cleanup/` held one file, `common/` held two,
-and everything else was in the third. The split cost a mental hop on every
-command while separating almost nothing. They are all PowerShell scripts for one
-pipeline, so they live together.
+**The prefix on a script's name tells you what it can do to your org.** That is the whole folder
+structure — there are no sub-folders because the names carry the meaning:
 
-Three naming conventions now carry all of the meaning:
+| Prefix | Does | Can it change your org? |
+| --- | --- | --- |
+| `Get-` | Reads from a source system | **No** |
+| `Build-` | Transforms data into a load-ready CSV | **No** |
+| `Test-` | Checks that things are in order | **No** |
+| `Invoke-` | Loads, deletes, rebuilds, rolls back | **Yes** |
 
-- **`Get-*.ps1`** reads from a source system. **`Build-*.ps1`** transforms, and
-  *never writes to Salesforce* — it only produces a CSV. **`Invoke-*.ps1`**
-  writes. If a script's name starts with `Build`, it cannot change your org.
-- **Everything one run produces lands in one folder**,
-  `logs/<category>/<ScriptName>-<timestamp>/`, including any child scripts an
-  orchestrated run spawns. Read `SUMMARY.txt` in there before anything else.
-- **Writes are gated by a typed token**, not a `-Force` switch:
-  `-Confirmation "LOAD"`, `-Confirmation "HARD DELETE"`. A token cannot be
-  copy-pasted between a load and a delete by habit, and production needs a
-  *second*, different one.
+**If a script's name starts with `Build`, it cannot change your org.** A full index of all 25 scripts,
+with what each one does, is in [`docs/OVERVIEW.md`](docs/OVERVIEW.md#6-the-scripts).
+
+Two more conventions worth knowing up front:
+
+- **Everything one run produces lands in one folder**, `logs/<category>/<ScriptName>-<timestamp>/`,
+  including any child scripts an orchestrated run spawns. Read `SUMMARY.txt` in there before anything
+  else.
+- **Writes are gated by a typed token**, not a `-Force` switch: `-Confirmation "LOAD"`,
+  `-Confirmation "HARD DELETE"`. A token cannot be copy-pasted between a load and a delete by habit,
+  and production needs a *second*, different one.
+
+---
+
+## Environments
+
+Scripts never take a bare org alias. They take `-Environment`, and resolve it through the registry in
+[`powershell-scripts/Common.Orgs.ps1`](powershell-scripts/Common.Orgs.ps1) — the single source of
+truth.
+
+| `-Environment` | Sandbox | Alias | Browser URL | Accounts |
+| --- | --- | --- | --- | --- |
+| `Dev` *(default)* | PEOdV8DVn | `peodv8dvn` | `gsa-peo--peodv8dvn.sandbox.lightning.force.com` | Rebuilt from an export |
+| `QA` | PEOdV15DVn | `peodv15dvn` | `gsa-peo--peodv15dvn.sandbox.lightning.force.com` | Rebuilt from an export |
+| `Full` | **PEOfL2STGp** | `peofl2stgp` | `gsa-peo--peofl2stgp.sandbox.lightning.force.com` | **Real — never touched** |
+| `Prod` | — | `gsa-peo` | `gsa-peo.lightning.force.com` | **Real — never touched** |
+
+**An alias is the org's own sandbox name**, so it can be checked against the org it reaches. Every
+script calls `Assert-LdgcrmOrgTarget` before doing anything, which asks the org itself who it is
+(`Organization.IsSandbox`, plus its My Domain) and refuses to continue if the answer disagrees with
+the registry. A repointed alias stops the run instead of silently retargeting it.
+
+### Accounts are rebuilt in Dev and QA, and never anywhere else
+
+Dev and QA are empty developer sandboxes, so an Account universe has to be invented for them before
+anything else will attach. A **Full sandbox is a copy of production**, so its Accounts *are* the real
+records this migration reconciles onto — replacing them with a stale export would invalidate the very
+rehearsal the sandbox exists for.
+
+This is enforced in code, in one place (`Test-LdgcrmAccountRebuildAllowed`), and three scripts obey
+it: the factory reset drops Account from its delete list, the Account bootstrap refuses to start, and
+the orchestrator rejects `-BootstrapAccounts`. Every *other* object still resets normally in a Full
+sandbox — they carry an external ID because this migration made them.
 
 ---
 
 ## Two things that will bite you
 
-**"Withheld" is not an error, and it is usually the bigger number.** Transforms
-skip rows whose parent is not loaded, whose Account will not resolve, or whose
-junction partner was itself withheld. Those rows are never submitted, so the
-Bulk API reports nothing, the step reports success, and the records are simply
-absent. Any "how much migrated?" question has to account for withheld rows as
-well as failed ones — `SUMMARY.txt` reports both.
+**"Withheld" is not an error, and it is usually the bigger number.** Transforms skip rows whose parent
+is not loaded, whose Account will not resolve, or whose junction partner was itself withheld. Those
+rows are never submitted, so the Bulk API reports nothing, the step reports success, and the records
+are simply absent. Any "how much migrated?" question has to account for withheld rows as well as
+failed ones — `SUMMARY.txt` reports both.
 
-**The org contains automation this folder cannot show you.** The sandbox hosts
-other GSA apps (FCIC, TTS OTCRM, a Genesys managed package) whose triggers,
-duplicate rules and flows fire on records this pipeline creates. A Contact
-insert with a blank `AccountId` makes a junk Account via another team's trigger;
-an org duplicate rule rejects a handful of Contacts every run. Both are known
-and handled — see `docs/TROUBLESHOOTING.md` — but check the live org before
-loading a *new* object for the first time.
+**The org contains automation this folder cannot show you.** The sandbox hosts other GSA apps (FCIC,
+TTS OTCRM, a Genesys managed package) whose triggers, duplicate rules and flows fire on records this
+pipeline creates. A Contact insert with a blank `AccountId` makes a junk Account via another team's
+trigger; an org duplicate rule was silently rejecting real people until the load started switching it
+off. Both are known and handled — see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — but check
+the live org before loading a *new* object for the first time.
+
+A third, related to both: **a successful-looking load is not evidence of a correct load.** One QA run
+reported 8,740 records and zero failures while silently leaving a field blank on 1,960 of them.
+[`docs/OVERVIEW.md`](docs/OVERVIEW.md#8-how-you-know-it-worked) explains what to check instead.
 
 ---
 
 ## Requirements
 
-- **Windows PowerShell 5.1.** Every script declares `#Requires -Version 5.1` and
-  avoids PowerShell 7-only syntax, because PowerShell 7 is not installable on
-  some GSA machines. They run fine under 7 if you have it.
+- **Windows PowerShell 5.1.** Every script declares `#Requires -Version 5.1` and avoids PowerShell
+  7-only syntax, because PowerShell 7 is not installable on some GSA machines. They run fine under 7
+  if you have it.
 - **Salesforce CLI (`sf`)**, authenticated to the target org.
-- **An Airtable Personal Access Token**, only for pulling fresh data. Loading
-  from an existing export needs no Airtable access at all.
+- **An Airtable Personal Access Token**, only for pulling fresh data. Loading from an existing export
+  needs no Airtable access at all.
 
-There is deliberately **no Python** and no third-party PowerShell module. Excel
-is not required even to read an `.xlsx` export.
+There is deliberately **no Python** and no third-party PowerShell module. Excel is not required even
+to read an `.xlsx` export.
 
 ---
 
 ## Before you write to any org
 
-Coordinate first. Loads are re-runnable, but a load nobody expected is still an
-incident, and this org is shared with other teams. Production additionally needs
-a change window agreed in advance.
+Coordinate first. Loads are re-runnable, but a load nobody expected is still an incident, and this
+org is shared with other teams. Production additionally needs a change window agreed in advance.
 
-Metadata (fields, picklists, record types) moves between orgs by **change set
-only** — never by CLI deploy. If a load is blocked because a field is missing,
-write it down and hand it to whoever builds the change set.
+Metadata (fields, picklists, record types) moves between orgs by **change set only** — never by CLI
+deploy. If a load is blocked because a field is missing, write it down and hand it to whoever builds
+the change set.

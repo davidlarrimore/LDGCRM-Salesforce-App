@@ -123,8 +123,8 @@ Write-Host "Required files" -ForegroundColor Cyan
 foreach ($Required in @(
     "README.md", ".gitignore", ".env.example",
     "powershell-scripts\Common.ps1", "powershell-scripts\Common.Orgs.ps1",
-    "docs\SETUP.md", "docs\RUNNING-A-LOAD.md", "docs\TROUBLESHOOTING.md",
-    "docs\ROLLBACK.md", "docs\RELOAD-QA-CHECKLIST.md",
+    "docs\OVERVIEW.md", "docs\SETUP.md", "docs\RUNNING-A-LOAD.md",
+    "docs\TROUBLESHOOTING.md", "docs\ROLLBACK.md", "docs\RELOAD-QA-CHECKLIST.md",
     "data\prod-accounts\README.md", "logs\README.md"
 )) {
     Assert-Check -Condition (Test-Path -LiteralPath (Join-Path $Bundle $Required)) `

@@ -5,6 +5,21 @@ Every failure this pipeline has actually produced, what the error text really me
 Most Salesforce load errors **name the wrong thing** — they point at a field when the problem is a
 user, or at the data when the problem is a file's encoding. That is what this page is for.
 
+**This is a lookup, not a read-through.** Find your symptom below; the sections are independent.
+
+| What you are seeing | Go to |
+| --- | --- |
+| Nothing runs at all — every command fails identically | [`running scripts is disabled`](#running-scripts-is-disabled-on-this-system--nothing-runs-at-all) |
+| A run finished and you want to know how it went | [Reading the logs](#reading-the-logs) |
+| A step said `LOAD FAILED` or `PARTIAL` | [PARTIAL](#a-step-reports-partial-expected-failures) · [LOAD FAILED](#a-step-reports-load-failed-and-you-think-the-counts-look-right) |
+| Salesforce rejected rows with an error code | Find the code below — they are listed verbatim |
+| It reported success but the numbers look wrong | [A count looks wrong and nothing errored](#a-count-looks-wrong-and-nothing-errored) |
+| It reported success but a field is empty everywhere | [Market Segment is blank on everything](#market-segment-is-blank-on-everything-and-the-load-reported-success) |
+| Airtable will not talk to you | [403](#airtable-returns-403) · [429](#airtable-returns-429) |
+
+New to the project? [OVERVIEW.md](OVERVIEW.md) explains the terms this page uses — withheld rows,
+external IDs, pre-flight, record types — and is worth twenty minutes before debugging anything.
+
 ---
 
 ## `running scripts is disabled on this system` — nothing runs at all
@@ -66,7 +81,6 @@ when you need the detail behind a line in it.
 | `<run>/created-note-ids.csv` | Created note IDs — the **only** handle on migrated notes |
 | `logs/data-migration/Invoke-MigrationRollback-<timestamp>/` | What a rollback deleted and restored |
 | `logs/cleanup/Invoke-SandboxFactoryReset-<timestamp>/` | IDs of everything a reset deleted |
-| `logs/metadata/` | Data dictionary exports |
 
 ### The review CSVs matter more than the transcript
 

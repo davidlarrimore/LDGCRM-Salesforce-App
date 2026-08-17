@@ -9,6 +9,15 @@ tracks the programme rather than a run, an object, or a script.
 Individual loads write their own report to `scripts/logs/data-migration/<run>/SUMMARY.txt`, which is
 gitignored and disposable. That tells you what happened once; this tells you where things stand.
 
+## 🚀 How does the app get stood up? → [../scripts/docs/DEPLOYMENT-GUIDE.md](../scripts/docs/DEPLOYMENT-GUIDE.md)
+
+**The order of operations for a deployment**, across every team with a hand in it: deploy the change
+set, activate the Flows, provision users and sharing, then load the data. `PRODUCTION-READINESS.md`
+says whether we are ready; that says what actually happens, in what order, and who does it.
+
+It lives **in the bundle**, with the runbooks, because the team standing the app up in Full and
+production is the team that receives `scripts/`.
+
 ---
 
 **Then:** this page sends you to the right document for what you are doing.

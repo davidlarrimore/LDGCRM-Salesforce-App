@@ -3,6 +3,9 @@
 `powershell-scripts\Invoke-MigrationRollback.ps1` reverses **one run** of
 `Invoke-FullMigrationLoad.ps1`, using the restore point that run captured before it wrote anything.
 
+> New to the project? [OVERVIEW.md](OVERVIEW.md) explains what a restore point is, and why the
+> migration updating records it does not own is what makes undoing it hard.
+
 ---
 
 ## Read this before you rely on it

@@ -7,6 +7,11 @@ an hour, most of which is waiting for someone to grant you Airtable access.
 You need three things: the tooling, a connection to a Salesforce org, and an Airtable token. They
 are independent — you can do them in any order — but you need all three before a load will run.
 
+> **This page gets your machine working. It does not explain the project.** If you have not read
+> [OVERVIEW.md](OVERVIEW.md) yet, read it first — it covers what the migration is, what every folder
+> and script does, what happens during a load, and how to tell whether it worked. Everything here
+> will make more sense afterwards.
+
 ---
 
 ## What this project actually does, in three sentences
@@ -17,7 +22,8 @@ Contacts, Opportunities and a handful of custom objects prefixed `LDGCRM_`. The 
 **repeatable**: it reads Airtable fresh every time, matches against what's already in Salesforce,
 and loads only what's missing or changed — so running it twice does not create duplicates.
 
-You will be working with two systems and a set of PowerShell scripts that talk to both.
+You will be working with two systems and a set of PowerShell scripts that talk to both. The long
+version, including the vocabulary, is in [OVERVIEW.md](OVERVIEW.md).
 
 ---
 

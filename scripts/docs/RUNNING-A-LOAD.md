@@ -7,6 +7,30 @@ How to move Airtable data into Salesforce, end to end. Assumes you have worked t
 pipeline has actually produced, what the error text means, and what to do. Several of them look
 alarming and are expected.
 
+> **If you have not read [OVERVIEW.md](OVERVIEW.md), start there.** It explains the vocabulary this
+> page uses without stopping to define it — object, upsert, transform, withheld, pre-flight, restore
+> point — and what each of the 13 steps is actually for.
+
+---
+
+## The short version
+
+Two commands, in this order, and the rest of this page is the detail behind them:
+
+```powershell
+# 1. Dry run. Executes every transform for real, writes NOTHING to Salesforce.
+.\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment Dev -PlanOnly
+
+# 2. Apply it.
+.\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment Dev -Confirmation "LOAD"
+```
+
+Then read `SUMMARY.txt` in the run's folder under `logs/data-migration/`.
+
+Everything below covers what those two commands do, how to approve them, what to do when a step
+fails, and how to check the result properly — because **a clean run is not by itself evidence of a
+correct one**.
+
 ---
 
 ## The shape of the thing
@@ -365,7 +389,7 @@ Step names are the ones in the table above.
 >
 > To prove failures are the known cause rather than something new, check that each missing row's
 > parent external ID is absent from the org's tagged Accounts.
-> [TROUBLESHOOTING.md](TROUBLESHOOTING.md#a-step-reports-load-failed-but-the-counts-look-right)
+> [TROUBLESHOOTING.md](TROUBLESHOOTING.md#a-step-reports-load-failed-and-you-think-the-counts-look-right)
 > has the script.
 
 ---

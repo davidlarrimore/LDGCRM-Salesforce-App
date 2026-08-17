@@ -246,4 +246,6 @@ Before deleting old runs, check you are not throwing away the only handle on som
 Restore points for runs that have since been superseded are otherwise safe to remove.
 
 For how to interpret what you find here, see
-[`docs/operations/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md).
+[`docs/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md). If the vocabulary on this page is unfamiliar
+— withheld rows, restore points, review CSVs — start with
+[`docs/OVERVIEW.md`](../docs/OVERVIEW.md).

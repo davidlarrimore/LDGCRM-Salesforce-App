@@ -950,7 +950,7 @@ right place rather than growing this file or `docs/README.md`:
 | --- | --- | --- |
 | `docs/PRODUCTION-READINESS.md` | **The project owner and whoever is building it, together** | **The north star** — seven gates between here and the production load, with an owner each |
 | **`scripts/README.md`** | People **running** a migration — the bundle's front door | Routes to the runbooks below; environments, layout, the two traps |
-| **`scripts/docs/`** | People **running** a migration, assuming no prior knowledge | `SETUP.md`, `RUNNING-A-LOAD.md`, `TROUBLESHOOTING.md`, `ROLLBACK.md`, `RELOAD-QA-CHECKLIST.md` |
+| **`scripts/docs/`** | People **running** a migration, assuming no prior knowledge | `OVERVIEW.md`, `DEPLOYMENT-GUIDE.md`, `SETUP.md`, `RUNNING-A-LOAD.md`, `TROUBLESHOOTING.md`, `ROLLBACK.md`, `RELOAD-QA-CHECKLIST.md` |
 | `docs/engineering/` | People **changing** the pipeline | `ARCHITECTURE.md` (was `docs/README.md`), `TRANSFORMATION-RULES.md`, `BACKLOG.md`, `PRODUCTION-CHANGE-SET-INVENTORY.md` |
 | `docs/data-quality/` | The **data owners** — not developers | `AIRTABLE-DATA-QUALITY-REQUESTS.md` (Airtable owners) and `SALESFORCE-ACCOUNT-CLEANUP.md` (the GSA Salesforce team — duplicate/misfiled Accounts, to be worked **after** the production migration) |
 | `docs/*.html` | **Stakeholders** | The current dated status report. Never edit an old one to refresh it — generate a new dated one |

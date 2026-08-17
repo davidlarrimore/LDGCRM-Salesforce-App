@@ -7,7 +7,9 @@
 > **This is not how to run a load.** For that, use [RUNNING-A-LOAD.md](RUNNING-A-LOAD.md). This is the
 > verification pass that comes after.
 >
-> **Prerequisites:** [SETUP.md](SETUP.md) done, and the load finished.
+> **Prerequisites:** [SETUP.md](SETUP.md) done, and the load finished. If the terms here are
+> unfamiliar — withheld rows, external IDs, record types, Flows — read [OVERVIEW.md](OVERVIEW.md)
+> first; this page assumes all of them.
 
 **What this checks, in order:**
 
