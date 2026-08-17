@@ -41,10 +41,18 @@
 .env.*
 !.env.example
 
-# The Operations bundle built by tools/Export-OpsBundle.ps1. Build output whose
-# entire source is already tracked in scripts/ - and it carries a copy of every
-# runbook, so a stale zip in the repo is likelier to be sent by mistake than to
-# be useful. Rebuild it when you need one.
+# Build output. Two kinds, ignored for two different reasons:
+#
+#   ldgcrm-migration-scripts-<date>.zip  the Operations bundle built by
+#       tools/Export-OpsBundle.ps1. Its entire source is already tracked in
+#       scripts/, and it carries a copy of every runbook, so a stale zip in the
+#       repo is likelier to be sent by mistake than to be useful. Rebuild it.
+#
+#   airtable-backup-<timestamp>.zip      the retained Airtable base backup built
+#       by tools/Backup-AirtableBase.ps1. This one is PII - the same applicant
+#       and partner data as scripts/data/ - and must never be committed. The
+#       backup script asks git whether its output path is ignored before it
+#       finishes, so moving this rule would be reported rather than silent.
 /dist/
 
 # OS junk

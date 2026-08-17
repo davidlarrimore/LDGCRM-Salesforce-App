@@ -126,15 +126,18 @@ commands). This file focuses on conventions and architecture for working in the 
   synced from an authoritative Salesforce Outbound Change Set (`LDGCRM_Sprint_1_12`) rather than
   hand-picked components. `manifest/package.xml` mirrors that scope for repeat syncs via
   `sf project retrieve start -x manifest/package.xml`.
-- `tools/` — **engineering-only**, added 2026-08-14. Scripts that read `sfdx/` or `docs/` and
-  therefore cannot live in the bundle: `metadata/` (Sync-Metadata, Get-LDGCRMDataDictionary,
-  Find-UnexposedLDGCRMFields), `Export-ReportPdf.ps1`, the superseded `Build-ProdAccountSeed.ps1`,
-  `Export-OpsBundle.ps1` and `Test-BundleStructure.ps1`. They dot-source `tools/Common.Tools.ps1`
+- `tools/` — **engineering-only**, added 2026-08-14. Scripts that read `sfdx/` or `docs/`, or write
+  above the bundle root, and therefore cannot live in the bundle: `metadata/` (Sync-Metadata,
+  Get-LDGCRMDataDictionary, Find-UnexposedLDGCRMFields), `Export-ReportPdf.ps1`, the superseded
+  `Build-ProdAccountSeed.ps1`, `Export-OpsBundle.ps1`, `Test-BundleStructure.ps1` and
+  `Backup-AirtableBase.ps1` (writes to `dist/`). They dot-source `tools/Common.Tools.ps1`
   (which defines `Get-RepoRoot` and `Start-ToolLog`) *and* the bundle's `Common.ps1` for the
   confirmation gate and Salesforce helpers.
 - `logs/` — **gitignored**. Run output from `tools/` only, in `logs/tools/<Script>-<ts>/`.
   Separate from the pipeline's `scripts/logs/` on purpose — see the next section.
-- `dist/` — **gitignored**. Where `Export-OpsBundle.ps1` writes the hand-off zip.
+- `dist/` — **gitignored**. Build output: `Export-OpsBundle.ps1`'s hand-off zip and
+  `Backup-AirtableBase.ps1`'s dated Airtable archives. **The backups carry applicant PII** — the same
+  content as `scripts/data/`, in a folder that only looks like build output.
 - `scripts/logs/`, `scripts/data/` — **gitignored** (except `.gitkeep`/`README.md`), by
   `scripts/.gitignore`, not the root one.
 
@@ -289,6 +292,12 @@ must not fail a good pull. `-SkipCoverageCheck` turns it off.
 **Do not snapshot Airtable** (user, 2026-08-17): always keep and load the latest pull. If an export
 looks stale, re-pull rather than reaching for an older copy — and expect the counts to move when you
 do, so re-baseline rather than treating older figures as pass/fail targets.
+
+**Retained backups are a separate thing and do not weaken that rule.**
+`tools/Backup-AirtableBase.ps1` (added 2026-08-17) runs the same pull and then zips the folder to
+`dist/airtable-backup-<timestamp>.zip`, which git ignores. Those archives answer *what the base held
+on that date*; **a load still reads `data/airtable-exports/`, which is always the newest pull.**
+Never extract an old archive over that folder to make a load reproduce an older count.
 
 **An export can go stale in ways that change a column's SHAPE, not just its values** — Airtable
 converted Opportunities' `Existing Identity Platforms` / `Alternative Identity Platforms` from linked
@@ -636,6 +645,13 @@ wrong thing:
   newlines and are legally quoted across multiple physical lines, so line count wildly overstates —
   it reported Partner Account as 1,017 records when the real figure was 94. Use
   `@(Import-Csv $path).Count`.
+- **`@($text | ConvertFrom-Json).Count` is 1 for a JSON array of any size.** PS 5.1's
+  `ConvertFrom-Json` writes the array to the pipeline as ONE object instead of enumerating it, so
+  `@()` measures the array, not its contents. **Assign first, then count**
+  (`$p = ConvertFrom-Json $text; @($p).Count` → 719). It fails in the worst way: the first run of
+  `Backup-AirtableBase.ps1` reported "22 tables, 22 records" and every row read `1`, which is a
+  perfectly plausible number for a manifest. This is a **repeat offender** — it previously cost a
+  100-note REST batch in `Invoke-NotesLoad.ps1`; see [[powershell-array-return-gotchas]] trap 4.
 - **`$json.records` on an array of pages returns 928 nulls, not 928 records.** Member enumeration
   over an array whose elements lack the property yields `$null` per element, so `.Count` looks
   right and `[0]` is null. Inspect the actual shape (`$j[0].PSObject.Properties.Name`) before
@@ -694,6 +710,15 @@ Current scripts:
   `tools/metadata/changeset-inventory-notes.json` keyed `<Type>|<member>` and are merged in, so
   regenerating never destroys them — **never hand-edit the generated markdown**.
 - `tools/Export-OpsBundle.ps1` — builds the hand-off zip from `scripts/`. Run `-WhatIf` first.
+- `tools/Backup-AirtableBase.ps1` — **the retained Airtable backup.** Runs
+  `Get-AirtableExport.ps1` as a child process (so `$env:LDGCRM_RUN_DIRECTORY` carries its transcript
+  into this run's folder), then zips `scripts/data/airtable-exports/` to
+  `dist/airtable-backup-<timestamp>.zip` with a manifest and a README. In `tools/` because it writes
+  above the bundle root. **Deliberately no `-Tables`/`-MigrationOnly` pass-through** — a zip named
+  "airtable-backup" holding 10 of 22 tables hides the shortfall behind a confident filename. A failed
+  pull aborts before anything is written; `-SkipPull` archives the folder as it stands and reports how
+  old it is. Verifies by reading the finished archive back, and asks **git** whether the output path
+  is ignored, because the file is full of applicant PII.
 - `tools/Test-BundleStructure.ps1` — **run this after touching anything under `scripts/`.** Touches
   no org, so it is always safe. It checks the things that *cannot* be noticed by running the pipeline
   normally here, because everything the bundle must not depend on is sitting one level up and
