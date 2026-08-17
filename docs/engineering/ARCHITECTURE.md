@@ -690,16 +690,12 @@ and on failure the script prints the exact `sf data update record` command to ru
 not theoretical — the real Contact load exited non-zero on 4 duplicate-rule rejections and the
 restore still ran. Post-run validation then re-checks it independently.
 
-**1, 2 and 3 are deliberately permanent**, for the same reason in each case: a setting that had to be
-in that state for the load to be correct must stay in it. Restoring it would mean the next run flips
-it again and the org oscillates, and in the window between runs the org is back to producing exactly
-the wrong data the change existed to prevent — a re-enabled duplicate rule blocks Contacts created in
-the UI, a deactivated Flow leaves Market Segment blank on every record a user creates by hand.
-**Do not add a `finally` that puts any of them back.**
+**1, 2 and 3 are permanent. Do not add a `finally` that puts any of them back.** Between runs the org
+would return to the state the change existed to prevent: a re-enabled duplicate rule blocks Contacts
+created in the UI, a deactivated Flow leaves Market Segment blank on every record created by hand.
 
-The asymmetry is the point: #4 is switched off to stop *another app's* automation interfering with
-this load, so it is a loan. #1-#3 put the org into the state it should have been in already, so they
-are a correction.
+#4 is restored because the setting belongs to another live application. #1-#3 leave the org in the
+state it needed to be in anyway.
 
 ### Two things it cannot switch off
 
@@ -742,50 +738,38 @@ where a script wrote it and empty exactly where a Flow was supposed to.
 | **Dev-only flows absent** | `LDGCRM_Screen_Flow_Developer_Data_Delete_Flow` found in QA/Full/Prod |
 | Active version behind latest **in the same org** | a newer version deployed but never switched on |
 
-The second is deliberately an *inversion* — that screen flow bulk-deletes migrated records, and its
-absence outside Dev is the expected state, so finding it is a failure rather than a suppressed note.
-Before this check, the only thing keeping it out of a non-Dev org was someone hand-picking change set
-contents.
+The second is an inversion: that screen flow bulk-deletes migrated records, so *finding* it outside
+Dev is the failure. Before this check, the only thing keeping it out of a non-Dev org was someone
+hand-picking change set contents.
 
 ### ⚠️ Flow version numbers are PER-ORG and are not comparable across orgs
 
 A Flow's `VersionNumber` is a local counter: every save in the source org increments that org's
 sequence, and every change set deployment increments the target's independently. Dev on v4 while QA
 is on v2 is the ordinary result of four saves there and two deployments here — **not** evidence that
-QA is behind. An earlier version of this check asserted otherwise and was wrong (corrected by the
-project owner, 2026-08-14).
+QA is behind.
 
 The only meaningful comparison is **within one org**: active version vs latest version. That is what
-the stale check uses, and it is the one form of drift visible from inside a single org. Whether the
-active version carries the *intended logic* is a change-set question the bundle cannot answer — it
-has no access to `sfdx/`.
+the stale check uses. Whether the active version carries the *intended logic* is a change-set
+question the bundle cannot answer — it has no access to `sfdx/`.
 
-### What it may and may not fix
+### `-ActivateFlows`
 
-`-ActivateFlows` switches on whatever is off. This is allowed because it flips an **org setting**
-(`FlowDefinition.Metadata.activeVersionNumber`) pointing at a version already in the org — it moves
-no XML and creates no component, so it stays on the right side of the change-set rule. Per the
-project owner (2026-08-14): *"There is a difference between changing settings in the org via CLI and
-adding/updating core object definitions. We want change sets to migrate all xml, but allow for our
-pre-flight script to prep and validate the environment for a successful load."*
+Switches on every flow that is off or stale, by setting `FlowDefinition.Metadata.activeVersionNumber`
+to a version already in the org. **Sandbox only** — rejected for `-Environment Prod` at parameter
+binding. Pre-flight still reports on Prod; it just changes nothing there.
 
-It is **sandbox only** — rejected for `-Environment Prod`, the same structural block
-`-BootstrapAccounts` uses. Pre-flight still reports on Prod, because that report is read-only and is
-exactly what you want before a production load.
-
-Two properties that differ from the other switch this pipeline flips:
-
-- **Nothing is restored.** `Invoke-SalesforceLoad.ps1`'s `TriggerControls__c` bypass captures, flips
-  and restores in a `finally`. This does not, on purpose: a Flow that had to be on for the load to be
-  correct must stay on, or the org resumes producing wrong data for every record created in the UI.
-- **It cannot create a Flow.** ABSENT, or present with no versions, needs a change set. The pipeline
-  says so precisely and stops.
+**It cannot create a Flow.** Absent, or present with no versions, needs a change set; the pipeline
+names it and stops.
 
 Implemented by `Get-LdgcrmFlowState` / `Set-LdgcrmFlowActiveVersion`, which PATCH the Tooling API over
-`sf api request rest` — `Metadata` is a compound field, so `sf data update record --values` cannot
-express it. A successful PATCH returns **204 No Content**, so an empty response is the success case
-here, the opposite of every other call in this repo. The write is followed by a verifying re-query,
-the same principle as the `TriggerControls__c` restore.
+`sf api request rest`. Two things to know before changing that code:
+
+- `Metadata` is a compound field, so `sf data update record --values` cannot express it.
+- **A successful PATCH returns 204 No Content** — an empty response is the success case here, the
+  opposite of every other call in this repo.
+
+The write is followed by a verifying re-query.
 
 ## ⚠️ Pre-flight: the Contact duplicate rule must be OFF (added 2026-08-15)
 
@@ -797,26 +781,20 @@ rather than a warning: the Contact step **does not fail**. It reports success ha
 rejected rows, and every junction keyed on those Contacts is short by the same people. One Dev run
 lost **167 Contacts** this way.
 
-### The pipeline switches them off itself — via a same-org metadata round-trip
+### How it switches them off: a same-org metadata round-trip
 
-`Disable-LdgcrmContactDuplicateRules` runs inside pre-flight, in **every environment including
-Prod** (project owner, 2026-08-15). Unlike `-ActivateFlows` there is no sandbox-only gate: the rules
-block the Contact load identically everywhere and the decision is that they stay off everywhere, so
-making Prod the one org needing a remembered manual step is how a production load acquires a silent
-167-record hole.
+`Disable-LdgcrmContactDuplicateRules` runs inside pre-flight, in **every environment including Prod**
+— there is no sandbox-only gate, because the rules block the Contact load identically everywhere.
 
-**Why it is a Metadata API deploy and not a PATCH.** Flow activation gets to be a one-field PATCH
-because `FlowDefinition` exposes a `Metadata` compound field. Neither rule here does:
+There is no record-level write available for either object, so the Metadata API is the only route:
 
 | Object | Why there is no record-level write |
 | --- | --- |
 | `DuplicateRule` | Not a Tooling API object at all (`INVALID_TYPE`); on the standard API `IsActive` is `updateable=false` |
-| `MatchingRule` | Readable in Tooling, but has **no `Metadata` field**, so there is nothing for the `FlowDefinition`-style PATCH to bind to |
+| `MatchingRule` | Readable in Tooling, but has **no `Metadata` field**, so there is nothing for a `FlowDefinition`-style PATCH to bind to |
 
-So it retrieves the rule **from the target org**, changes one element, and deploys it **back to that
-same org**. No XML crosses an org boundary, no component is created, no definition changes — the
-rule's own retrieved body is what goes back. That is the `-ActivateFlows` category, and CLAUDE.md's
-metadata table carries the carve-out explicitly: **round-trip-to-same-org and status-only**.
+It retrieves the rule from the target org, changes one status element, and deploys it back to that
+same org.
 
 ### Four mechanics that are not obvious
 
@@ -832,44 +810,33 @@ metadata table carries the carve-out explicitly: **round-trip-to-same-org and st
    Contact matching rule. A targeted retrieve returns only the requested rules and the same file
    goes back, keeping it a round-trip of the org's own content.
 
-**Order is not negotiable:** a matching rule cannot be deactivated while an active duplicate rule
-consumes it, so duplicate rules always go first. The matching-rule pass is **non-fatal by design** —
-once no active duplicate rule consumes it a matching rule enforces nothing, so the load is already
-safe after the first pass, and failing a production load over a cosmetic tidy-up would be the wrong
-trade.
+**Duplicate rules go first.** A matching rule cannot be deactivated while an active duplicate rule
+consumes it.
 
-**The decision to proceed rests on a verifying re-query, never on the deploy's own success report** —
-the same principle as the flow activation and the `TriggerControls__c` restore. CLAUDE.md records a
-deploy that reported "Succeeded" having deployed 0 components, so `Invoke-LdgcrmRuleDeploy` checks
-`numberComponentErrors` and `numberComponentsDeployed` too.
+**The matching-rule pass is non-fatal.** Once no active duplicate rule consumes it, a matching rule
+enforces nothing, so the load is already safe after the first pass. A failure there warns.
 
-### Why it is not promoted by change set either
+**Proceeding rests on a verifying re-query, not on the deploy's success report.** A deploy in this
+repo has reported "Succeeded" having deployed 0 components, so `Invoke-LdgcrmRuleDeploy` also checks
+`numberComponentErrors` and `numberComponentsDeployed`.
 
-The obvious fix — add `Email` to the matching rule — was built and verified in Dev, then abandoned as
-a promotion path. A change set cannot carry a matching-rule change at all:
+### Adding `Email` to the matching rule is not possible by change set
+
+The obvious fix was built and verified in Dev, then abandoned. A change set cannot carry a
+matching-rule change at all:
 
 | Target state | Error |
 | --- | --- |
 | Rule **Active** | *"Before you change a matching rule, you must deactivate it."* |
 | Rule **Inactive** | *"Change the matching rule status separately from other changes."* |
 
-A change set always uploads the **source org's** status and gives you no way to edit the XML, so it
+A change set always uploads the source org's status and gives no way to edit the XML, so it
 necessarily attempts a definition change and a status change in one deployment. No target state
-passes. Both rules were removed from the change set and are deactivated by hand in Setup instead.
+passes. Both rules were removed from the change set.
 
-### It stays off
-
-Unlike `TriggerControls__c`, **nothing restores it**. Do not add a `finally` that puts it back — a
-rule switched off for the load must stay off, or the next load switches it off again and the org
-oscillates. The pipeline blocks only when a rule is *still active* after it has tried.
-
-An active *matching* rule with no active duplicate rule consuming it is inert, so that case warns
-rather than blocks.
-
-These are TTS OTCRM's rules, not this app's — but **TTS OTCRM is defunct** (project owner,
-2026-08-15) and its metadata will eventually be removed wholesale, so there is no owning team to
-clear this with and no live users behind the rule. Deactivating it is the same action in Prod as in a
-sandbox. That wholesale removal is a separate future exercise and not this migration's job.
+These are TTS OTCRM's rules, not this app's. **TTS OTCRM is defunct** (project owner, 2026-08-15), so
+there is no owning team to clear the change with and no live users behind the rule. Its metadata will
+be removed wholesale eventually — a separate exercise, not this migration's.
 
 ## ⚠️ Loading Contact disables another app's Apex trigger
 
@@ -887,22 +854,18 @@ issue), so a normal load would create 371 junk Accounts in an org where Account 
 moving target *and* where this migration's own Account reconciliation depends on those counts being
 meaningful.
 
-The FCIC app ships a supported kill switch — a `TriggerControls__c` custom setting the trigger checks
-first (`if(contactTriggersAreOn)`), with one record per object: `Task`, `Case`, `Contact`,
-`LiveChatTranscript`. Using it is the intended mechanism, not a workaround.
-`Invoke-SalesforceLoad.ps1` reaches it via `-DisableTriggerControl`, and
+FCIC ships a kill switch for exactly this: a `TriggerControls__c` custom setting the trigger checks
+first (`if(contactTriggersAreOn)`), with one record per object — `Task`, `Case`, `Contact`,
+`LiveChatTranscript`. `Invoke-SalesforceLoad.ps1` reaches it via `-DisableTriggerControl`, and
 `Invoke-FullMigrationLoad.ps1` sets that automatically on the Contact step (`TriggerOff = "Contact"`).
 
-What that flag does, and the guarantees around it:
-1. Reads and **records the current value** before changing anything (it does not assume "on").
+What the flag does:
+1. Reads and records the current value before changing anything — it does not assume "on".
 2. Switches it off, runs the load.
-3. **Restores it in a `finally` block** — so it is restored even if the load throws, the CLI dies, or
-   the operator interrupts. This is not theoretical: the real Contact load *did* exit non-zero (4
-   duplicate-rule rejections) and the restore still ran.
-4. **Verifies the restore with a re-query** and prints a loud, explicit manual-fix command if it
-   fails. Leaving FCIC's trigger disabled would silently break another team's app.
-5. It is **off by default** and should stay that way. It changes config another app owns, so it needs
-   explicit human sign-off per load.
+3. Restores it in a `finally`, so it survives a throw, a dead CLI or an interrupt. The real Contact
+   load exited non-zero on 4 duplicate-rule rejections and the restore still ran.
+4. Verifies the restore by re-querying, and prints the manual fix command if that fails.
+5. Is **off by default**. It changes config another app owns and needs sign-off per load.
 
 Pre-flight blocks the run if there is not exactly one `TriggerControls__c` record named `Contact`,
 and the post-run check re-reads it and flags it if it is still off.
