@@ -219,24 +219,103 @@ function Get-OrgAccountIdMap {
     return $ById
 }
 
+function Get-OrgAncestorPath {
+    <#
+        The ancestor path of one org Account, outermost first, lower-cased and
+        " > "-joined - the same shape Import-ProdAccountExport builds for the
+        export, so the two can be compared directly.
+
+        Walks ParentId through the Id map. Depth is capped because a cycle in
+        the org (A parents B parents A) would otherwise loop forever; Salesforce
+        does not permit one, but this code runs against orgs mid-rebuild.
+    #>
+    param($ById, $Account, [int]$MaxDepth = 12)
+
+    $Names = New-Object System.Collections.Generic.List[string]
+    $Current = $Account
+    $Depth = 0
+
+    while ($Current -and $Depth -lt $MaxDepth) {
+        $Names.Insert(0, (Get-NormalizedName -Name $Current.Name))
+        if (-not $Current.ParentId -or -not $ById.ContainsKey($Current.ParentId)) { break }
+        $Current = $ById[$Current.ParentId]
+        $Depth++
+    }
+
+    return ($Names -join " > ")
+}
+
+function Get-ParentAncestorPath {
+    <#
+        The parent's expected ancestry, derived from a row's own AncestorPath by
+        dropping the row's own name from the end.
+
+        Import-ProdAccountExport builds AncestorPath as "A > B > C > Name", so
+        the parent of that row is "A > B > C". Returns "" for a root or a
+        depth-1 row, which correctly means "top level".
+    #>
+    param([string]$AncestorPath)
+
+    if ([string]::IsNullOrWhiteSpace($AncestorPath)) { return "" }
+
+    $Parts = @($AncestorPath -split '\s*>\s*' | Where-Object { $_ })
+    if ($Parts.Count -le 1) { return "" }
+
+    return (($Parts | Select-Object -First ($Parts.Count - 1)) -join " > ")
+}
+
 function Get-UniqueOrgAccount {
     <#
-        Returns the single org Account matching a name, or $null when there
-        is no match OR more than one. "More than one" deliberately returns
-        nothing rather than a first-match: picking one would silently parent a
-        real record under the wrong agency.
+        Returns the single org Account matching a name, or $null when there is
+        no match.
+
+        WHEN THE NAME IS DUPLICATED IN THE ORG, THE ANCESTOR PATH DECIDES.
+        The production export carries Level 1/2/3 Account columns, which
+        Import-ProdAccountExport already turns into AncestorPath. Those columns
+        were previously reported and never used, so a name shared by two org
+        Accounts could not be resolved at all - "Office of the Inspector
+        General" exists 4 times in the export and 3 times in the org, and every
+        one of them was skipped.
+
+        That made placement NON-DETERMINISTIC: whether a record got parented
+        depended on which Accounts happened to exist when a pass ran, which in
+        turn depended on which bulk jobs returned a readable result. Two runs of
+        the same script over the same export placed U.S. Army Futures Command
+        differently on 2026-08-16 and 2026-08-17.
+
+        Passing -AncestorPath resolves it by position instead of by name: the
+        candidate whose own chain of parents matches the export's ancestry is
+        the right one, regardless of how many share the name.
+
+        Still returns $null when the path does not single one out - a first
+        match would silently parent a real record under the wrong agency.
     #>
-    param($Index, [string]$Name)
+    param($Index, [string]$Name, [string]$AncestorPath = "", $ById = $null)
 
     $Key = Get-NormalizedName -Name $Name
 
     if (-not $Key -or -not $Index.ContainsKey($Key)) { return $null }
 
-    $Matches = $Index[$Key]
+    $Matches = @($Index[$Key])
 
-    if ($Matches.Count -ne 1) { return $null }
+    if ($Matches.Count -eq 1) { return $Matches[0] }
+    if ($Matches.Count -eq 0) { return $null }
 
-    return $Matches[0]
+    # Ambiguous by name. Fall back to $null unless the caller supplied the
+    # ancestry and the Id map needed to walk the org's side of it.
+    if (-not $AncestorPath -or -not $ById) { return $null }
+
+    $Wanted = ($AncestorPath -split '\s*>\s*' | ForEach-Object { Get-NormalizedName -Name $_ } |
+               Where-Object { $_ }) -join " > "
+    if (-not $Wanted) { return $null }
+
+    $ByPath = @($Matches | Where-Object {
+        (Get-OrgAncestorPath -ById $ById -Account $_) -eq $Wanted
+    })
+
+    if ($ByPath.Count -eq 1) { return $ByPath[0] }
+
+    return $null
 }
 
 function Invoke-BulkCsv {
@@ -828,28 +907,30 @@ for ($Pass = 1; $Pass -le $MaxPasses; $Pass++) {
         $ParentResolvable = $true
 
         if ($ParentKey) {
-            if ($ExportNameCounts.ContainsKey($ParentKey) -and $ExportNameCounts[$ParentKey] -gt 1) {
-                # The export itself defines 2+ different Accounts with this
-                # name. No amount of loading makes it resolvable.
-                $ParentResolvable = $false
-            }
-            else {
-                $ParentAccount = Get-UniqueOrgAccount -Index $AccountIndex -Name $Row.ParentName
+            # The parent's expected ancestry is this row's, minus its own name.
+            # Supplying it lets Get-UniqueOrgAccount resolve a duplicated parent
+            # name by POSITION, which is what makes placement deterministic.
+            # A name duplicated in the EXPORT is no longer fatal either - two
+            # Accounts called "Office of the Inspector General" sit under
+            # different departments, and the path says which is which.
+            $ParentPath = Get-ParentAncestorPath -AncestorPath $Row.AncestorPath
 
-                if ($null -eq $ParentAccount) {
-                    if ($AccountIndex.ContainsKey($ParentKey)) {
-                        # Present but duplicated in the target org.
-                        $ParentResolvable = $false
-                    }
-                    else {
-                        # Simply not created yet - try again next pass.
-                        $StillPending.Add($Row)
-                        continue
-                    }
+            $ParentAccount = Get-UniqueOrgAccount -Index $AccountIndex -Name $Row.ParentName `
+                -AncestorPath $ParentPath -ById $AccountsById
+
+            if ($null -eq $ParentAccount) {
+                if ($AccountIndex.ContainsKey($ParentKey)) {
+                    # Present but still ambiguous, even with the path.
+                    $ParentResolvable = $false
                 }
                 else {
-                    $ParentId = $ParentAccount.Id
+                    # Simply not created yet - try again next pass.
+                    $StillPending.Add($Row)
+                    continue
                 }
+            }
+            else {
+                $ParentId = $ParentAccount.Id
             }
         }
 
@@ -887,19 +968,24 @@ for ($Pass = 1; $Pass -le $MaxPasses; $Pass++) {
             # An earlier seed (Build-ProdAccountSeed.ps1) deduped these by
             # name, which is why the org has one where production has several.
             # Reported, never guessed.
-            if ($ExportNameCounts[$NameKey] -gt 1 -and $AccountIndex[$NameKey].Count -lt $ExportNameCounts[$NameKey]) {
+            # The ancestor path resolves this by position when it can, so the
+            # count comparison below is only reached if it could not.
+            $Existing = Get-UniqueOrgAccount -Index $AccountIndex -Name $Row.Name `
+                -AncestorPath $Row.AncestorPath -ById $AccountsById
+
+            if ($null -eq $Existing -and
+                $ExportNameCounts[$NameKey] -gt 1 -and
+                $AccountIndex[$NameKey].Count -lt $ExportNameCounts[$NameKey]) {
                 $AmbiguousSelf.Add([PSCustomObject]@{
                     AccountName  = $Row.Name
                     ParentName   = $Row.ParentName
                     AncestorPath = $Row.AncestorPath
-                    Reason       = "Export defines $($ExportNameCounts[$NameKey]) distinct Accounts with this name but the org has $($AccountIndex[$NameKey].Count) - cannot tell which is which"
+                    Reason       = "Export defines $($ExportNameCounts[$NameKey]) distinct Accounts with this name but the org has $($AccountIndex[$NameKey].Count), and the ancestor path did not single one out"
                     Action       = "Skipped - no parent set"
                     SourceRow    = $Row.SourceRow
                 })
                 continue
             }
-
-            $Existing = Get-UniqueOrgAccount -Index $AccountIndex -Name $Row.Name
 
             if ($null -eq $Existing) {
                 # The name is duplicated in the target org, so we can't tell

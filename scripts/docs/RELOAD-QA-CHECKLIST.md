@@ -57,9 +57,14 @@ verifying.
 ```powershell
 .\powershell-scripts\Invoke-SandboxFactoryReset.ps1 -Environment Dev -BootstrapAccounts
 # ⚠️ STOP - run the bootstrap a SECOND time and confirm it reports 0 missing. See below.
-# ⚠️ STOP - re-apply the two manual Account tags here, BEFORE the load. See below.
 .\powershell-scripts\Invoke-FullMigrationLoad.ps1   -Environment Dev -Confirmation "LOAD"
 ```
+
+> **No manual Account tagging.** Until 2026-08-17 this procedure required tagging `AmeriCorps`,
+> `Millennium Challenge Corporation` and `U.S. Army Futures Command` by hand between the reset and
+> the load, because the matcher refused to choose between same-named Accounts. It now resolves them
+> itself — see "Duplicate Account names" in `TRANSFORMATION-RULES.md`. Verified by a reset-and-load
+> with no intervention: **9,220 of 9,220 rows, 0 failures**, matching QA on every object.
 
 Then **read `SUMMARY.txt`** in the run directory before anything else. It is the report, not a log.
 
@@ -89,95 +94,6 @@ silent loss looks exactly like success.
 > ⚠️ **Never re-run a single pass by hand from its CSV.** Bootstrapped Accounts carry no external ID,
 > so there is nothing to deduplicate on and a second insert creates duplicate Accounts. Re-run the
 > whole script, which re-reads the org first.
-
-### ⚠️ MANDATORY between the reset and the load: re-tag three Accounts
-
-**The reset destroys these tags and nothing reports it.** Production holds two Accounts of each of
-these names — character-identical, so nothing in the name distinguishes them — and the correct one
-is identified by hand. The factory reset hard-deletes Accounts carrying an external ID, and the
-bootstrap recreates them **untagged**.
-
-| Account | External ID | Cost of skipping it |
-| --- | --- | --- |
-| `AmeriCorps` | `recLIsbBAhuXuc1OR` | 3 of the 5 records below |
-| `Millennium Challenge Corporation` | `recdA0Zjx6ihcKKHa` | 2 of the 5 records below |
-| `U.S. Army Futures Command` | `recoq1BK9VsYo99lq` | **1 Partner Account, 28 Applications, 3 junction rows, 14 notes** |
-
-**`U.S. Army Futures Command` was added 2026-08-17, after it cost a load 46 records.** It behaves
-exactly like the other two and had simply never been listed. Its Partner Account `DOD-ARMY-AFC-ASF`
-failed with `Foreign key external ID ... not found`, which is a *configured expected failure* for
-that step, so the run reported success and continued — and the 28 Applications it stranded were
-counted in a different section of the report. Nothing connected the two.
-
-> **The list above is not closed.** The bootstrap prints every same-named Account it could not place
-> under AMBIGUOUS-HIERARCHY REPAIR — 19 of them on 2026-08-16. Any of those can strand records the
-> same way. After the load, cross-check `Account-reconciliation-unmatched-*.csv` against that list:
-> an Account that appears in both, and has a Partner Account, is the next entry for this table.
-
-> ⚠️ **In a freshly reset sandbox you will find ONE of each, not two — this is expected.** The
-> tag marks the correct copy, and the tag is exactly what the reset deletes by, so the *correct*
-> record is destroyed and the misfiled one survives. The bootstrap then cannot restore it: the export
-> defines two Accounts of that name, so it reports the name under AMBIGUOUS-HIERARCHY REPAIR
-> (`InOrgNow 1, ExportDefines 2`) and **skips** it rather than guessing.
->
-> The survivor is left with a blank `ParentId` — its old parent was itself deleted and re-created
-> with a new Id — so the level backfill scores it `Level 1`. **The net effect is the configuration
-> you want** (one Account, top level, no parent, matching Airtable's single row), and the step-1
-> query below still selects it correctly. Observed 2026-08-16: one `AmeriCorps` and one
-> `Millennium Challenge Corporation`, both `ParentId` blank and `Level 1`, with `Department of Labor`
-> and `Department of State` present as separate records they are correctly not parented to.
->
-> **Do not conclude you are in the wrong org, and do not go looking for the second copy.** Tag the
-> one that is there. If you ever see *two* with one already top-level, you are in an org that has not
-> been reset — use the top-level one, as the rule says.
-
-Skip this and **5 records are silently withheld** — Opportunities `MyAmericorps`, `Grantee and
-Sponsor Portal` and `MCC`, Partner Account `AC`, and Application `AmeriCorps Grantee and Sponsor
-Portal (Ernst & Young…)`. The load still reports success; the Partner Account failure is classified
-*expected*. There is no automated check for this.
-
-**The Account Ids differ per org and change on every rebuild — always re-query, never paste.**
-
-```powershell
-# 1. Find them. ParentId = null is what makes a record the correct one.
-sf data query --target-org <alias> -q "SELECT Id, Name, ParentId FROM Account WHERE Name IN ('AmeriCorps','Millennium Challenge Corporation','U.S. Army Futures Command') ORDER BY Name"
-
-# 2. Build a three-row CSV of Id,LDGCRM_External_ID__c from the ParentId = null rows:
-#      <AmeriCorps Id>,recLIsbBAhuXuc1OR
-#      <MCC Id>,recdA0Zjx6ihcKKHa
-#      <U.S. Army Futures Command Id>,recoq1BK9VsYo99lq
-# 3. Apply it
-.\powershell-scripts\Invoke-SalesforceLoad.ps1 -Environment <env> -ObjectApiName "Account" `
-    -CsvFile "<absolute path to the CSV>" -Operation Update -Confirmation "LOAD"
-
-# 4. VERIFY - all three tags present, on the top-level records only
-sf data query --target-org <alias> -q "SELECT Id, Name, ParentId, LDGCRM_External_ID__c FROM Account WHERE LDGCRM_External_ID__c IN ('recLIsbBAhuXuc1OR','recdA0Zjx6ihcKKHa','recoq1BK9VsYo99lq')"
-```
-
-> **Tag before the load, not after.** Tagging alone does not set Market Segment or Type — the
-> reconciliation does, matching on external ID before name. A tag applied after the Account step has
-> run leaves the Account with a blank Market Segment, and the before-save Flow then derives blank
-> Market Segment onto every Partner Account and Application beneath it. If you do tag late, re-run
-> from the Account step (`-StartAtStep Account`) rather than from PartnerAccount.
-
-`-CsvFile` needs an **absolute** path — a relative one resolves against your shell's working
-directory, not the bundle, and the script stops with "CSV file not found".
-
-> ⚠️ **There is probably already an `Account-manual-tag-update.csv` in `data/salesforce-loads/`, and
-> its Ids are dead.** That folder is not cleared between rebuilds, so the file left by the *previous*
-> rebuild looks exactly like the one you need. Confirmed 2026-08-16: the file on disk held
-> `001cn00000mRrXg…` while the org's AmeriCorps was `001cq00000V6WwK…`. An Update against a
-> non-existent Id fails rather than mis-tagging, so this costs a confusing error rather than bad data
-> — but **overwrite the file from your own step-1 query, never reuse it.** This is the same reason
-> step 1 exists at all.
-
-Why the top-level record is the right one, with sources, is in
-`docs/engineering/TRANSFORMATION-RULES.md`, "AmeriCorps and Millennium Challenge Corporation —
-tagged by hand". **Do not re-decide it from the Account names**: the wrong record in each pair looks
-plausible (AmeriCorps is funded through the Labor appropriations act; the Secretary of State chairs
-MCC's board), and both bodies are in fact independent agencies.
-
----
 
 ## What the pipeline already checks for you
 
