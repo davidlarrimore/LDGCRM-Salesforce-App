@@ -26,7 +26,7 @@ authority on build status.
 
 **This file says whether we are ready.
 [../scripts/docs/DEPLOYMENT-GUIDE.md](../scripts/docs/DEPLOYMENT-GUIDE.md) says what a deployment
-actually consists of** — change set, Flow activation, user and sharing setup, then the load — in the
+actually consists of** — metadata, Flow activation, user and sharing setup, then the load — in the
 order it has to happen, with an owner per phase. Both rehearsals below are that guide, run end to
 end.
 

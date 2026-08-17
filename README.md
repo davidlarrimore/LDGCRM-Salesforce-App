@@ -18,7 +18,7 @@ Two kinds of work live here:
 | I want to… | Go to |
 | --- | --- |
 | **Run a data migration** *(start here if that's you)* | **[scripts/docs/SETUP.md](scripts/docs/SETUP.md)** |
-| **Stand the app up in a new org** — change set, Flows, users, then the load | **[scripts/docs/DEPLOYMENT-GUIDE.md](scripts/docs/DEPLOYMENT-GUIDE.md)** |
+| **Stand the app up in a new org** — metadata, Flows, users, then the load | **[scripts/docs/DEPLOYMENT-GUIDE.md](scripts/docs/DEPLOYMENT-GUIDE.md)** |
 | Understand or change how the migration works | [docs/engineering/ARCHITECTURE.md](docs/engineering/ARCHITECTURE.md) |
 | Look up what a field maps to | [docs/engineering/TRANSFORMATION-RULES.md](docs/engineering/TRANSFORMATION-RULES.md) |
 | Fix something in the Airtable source data | [docs/data-quality/](docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) |

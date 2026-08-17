@@ -276,7 +276,7 @@ meaning instead, and [section 6](#6-the-scripts) is the index.
 | File | For |
 | --- | --- |
 | `OVERVIEW.md` | This file — orientation before you run anything |
-| `DEPLOYMENT-GUIDE.md` | Standing the app up in a new org: change set, Flows, users, then the load |
+| `DEPLOYMENT-GUIDE.md` | Standing the app up in a new org: metadata, Flows, users, then the load |
 | `SETUP.md` | Getting your machine ready: tools, Salesforce login, Airtable token |
 | `RUNNING-A-LOAD.md` | Running a load, start to finish |
 | `TROUBLESHOOTING.md` | Every failure this pipeline has actually produced, and what to do |

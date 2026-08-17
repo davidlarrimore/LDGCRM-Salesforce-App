@@ -105,6 +105,14 @@ hand it to whoever builds the change set.** Do not "just deploy it to Dev to unb
 the source org for change sets, so anything deployed there silently becomes part of the next
 promotion whether or not it was reviewed.
 
+**How it reaches the target org is GSA IT Engineering's process, not this repo's** (user,
+2026-08-17). They deploy **via the Salesforce CLI, from their own GitHub repository**, using the
+component set that originates as a change set built in Dev. That does not loosen anything above: the
+rule is about **this** repo, which never deploys metadata to any org. It does mean the CLI's own
+traps become theirs — `--metadata-dir` silently ignoring a destructive manifest, `--test-level` being
+an explicit choice against an org where any test run currently fails on the FCIC compile error. Both
+are written up for them in `scripts/docs/DEPLOYMENT-GUIDE.md`, phase 1.
+
 Two `sf` behaviours to know before touching picklists:
 - **A metadata deploy cannot delete a picklist value — it deactivates it** (`isActive=false`). The
   value survives in the value set. Only a Setup "Del" removes it. `sf sobject describe` **hides
