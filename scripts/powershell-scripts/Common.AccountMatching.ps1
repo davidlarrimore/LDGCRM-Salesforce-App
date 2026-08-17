@@ -373,6 +373,40 @@ function Get-LdgcrmAccountDescendants {
 # THE CASCADE
 # ------------------------------------------------------------
 
+function Select-LdgcrmDuplicateAccount {
+    <#
+        Picks one Account from a set that all bear the same name.
+
+        Salesforce holds the same body twice under 22+ names. Refusing to choose
+        cost records in every org: AmeriCorps and MCC lose 5, U.S. Army Futures
+        Command lost 46 on 2026-08-16. The duplicates are being cleaned up after
+        the migration either way, so picking one and reporting it is strictly
+        better than loading nothing (project owner, 2026-08-17).
+
+        The pick is DETERMINISTIC so re-runs choose the same record:
+          1. Top level (no parent) wins. Where the duplicate is an independent
+             agency filed under a department by mistake, the top-level record is
+             the correct one - verified for AmeriCorps and MCC.
+          2. Otherwise the lowest Id, which is stable and usually the oldest.
+
+        Callers must still report the pick: the losing record is a duplicate
+        someone has to merge.
+    #>
+    param([object[]]$Candidates)
+
+    $All = @($Candidates)
+    if ($All.Count -eq 0) { return $null }
+    if ($All.Count -eq 1) { return $All[0] }
+
+    $TopLevel = @($All | Where-Object {
+        [string]::IsNullOrWhiteSpace("$($_.ParentId)") -and [string]::IsNullOrWhiteSpace("$($_.ParentName)")
+    })
+
+    $Pool = if ($TopLevel.Count -gt 0) { $TopLevel } else { $All }
+
+    return @($Pool | Sort-Object @{ Expression = { "$($_.Id)" } })[0]
+}
+
 function Resolve-LdgcrmAccount {
     <#
         Decides what to do with one Airtable Account row.
@@ -407,6 +441,10 @@ function Resolve-LdgcrmAccount {
         Candidates   = @()
         Route        = ""
         ProposedName = ""
+        # True when Verdict is Match but the name was duplicated in the org and
+        # one was chosen. The row loads; the duplicate still needs merging, so
+        # callers report these rather than passing them over in silence.
+        PickedFromDuplicates = $false
     }
 
     $Split   = Split-LdgcrmAgencySuffix -Name $Name
@@ -494,6 +532,37 @@ function Resolve-LdgcrmAccount {
         } | Where-Object { $_.Score -ge $ConfirmThreshold } | Sort-Object Score -Descending)
 
         if ($Scored.Count -ge 1) {
+            # AN EXACT NAME AT TOP LEVEL BEATS A FUZZY NAME INSIDE THE AGENCY.
+            #
+            # Airtable names a parent, so the agency subtree is searched first -
+            # but when the org files that same body at TOP LEVEL instead, the
+            # subtree holds only siblings with overlapping tokens. Returning
+            # Confirm here reported "similar name within the agency" and never
+            # reached the top-level rule further down, which would have matched
+            # it exactly.
+            #
+            # Cost of the old order, 2026-08-16: U.S. Army Futures Command sat
+            # top level after a rebuild while Airtable filed it under Department
+            # of Defense. Three DoD siblings scored above the threshold, so it
+            # was reported ambiguous - stranding its Partner Account and 28
+            # Applications.
+            $ExactAnywhere = @($Index.Accounts | Where-Object {
+                -not $Index.Claimed.ContainsKey($_.LdgcrmKey) -and
+                (Get-LdgcrmNameExact -Name $_.Name) -eq $Exact -and
+                [string]::IsNullOrWhiteSpace("$($_.ParentName)")
+            })
+
+            if ($ExactAnywhere.Count -ge 1) {
+                $Result.Verdict = "Match"
+                $Result.Account = Select-LdgcrmDuplicateAccount -Candidates $ExactAnywhere
+                if ($ExactAnywhere.Count -gt 1) {
+                    $Result.Candidates = $ExactAnywhere
+                    $Result.PickedFromDuplicates = $true
+                }
+                $Result.Route = "exact name at top level; Airtable files it under '$ParentName', which this org does not"
+                return $Result
+            }
+
             $Result.Verdict = "Confirm"; $Result.Candidates = @($Scored | Select-Object -First 3)
             $Result.Route = "similar name within the agency"
             return $Result
@@ -524,11 +593,16 @@ function Resolve-LdgcrmAccount {
             return $Result
         }
 
-        # Two Accounts named EXACTLY the same is a genuine duplicate, and no
-        # amount of precedence resolves it.
+        # Two Accounts named EXACTLY the same is a genuine Salesforce duplicate.
+        # No precedence resolves it, so one is PICKED deterministically rather
+        # than refused - see Select-LdgcrmDuplicateAccount. Refusing stranded 5
+        # records on AmeriCorps/MCC and 46 on U.S. Army Futures Command.
         if ($Hit.Count -gt 1) {
-            $Result.Verdict = "Confirm"; $Result.Candidates = $Hit
-            $Result.Route = "several Accounts carry exactly this name"
+            $Result.Verdict = "Match"
+            $Result.Account = Select-LdgcrmDuplicateAccount -Candidates $Hit
+            $Result.Candidates = $Hit
+            $Result.PickedFromDuplicates = $true
+            $Result.Route = "$($Hit.Count) Accounts carry exactly this name; picked the top-level/lowest-Id one"
             return $Result
         }
 
@@ -539,8 +613,11 @@ function Resolve-LdgcrmAccount {
             return $Result
         }
         if ($Hit.Count -gt 1) {
-            $Result.Verdict = "Confirm"; $Result.Candidates = $Hit
-            $Result.Route = "several Accounts share this name apart from punctuation"
+            $Result.Verdict = "Match"
+            $Result.Account = Select-LdgcrmDuplicateAccount -Candidates $Hit
+            $Result.Candidates = $Hit
+            $Result.PickedFromDuplicates = $true
+            $Result.Route = "$($Hit.Count) Accounts share this name apart from punctuation; picked the top-level/lowest-Id one"
             return $Result
         }
     }

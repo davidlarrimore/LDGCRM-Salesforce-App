@@ -62,6 +62,7 @@
 #   Review   - not submitted; written to a review CSV instead.
 #   Caveat   - submitted and loaded, with a value derived, dropped or truncated.
 $Script:LoadFindingKinds = [ordered]@{
+    "-reconciliation-duplicate-picked-" = @{ Kind = "Caveat"; Label = "Duplicate Account - one picked" }
     "-domain-inferred-account-" = @{ Kind = "Review";   Label = "Account inferred from email domain" }
     "-portal-team-conflicts-"   = @{ Kind = "Review";   Label = "Conflicting portal team" }
     "-portal-team-review-"      = @{ Kind = "Review";   Label = "Portal team needs review" }

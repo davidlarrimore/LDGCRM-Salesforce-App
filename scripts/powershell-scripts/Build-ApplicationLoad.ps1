@@ -139,7 +139,7 @@ $DefaultLaunchLevel = "1 - Very Low Impact"
 # category NOT in this map (the 8 categories unused in 18+ months) is
 # deliberately dropped for that row, not an error - counted in the summary,
 # not written to a review CSV, since this was a deliberate scope decision,
-# not a data-quality gap.
+# not a data-quality gap. The 25th entry is not a category - see its comment.
 $DemographicServedMap = @{
     "Federal Employees"                      = "Federal Employees"
     "General Population"                     = "General Population"
@@ -165,6 +165,12 @@ $DemographicServedMap = @{
     "Former Federal Employees"                = "Former Federal Employees"
     "Minors 13-18"                            = "Minors 13-18"
     "Credit Unions"                           = "Credit Unions"
+    # Bad data in Airtable, mapped onto the standard naming by business rule
+    # (project owner, 2026-08-17). It appears on 25 Opportunities and on NO
+    # Application today - carried here so the rule holds wherever the value
+    # turns up, because an unmapped tag on this object is dropped without a
+    # review CSV and would be invisible.
+    "Gov Employees"                           = "Federal Employees"
 }
 
 # Simple presence-based Checkbox fields: Airtable omits the field entirely

@@ -50,9 +50,11 @@
     since converted both to plain multi-selects holding the vendor names
     directly, which is what the Salesforce multipicklists wanted all along. The
     per-value counts are unchanged by the conversion (272 / 181 tags), so no data
-    was lost in it. See $IdentityPlatformMap below for the three values whose
-    spelling still differs, and Assert-IdentityPlatformsResolved for why a stale
-    export is a hard failure rather than 453 silently dropped tags.
+    was lost in it. See $IdentityPlatformMap below for the values whose spelling
+    differs - including "Ping / Forgerock", whose Salesforce spelling is read
+    from the target org rather than hard-coded, because the two fields disagree
+    - and Assert-IdentityPlatformsResolved for why a stale export is a hard
+    failure rather than 453 silently dropped tags.
     LDGCRM_Partner_Account__c is set here, but is derived from the APPLICATIONS
     export rather than the Opportunities one - the Airtable Opportunities table
     has no Partner Account column at all. Do NOT source it from the Partner
@@ -154,20 +156,25 @@ $PriorityTypeMap = @{
     "N/A"                   = ""
 }
 
-# Airtable literally stores "Gov?t Employees" with an ASCII question mark on
-# 25 rows - confirmed NOT an export artifact (82 curly apostrophes survive
-# intact elsewhere in the same JSON file), so the corruption is in Airtable
-# itself. Salesforce's LDGCRM_Demographic_Served__c uses a straight ASCII
-# apostrophe ("Gov't Employees"); the deprecated Demographic_Served__c field
-# uses a CURLY one - do not confuse them, and do not reuse Application's
-# Demographic map, which has "Gov't Employees (Contractors)" instead.
+# Airtable's "Gov Employees" (25 Opportunities) is bad data, and is mapped onto
+# "Federal Employees" - the standard naming - by business rule (project owner,
+# 2026-08-17). It is the same category under an older label: Airtable has spelt
+# it "Gov?t Employees" in the past (an ASCII question mark, itself a corruption
+# of an apostrophe), so BOTH spellings map to the same destination. Mapping it
+# instead onto the org's legacy "Gov't Employees" value would preserve the bad
+# naming in Salesforce for no benefit; that value stays defined on the field but
+# is no longer a migration destination.
+#
+# Do not reuse Application's Demographic map, which spells its nearest
+# equivalent "Gov't Employees (Contractors)" - a different category.
 $DemographicMap = @{
     "General Population"              = "General Population"
     "Federal Employees"               = "Federal Employees"
     "Government Employees (Military)" = "Government Employees (Military)"
     "Veterans"                        = "Veterans"
     "Non-USC"                         = "Non-USC"
-    "Gov?t Employees"                 = "Gov't Employees"
+    "Gov Employees"                   = "Federal Employees"
+    "Gov?t Employees"                 = "Federal Employees"
 }
 
 # Airtable's two identity-platform columns were linked-record fields pointing at
@@ -181,26 +188,22 @@ $DemographicMap = @{
 # distinct names match Salesforce exactly. Only these three don't, and every one
 # of them is a Salesforce-side or cosmetic problem rather than bad Airtable data:
 #
-#   "Ping / Forgerock"    -> "Ping/Foregerock"      6 tags. Spacing differs AND
-#                            Salesforce's value misspells the vendor (ForgeRock,
-#                            which Ping Identity acquired). Mapped so the data
-#                            lands now; the Salesforce value should be corrected
-#                            to "Ping/Forgerock" separately, after which this
-#                            entry becomes an identity mapping.
+#   "Ping / Forgerock"    -> resolved from the org, see $PingCandidateValues.
 #   "Sign-in with Google" -> "Sign-In with Google"  1 tag. Capital I only.
-#   "CLEAR"               -> (no Salesforce value)  2 tags. Deliberately NOT
-#                            mapped onto a near-neighbour - CLEAR is a real,
-#                            distinct IdV vendor and there is nothing it belongs
-#                            in. The tag is dropped and flagged for review until
-#                            "CLEAR" is added to both picklists (and to the
-#                            Login_gov record type).
+#   "CLEAR"               -> (no Salesforce value)  2 tags, both on Alternative.
+#                            Deliberately NOT mapped onto a near-neighbour -
+#                            CLEAR is a real, distinct IdV vendor and there is
+#                            nothing it belongs in. The tag is dropped and
+#                            flagged for review until "CLEAR" is added to the
+#                            picklist AND to the Login_gov record type.
 #
 # Salesforce also defines 8 values Airtable no longer uses at all (Google
 # CiviForm, ManTech, Granicus, Shibboleth, Exostar, Jakobsen Id, Mattr, Idemia) -
 # leftovers from the old linked table. Harmless; nothing is written to them.
 #
-# Both fields share one map: the value sets are identical in Salesforce, and
-# Alternative's 8 Airtable choices are a subset of Existing's plus CLEAR.
+# Both fields share this map. Every entry in it is spelt identically on the two
+# Salesforce fields; the ONE value that is not lives in $PingCandidateValues
+# below rather than here, because it cannot be a constant.
 $IdentityPlatformMap = @{
     "None"                    = "None"
     "Homegrown (placeholder)" = "Homegrown (placeholder)"
@@ -209,7 +212,6 @@ $IdentityPlatformMap = @{
     "Okta"                    = "Okta"
     "Azure"                   = "Azure"
     "Oracle AM"               = "Oracle AM"
-    "Ping / Forgerock"        = "Ping/Foregerock"
     "Keycloak"                = "Keycloak"
     "LexisNexis"              = "LexisNexis"
     "1Kosmos"                 = "1Kosmos"
@@ -219,6 +221,70 @@ $IdentityPlatformMap = @{
     "Experian"                = "Experian"
     "Sign-in with Google"     = "Sign-In with Google"
     "Max.gov"                 = "Max.gov"
+}
+
+# ---------------------------------------------------------------------------
+# "Ping / Forgerock" - the one value whose Salesforce spelling is NOT a constant
+# ---------------------------------------------------------------------------
+# Salesforce originally misspelt the vendor as "Ping/Foregerock" (an extra "e";
+# it is ForgeRock, acquired by Ping Identity). That is being corrected by hand
+# in Setup, and as of 2026-08-17 the correction has landed on ONE of the two
+# fields, so the live spelling differs BY FIELD and BY ORG:
+#
+#              Existing Identity Platforms   Alternative Identity Platforms
+#   Dev        Ping/Forgerock                Ping/Foregerock
+#   QA         Ping/Forgerock                Ping/Foregerock
+#              (old value now inactive)      (never corrected)
+#
+# So a hard-coded spelling is wrong somewhere no matter which one is chosen, and
+# wrong in the expensive direction: these fields are RESTRICTED, so sending the
+# spelling a field does not have fails the ENTIRE ROW at the Bulk API, not just
+# the tag. It also breaks again the moment the second field is corrected.
+#
+# Resolved from the target org instead, correct spelling preferred, so the
+# transform is right before, during and after the Setup fix and needs no code
+# change when Alternative is done. Order matters - it is the preference order.
+$PingAirtableValue   = "Ping / Forgerock"
+$PingCandidateValues = @("Ping/Forgerock", "Ping/Foregerock")
+
+# Filled in from the org before the row loop - see Resolve-PingPlatformValue.
+$PingValueByTargetField = @{}
+
+function Resolve-PingPlatformValue {
+    <#
+        Returns whichever spelling of the Ping/ForgeRock value is ACTIVE on one
+        field in the target org, preferring the correct one, or "" if neither is.
+
+        Uses describe deliberately: it HIDES inactive picklist values (CLAUDE.md),
+        which is exactly the question being asked - QA still carries the old
+        misspelling on Existing, deactivated, and it must not be selected.
+
+        The standing caveat still applies: describe does NOT report record-type
+        narrowing. Verified by hand on 2026-08-17 against
+        recordTypes/Login_gov.recordType-meta.xml in both orgs - the record type
+        assigns whichever value is active on each field, so the two agree. If a
+        row ever fails with INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST on one of
+        these fields, check the record type before suspecting this function.
+    #>
+    param(
+        [hashtable]$FieldMetadata,
+        [string]$TargetField
+    )
+
+    $Field = $FieldMetadata[$TargetField]
+    if (-not $Field) {
+        throw "$TargetField does not exist on Opportunity in this org. It is required to load identity platforms."
+    }
+
+    $ActiveValues = @(@($Field.picklistValues) |
+        Where-Object { $_.active } |
+        ForEach-Object { "$($_.value)" })
+
+    foreach ($Candidate in $PingCandidateValues) {
+        if ($ActiveValues -contains $Candidate) { return $Candidate }
+    }
+
+    return ""
 }
 
 function Assert-IdentityPlatformsResolved {
@@ -266,6 +332,7 @@ function Resolve-IdentityPlatforms {
     param(
         $Value,
         [string]$AirtableField,
+        [string]$TargetField,
         [string]$RecordId,
         [System.Collections.Generic.List[object]]$ReviewList
     )
@@ -277,10 +344,22 @@ function Resolve-IdentityPlatforms {
         $Key = "$Element".Trim()
         if (-not $Key) { continue }
 
-        if ($IdentityPlatformMap.ContainsKey($Key)) {
-            if (-not $Tags.Contains($IdentityPlatformMap[$Key])) {
-                $Tags.Add($IdentityPlatformMap[$Key])
-            }
+        # Resolved per target field, not from the shared map - see the block
+        # above. "" means neither spelling is active on this field, which is a
+        # dropped tag rather than a guess.
+        $Mapped = ""
+        $Reason = "No matching value in the restricted picklist - tag dropped. Add it in Salesforce (field AND the Login_gov record type) to migrate it."
+
+        if ($Key -eq $PingAirtableValue) {
+            $Mapped = $script:PingValueByTargetField[$TargetField]
+            $Reason = "Neither '$($PingCandidateValues -join "' nor '")' is an active value on $TargetField in this org - tag dropped."
+        }
+        elseif ($IdentityPlatformMap.ContainsKey($Key)) {
+            $Mapped = $IdentityPlatformMap[$Key]
+        }
+
+        if ($Mapped) {
+            if (-not $Tags.Contains($Mapped)) { $Tags.Add($Mapped) }
         }
         else {
             $script:DroppedIdentityPlatformCount++
@@ -289,7 +368,7 @@ function Resolve-IdentityPlatforms {
                 Field            = $AirtableField
                 OriginalValue    = $Key
                 AppliedValue     = ""
-                Reason           = "No matching value in the restricted picklist - tag dropped. Add it in Salesforce (field AND the Login_gov record type) to migrate it."
+                Reason           = $Reason
             })
         }
     }
@@ -407,6 +486,29 @@ if ($RecordTypeRows.Count -ne 1) {
 }
 $LoginGovRecordTypeId = $RecordTypeRows[0].Id
 Write-Host "RecordTypeId: $LoginGovRecordTypeId"
+
+# Which spelling of the Ping/ForgeRock value this org accepts, per field. Read
+# before the row loop so the answer is reported once rather than per row, and so
+# a missing field fails here rather than 900 rows later.
+Write-Host ""
+Write-Host "Reading Opportunity field definitions (identity-platform spelling)..." -ForegroundColor Cyan
+$OpportunityFieldMetadata = Get-SalesforceFieldMetadata `
+    -ObjectApiName "Opportunity" -OrgAlias $OrgAlias -ApiVersion $ApiVersion
+
+foreach ($TargetField in @("LDGCRM_Existing_Identity_Platforms__c", "LDGCRM_Alternative_Identity_Platforms__c")) {
+    $Resolved = Resolve-PingPlatformValue -FieldMetadata $OpportunityFieldMetadata -TargetField $TargetField
+    $PingValueByTargetField[$TargetField] = $Resolved
+
+    if (-not $Resolved) {
+        Write-Host ("  {0,-46} {1}" -f $TargetField, "NO Ping value - tags will be dropped") -ForegroundColor Yellow
+    }
+    elseif ($Resolved -eq $PingCandidateValues[0]) {
+        Write-Host ("  {0,-46} {1}" -f $TargetField, $Resolved)
+    }
+    else {
+        Write-Host ("  {0,-46} {1} (still misspelt in this org)" -f $TargetField, $Resolved) -ForegroundColor Yellow
+    }
+}
 
 Write-Host "Querying $OrgAlias for Accounts carrying an external ID..." -ForegroundColor Cyan
 $LoadedAccounts = @(Invoke-SalesforceQuery `
@@ -618,9 +720,13 @@ foreach ($Row in $AirtableOpportunities) {
 
     # --- Identity platforms: two multi-selects -> two restricted multipicklists ---
     $ExistingPlatforms = Resolve-IdentityPlatforms -Value $Row.fields.'Existing Identity Platforms' `
-        -AirtableField "Existing Identity Platforms" -RecordId $RecId -ReviewList $ValueReviewRows
+        -AirtableField "Existing Identity Platforms" `
+        -TargetField "LDGCRM_Existing_Identity_Platforms__c" `
+        -RecordId $RecId -ReviewList $ValueReviewRows
     $AlternativePlatforms = Resolve-IdentityPlatforms -Value $Row.fields.'Alternative Identity Platforms' `
-        -AirtableField "Alternative Identity Platforms" -RecordId $RecId -ReviewList $ValueReviewRows
+        -AirtableField "Alternative Identity Platforms" `
+        -TargetField "LDGCRM_Alternative_Identity_Platforms__c" `
+        -RecordId $RecId -ReviewList $ValueReviewRows
 
     # --- Technical Readiness: 1-element array, exact-match picklist ---
     $TechnicalReadiness = ""

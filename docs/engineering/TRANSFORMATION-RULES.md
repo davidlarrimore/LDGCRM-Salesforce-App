@@ -48,7 +48,9 @@ detail for each lives in its object's section below.
 | **Contacts recorded under two different email addresses stay as two records** | 2026-08-15 | Deferred by the business pending confirmation from each account owner of the current address. Merging on name would assert that two addresses belong to one person. Revisit only when the business asks. |
 | **Issuer strings with no linked Application are left alone** | 2026-08-15 | 7 rows. They may be partner-portal test entries created by the onboarding engineers; the business is checking provenance before anything is deleted. Nothing is lost by leaving them — they have nowhere to land and no record depends on them. |
 | **A Decommissioned Application with no Partner Agreement is not migrated** | 2026-08-16 | 6 Applications, and with them 16 `LDGCRM_Application_Contact__c` rows. `LDGCRM_Partner_Account__c` is a **required** Lookup and there is nothing to put in it. **Not a data-quality ask** — see [the section below](#decommissioned-applications-with-no-partner-agreement-6-rows). |
-| **AmeriCorps and Millennium Challenge Corporation are the TOP-LEVEL Accounts** | 2026-08-16 | Salesforce holds two Accounts of each name; the correct one is top level, not the copy filed under Labor / State. **Tagged by hand, and a factory reset undoes it** — see [the section below](#americorps-and-millennium-challenge-corporation-tagged-by-hand). |
+| **AmeriCorps and Millennium Challenge Corporation are the TOP-LEVEL Accounts** | 2026-08-16 | Salesforce holds two Accounts of each name; the correct one is top level, not the copy filed under Labor / State. Now applied automatically by the rule below — see [the section below](#americorps-and-millennium-challenge-corporation-tagged-by-hand). |
+| **When Salesforce holds the same Account name twice, the migration PICKS ONE** | 2026-08-17 | It no longer refuses to guess. Top level wins, else the lowest Id. The row loads and the losing record is reported for merging. **The duplicates are Salesforce's, and are being cleaned up after the migration either way** — see [the section below](#duplicate-account-names-the-migration-picks-one). |
+| **Airtable's `Gov Employees` becomes `Federal Employees`** | 2026-08-17 | 25 Opportunities. Bad data in Airtable, transformed to the standard Salesforce naming rather than fixed at source or added to the picklist. **Not a data-quality ask and not a Salesforce change request** — see [the section below](#gov-employees-is-transformed-to-federal-employees). |
 
 ### ⚠️ What belongs in the data-quality document, and what does not
 
@@ -780,6 +782,50 @@ not something the script auto-resolves.
   have failed the load outright (invalid Id) rather than merely mismatching, so it likely would have
   been caught at load time regardless, but the value bug would not have been.
 
+### Duplicate Account names — the migration picks one
+
+**Settled 2026-08-17 by the project owner.** Where Salesforce holds more than one Account bearing
+exactly the same name, `Resolve-LdgcrmAccount` **chooses one and loads against it** rather than
+reporting the row for a human. This reverses the previous rule, and the reversal is deliberate.
+
+**Why it changed.** Refusing to guess does not avoid a decision — it makes the decision "load
+nothing", which costs records silently. The failure is invisible in every count the pipeline
+produces: an untagged Account causes its Partner Account to fail with `Foreign key external ID ...
+not found`, which is a *configured expected failure* for that step, so the run continues and reports
+success. The Applications beneath it are then withheld and counted in a different section of the
+report, with nothing linking the two.
+
+Measured cost of the old rule: **5 records** for AmeriCorps and Millennium Challenge Corporation, and
+**46** for `U.S. Army Futures Command` on the 2026-08-16 Dev load — 1 Partner Account, 28
+Applications, 3 junction rows and 14 notes, from one Account that could not be matched.
+
+The duplicates belong to Salesforce, not Airtable, and are already scheduled for cleanup **after** the
+migration (`docs/data-quality/SALESFORCE-ACCOUNT-CLEANUP.md`). So the losing record is going to be
+merged regardless, and attaching the data to either copy converges on the same place.
+
+**The pick is deterministic**, so a re-run always chooses the same record
+(`Select-LdgcrmDuplicateAccount`, `Common.AccountMatching.ps1`):
+
+1. **Top level wins** — no parent. Where the duplicate is an independent agency misfiled under a
+   department, the top-level record is the correct one. Verified for AmeriCorps and MCC from the
+   public record; both are independent federal agencies.
+2. **Otherwise the lowest Id**, which is stable and usually the oldest record.
+
+**Only EXACT name duplicates are picked** — character-for-character, or identical once punctuation is
+ignored. Fuzzy and token-similarity candidates are still reported for a human, because those are not
+duplicates of one body, they are guesses about two.
+
+**Every pick is reported.** `Build-AccountReconciliation.ps1` writes
+`Account-reconciliation-duplicate-picked-<ts>.csv` naming the Airtable row, the record chosen, and
+**the Ids not chosen** — which is the merge list the Salesforce team needs. It is classified as a
+*caveat* in the run report, not a failure: the row loaded.
+
+⚠️ **This branch only fires on a first load into an untagged org**, because reconciliation matches
+external ID before name. Once an org is tagged, the duplicates never reach name matching again. That
+makes **production the main place it will run**, and it is why neither Dev nor QA can exercise it —
+both are fully tagged. It is covered by direct tests of `Resolve-LdgcrmAccount` against a synthetic
+untagged org instead.
+
 ### AmeriCorps and Millennium Challenge Corporation — tagged by hand
 
 **Settled 2026-08-16 by the project owner, after public research.** These are the only two Airtable
@@ -1065,7 +1111,7 @@ plain text into them loses data two ways:
 | `Likely Service Level Needed` | `LDGCRM_Likely_Service_Level_Needed__c` | Passthrough — after the record-type fix above. |
 | `Technical Readiness` | `LDGCRM_Technical_Readiness__c` (restricted) | `@(...)[0]` — a 1-element array. All 7 distinct values match the picklist exactly. |
 | `Estimate source` | `LDGCRM_Estimate_Source__c` (restricted) | Passthrough — both values match exactly. |
-| `Demographic Served` | `LDGCRM_Demographic_Served__c` (multiselect) | Array whose elements are themselves semicolon-joined (`"General Population; Gov?t Employees"`) — split on `;`, map, re-join. See the apostrophe note below. **No picklist expansion needed**, unlike Application: all 6 Airtable values map to the field's existing 6. |
+| `Demographic Served` | `LDGCRM_Demographic_Served__c` (multiselect) | Array whose elements are themselves semicolon-joined (`"General Population; Gov Employees"`) — split on `;`, map, re-join. **No picklist expansion needed**: 5 of Airtable's 6 values pass straight through, and the 6th is renamed — see the section below. |
 | `Existing Identity Platforms` | `LDGCRM_Existing_Identity_Platforms__c` (multiselect, restricted) | Explicit map, `;`-joined. Was blocked as a linked-record column; Airtable converted it to a multi-select. See below. |
 | `Alternative Identity Platforms` | `LDGCRM_Alternative_Identity_Platforms__c` (multiselect, restricted) | Same map as Existing — the two Salesforce value sets are identical. See below. |
 | `Est. Go Live` | `LDGCRM_Estimated_Go_Live_Date__c` | Passthrough of the genuine estimate (distinct from CloseDate). |
@@ -1079,14 +1125,33 @@ plain text into them loses data two ways:
 | `Estimate rationale` | `LDGCRM_Estimate_Rationale__c` (`Html`) | Escape + `<br>`. |
 | `Cost Estimate URL`, `Summary URL`, `Sandbox URL` | matching `Url` fields | Shared helper: strip Airtable's angle-bracket autolink wrapper (`<https://…>`), drop `N/A`/`None`/`TBD` placeholders, require `^https?://`, and blank anything over the 255-char platform cap. |
 
-**The `Gov?t Employees` apostrophe trap (three different characters, one concept):**
-- Airtable literally stores **`Gov?t Employees`** — an ASCII `?` (U+003F), on 25 rows. Confirmed *not*
-  an export artifact: 82 curly apostrophes survive intact elsewhere in the same JSON file, so the
-  corruption is in Airtable itself (logged in `AIRTABLE-DATA-QUALITY-REQUESTS.md`).
-- `Opportunity.LDGCRM_Demographic_Served__c` (the target) uses a **straight** apostrophe `Gov't Employees` (U+0027).
+### `Gov Employees` is transformed to `Federal Employees`
+
+**Business rule, project owner 2026-08-17.** Airtable's `Demographic Served` on Opportunities carries
+**`Gov Employees`** on **25 rows** — a label Salesforce does not define, and one Airtable has spelt
+several ways over time (`Gov?t Employees`, with an ASCII `?` corrupting an apostrophe, was the
+previous form). It is bad data in Airtable, and the migration **maps it onto `Federal Employees`**,
+the standard naming, rather than fixing it at source or adding another spelling to the picklist.
+
+Both spellings are in `Build-OpportunityLoad.ps1`'s `$DemographicMap`, and the same entry is carried
+in `Build-ApplicationLoad.ps1`'s map so the rule holds if the value ever appears on that object — it
+does not today, and an unmapped tag there is dropped without a review CSV, so it would be invisible.
+
+Two consequences worth knowing:
+
+- **4 of the 25 already carry `Federal Employees` too.** The transform de-duplicates, so those rows
+  end up with one tag, not two. The other 21 gain a classification outright.
+- **The org's `Gov't Employees` value is unreachable by the migration.** It stays defined on
+  `LDGCRM_Demographic_Served__c` and on the `Login_gov` record type; nothing loads into it. Cosmetic,
+  and not a change request — it costs no records.
+
+**Three different strings, one concept — do not share a Demographic mapping table between
+Application and Opportunity:**
+- `Opportunity.LDGCRM_Demographic_Served__c` (the target) spells its legacy value with a **straight**
+  apostrophe, `Gov't Employees` (U+0027).
 - `Opportunity.Demographic_Served__c` (deprecated, not touched) uses a **curly** `Gov’t Employees` (U+2019).
 - `LDGCRM_application__c`'s Global Value Set uses **`Gov't Employees (Contractors)`** — a different
-  string again. **Do not share a Demographic mapping table between Application and Opportunity.**
+  category, not a spelling variant.
 
 ### Identity platforms: a blocked column that unblocked itself, and the stale-export trap
 
@@ -1108,17 +1173,37 @@ Salesforce-side problems, not Airtable data quality:**
 
 | Airtable | Salesforce | Tags | Handling |
 | --- | --- | --- | --- |
-| `Ping / Forgerock` | `Ping/Foregerock` | 6 | Mapped. Spacing differs *and* the Salesforce value misspells ForgeRock (the vendor Ping Identity acquired). Correct the Salesforce value, after which this becomes a pass-through. |
+| `Ping / Forgerock` | `Ping/Forgerock` **or** `Ping/Foregerock` | 6 | Mapped, but **the Salesforce spelling is read from the target org, not hard-coded** — see below. |
 | `Sign-in with Google` | `Sign-In with Google` | 1 | Mapped. Capitalisation only. |
-| `CLEAR` | *(no value)* | 2 | **Dropped and flagged**, deliberately not filed under a near-neighbour — CLEAR is a distinct IdV vendor. Needs adding to both fields *and* the `Login_gov` record type. |
+| `CLEAR` | *(no value)* | 2 | **Dropped and flagged**, deliberately not filed under a near-neighbour — CLEAR is a distinct IdV vendor. Both tags are on `Alternative Identity Platforms`. Needs adding to that field *and* to the `Login_gov` record type. |
 
-451 of 453 tags migrate. Salesforce also defines 8 values Airtable no longer offers (`Google
+**The Ping/ForgeRock spelling is per-field and per-org, so it cannot be a constant.** Salesforce
+originally misspelt the vendor (`Ping/Foregerock`, an extra "e"). The correction is being made by
+hand in Setup and has landed on `LDGCRM_Existing_Identity_Platforms__c` but not on
+`LDGCRM_Alternative_Identity_Platforms__c`, in both Dev and QA. Because both fields are **restricted**,
+sending a field the spelling it does not have fails the **whole row**, so `Build-OpportunityLoad.ps1`
+resolves it per field from the org's active picklist values (`Resolve-PingPlatformValue`), preferring
+the correct spelling. That is right before, during and after the Setup fix, and needs no code change
+when the second field is corrected.
+
+Two details that matter if this is ever revisited:
+
+- It reads `sf sobject describe` **because** describe hides inactive values. QA still carries the old
+  misspelling on the Existing field, deactivated — a rename in Setup adds the new value and
+  deactivates the old one rather than renaming in place, so both are present and only one is live.
+- Describe does **not** report record-type narrowing. The record type was checked by hand against
+  `recordTypes/Login_gov.recordType-meta.xml` in both orgs: it assigns whichever value is active on
+  each field, so the two agree. A `INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST` on either field means
+  that has stopped being true.
+
+Salesforce also defines 8 values Airtable no longer offers (`Google
 CiviForm`, `ManTech`, `Granicus`, `Shibboleth`, `Exostar`, `Jakobsen Id`, `Mattr`, `Idemia`) —
 leftovers from the old linked table. Nothing writes to them; harmless.
 
-Both fields are restricted, so an unmapped tag fails the **whole row** at the Bulk API, not just the
-field — hence dropping rather than passing through. All 25 values were verified present on the
-`Login_gov` record type, not just on the field, per this object's own record-type lesson.
+**451 of 453 tags migrate** — only CLEAR's 2 are dropped. Both fields are restricted, so an unmapped
+tag fails the **whole row** at the Bulk API, not just the field — hence dropping rather than passing
+through. Every value written is verified present on the `Login_gov` record type, not just on the
+field, per this object's own record-type lesson.
 
 **`Assert-IdentityPlatformsResolved` fails the build against a pre-conversion export.** A stale
 `Opportunities.json` still holds `rec...` IDs, which match nothing in the map — so without the guard

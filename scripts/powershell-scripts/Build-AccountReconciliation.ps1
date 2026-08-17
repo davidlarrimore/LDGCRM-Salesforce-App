@@ -179,6 +179,8 @@ $ClaimedByNameParent = @{}
 $UpdateRows = [System.Collections.Generic.List[object]]::new()
 $UnmatchedRows = [System.Collections.Generic.List[object]]::new()
 $AmbiguousRows = [System.Collections.Generic.List[object]]::new()
+# Matched, but the org holds the name more than once and one was picked.
+$DuplicatePickedRows = [System.Collections.Generic.List[object]]::new()
 $AlreadyCurrentCount = 0
 # Matches that needed the parent agency to pick between same-named Accounts.
 $ParentResolvedCount = 0
@@ -212,6 +214,23 @@ foreach ($AirtableRow in $AirtableAccounts) {
             # the agency - either by narrowing to its subtree or by the suffix
             # convention. Counted so the run reports how much work that did.
             if ($Resolution.Route -notlike "exact name*") { $ParentResolvedCount++ }
+
+            # The org holds this name more than once and one was picked. The row
+            # loads; the losing record is a duplicate someone still has to merge,
+            # so it is reported rather than passed over.
+            if ($Resolution.PickedFromDuplicates) {
+                $DuplicatePickedRows.Add([PSCustomObject]@{
+                    AirtableRecordId    = $RecId
+                    AirtableName        = $AtName
+                    AirtableParent      = $AtParent
+                    PickedSalesforceId  = $MatchedSfAccount.Id
+                    PickedParent        = $MatchedSfAccount.ParentName
+                    NotPickedIds        = (@($Resolution.Candidates |
+                                             Where-Object { $_.Id -ne $MatchedSfAccount.Id } |
+                                             ForEach-Object { $_.Id }) -join "; ")
+                    Reason              = "$($Resolution.Route). Loaded against the picked record. Merge the duplicates - see docs/data-quality/SALESFORCE-ACCOUNT-CLEANUP.md."
+                })
+            }
 
             Remove-LdgcrmAccountFromIndex -Index $Index -Account $MatchedSfAccount
             $ClaimedBy[$MatchedSfAccount.Id] = [PSCustomObject]@{
@@ -310,6 +329,7 @@ $LogDir = Get-LogDirectory -Category "data-migration"
 $UpdateFile = Join-Path $LoadDir "Account-update.csv"
 $UnmatchedFile = Join-Path $LogDir "Account-reconciliation-unmatched-$Timestamp.csv"
 $AmbiguousFile = Join-Path $LogDir "Account-reconciliation-ambiguous-$Timestamp.csv"
+$DuplicatePickedFile = Join-Path $LogDir "Account-reconciliation-duplicate-picked-$Timestamp.csv"
 
 if ($UpdateRows.Count -gt 0) {
     Export-DataLoaderCsv -InputObject $UpdateRows.ToArray() -Path $UpdateFile
@@ -325,6 +345,10 @@ if ($UnmatchedRows.Count -gt 0) {
 
 if ($AmbiguousRows.Count -gt 0) {
     $AmbiguousRows | Export-Csv -LiteralPath $AmbiguousFile -NoTypeInformation -Encoding UTF8
+}
+
+if ($DuplicatePickedRows.Count -gt 0) {
+    $DuplicatePickedRows | Export-Csv -LiteralPath $DuplicatePickedFile -NoTypeInformation -Encoding UTF8
 }
 
 # ============================================================
@@ -372,6 +396,11 @@ if ($UnmatchedRows.Count -gt 0) {
 if ($AmbiguousRows.Count -gt 0) {
     Write-Host "Ambiguous rows for human review:" -ForegroundColor Yellow
     Write-Host $AmbiguousFile
+}
+
+if ($DuplicatePickedRows.Count -gt 0) {
+    Write-Host "Duplicate Salesforce Accounts - one was picked, the other needs merging:" -ForegroundColor Yellow
+    Write-Host $DuplicatePickedFile
 }
 
 Write-Host ""

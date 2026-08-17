@@ -306,13 +306,27 @@ else {
     if (-not (Test-Path -LiteralPath $LoadDirectory)) { New-Item -ItemType Directory -Path $LoadDirectory -Force | Out-Null }
 
     $InsertPath = Join-Path $LoadDirectory "Account-insert.csv"
-    Export-DataLoaderCsv -InputObject $InsertRows -Path $InsertPath
 
-    Write-Host ""
-    Write-Host "Insert file (INSERT, not upsert - these Accounts do not exist yet):" -ForegroundColor Green
-    Write-Host "  $InsertPath"
-    Write-Host ""
-    Write-Host "Review it before loading. Run with -PlanOnly for the itemised report." -ForegroundColor Yellow
+    # Nothing to create is a CORRECT outcome - it means every Airtable row found
+    # an Account. Export-DataLoaderCsv refuses to write a headerless empty file,
+    # so writing unconditionally turned that success into a failed step and
+    # halted the run (2026-08-17). A stale file from an earlier run is removed so
+    # the orchestrator cannot load yesterday's inserts against today's org.
+    if ($InsertRows.Count -eq 0) {
+        if (Test-Path -LiteralPath $InsertPath) { Remove-Item -LiteralPath $InsertPath -Force }
+        Write-Host ""
+        Write-Host "No Accounts to create - every Airtable row matched an existing Account." -ForegroundColor Green
+        Write-Host "No insert file written." -ForegroundColor Green
+    }
+    else {
+        Export-DataLoaderCsv -InputObject $InsertRows -Path $InsertPath
+
+        Write-Host ""
+        Write-Host "Insert file (INSERT, not upsert - these Accounts do not exist yet):" -ForegroundColor Green
+        Write-Host "  $InsertPath"
+        Write-Host ""
+        Write-Host "Review it before loading. Run with -PlanOnly for the itemised report." -ForegroundColor Yellow
+    }
 }
 
 Write-Host ""

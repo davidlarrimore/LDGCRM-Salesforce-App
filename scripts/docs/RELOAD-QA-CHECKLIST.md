@@ -90,12 +90,29 @@ silent loss looks exactly like success.
 > so there is nothing to deduplicate on and a second insert creates duplicate Accounts. Re-run the
 > whole script, which re-reads the org first.
 
-### ⚠️ MANDATORY between the reset and the load: re-tag AmeriCorps and MCC
+### ⚠️ MANDATORY between the reset and the load: re-tag three Accounts
 
-**The reset destroys these two tags and nothing reports it.** Production holds two Accounts named
-`AmeriCorps` and two named `Millennium Challenge Corporation`; the correct one is **top level**, and
-it is identified by hand because the names are character-identical. The factory reset hard-deletes
-Accounts carrying an external ID, and the bootstrap recreates them **untagged**.
+**The reset destroys these tags and nothing reports it.** Production holds two Accounts of each of
+these names — character-identical, so nothing in the name distinguishes them — and the correct one
+is identified by hand. The factory reset hard-deletes Accounts carrying an external ID, and the
+bootstrap recreates them **untagged**.
+
+| Account | External ID | Cost of skipping it |
+| --- | --- | --- |
+| `AmeriCorps` | `recLIsbBAhuXuc1OR` | 3 of the 5 records below |
+| `Millennium Challenge Corporation` | `recdA0Zjx6ihcKKHa` | 2 of the 5 records below |
+| `U.S. Army Futures Command` | `recoq1BK9VsYo99lq` | **1 Partner Account, 28 Applications, 3 junction rows, 14 notes** |
+
+**`U.S. Army Futures Command` was added 2026-08-17, after it cost a load 46 records.** It behaves
+exactly like the other two and had simply never been listed. Its Partner Account `DOD-ARMY-AFC-ASF`
+failed with `Foreign key external ID ... not found`, which is a *configured expected failure* for
+that step, so the run reported success and continued — and the 28 Applications it stranded were
+counted in a different section of the report. Nothing connected the two.
+
+> **The list above is not closed.** The bootstrap prints every same-named Account it could not place
+> under AMBIGUOUS-HIERARCHY REPAIR — 19 of them on 2026-08-16. Any of those can strand records the
+> same way. After the load, cross-check `Account-reconciliation-unmatched-*.csv` against that list:
+> an Account that appears in both, and has a Partner Account, is the next entry for this table.
 
 > ⚠️ **In a freshly reset sandbox you will find ONE of each, not two — this is expected.** The
 > tag marks the correct copy, and the tag is exactly what the reset deletes by, so the *correct*
@@ -122,19 +139,26 @@ Portal (Ernst & Young…)`. The load still reports success; the Partner Account 
 **The Account Ids differ per org and change on every rebuild — always re-query, never paste.**
 
 ```powershell
-# 1. Find the two TOP-LEVEL Accounts (ParentId = null is what makes them correct)
-sf data query --target-org <alias> -q "SELECT Id, Name, ParentId FROM Account WHERE Name IN ('AmeriCorps','Millennium Challenge Corporation') ORDER BY Name"
+# 1. Find them. ParentId = null is what makes a record the correct one.
+sf data query --target-org <alias> -q "SELECT Id, Name, ParentId FROM Account WHERE Name IN ('AmeriCorps','Millennium Challenge Corporation','U.S. Army Futures Command') ORDER BY Name"
 
-# 2. Build a two-row CSV of Id,LDGCRM_External_ID__c using the ParentId = null rows:
-#      <top-level AmeriCorps Id>,recLIsbBAhuXuc1OR
-#      <top-level MCC Id>,recdA0Zjx6ihcKKHa
+# 2. Build a three-row CSV of Id,LDGCRM_External_ID__c from the ParentId = null rows:
+#      <AmeriCorps Id>,recLIsbBAhuXuc1OR
+#      <MCC Id>,recdA0Zjx6ihcKKHa
+#      <U.S. Army Futures Command Id>,recoq1BK9VsYo99lq
 # 3. Apply it
 .\powershell-scripts\Invoke-SalesforceLoad.ps1 -Environment <env> -ObjectApiName "Account" `
     -CsvFile "<absolute path to the CSV>" -Operation Update -Confirmation "LOAD"
 
-# 4. VERIFY - the tags must be on the top-level records, and only those
-sf data query --target-org <alias> -q "SELECT Id, Name, ParentId, LDGCRM_External_ID__c FROM Account WHERE LDGCRM_External_ID__c IN ('recLIsbBAhuXuc1OR','recdA0Zjx6ihcKKHa')"
+# 4. VERIFY - all three tags present, on the top-level records only
+sf data query --target-org <alias> -q "SELECT Id, Name, ParentId, LDGCRM_External_ID__c FROM Account WHERE LDGCRM_External_ID__c IN ('recLIsbBAhuXuc1OR','recdA0Zjx6ihcKKHa','recoq1BK9VsYo99lq')"
 ```
+
+> **Tag before the load, not after.** Tagging alone does not set Market Segment or Type — the
+> reconciliation does, matching on external ID before name. A tag applied after the Account step has
+> run leaves the Account with a blank Market Segment, and the before-save Flow then derives blank
+> Market Segment onto every Partner Account and Application beneath it. If you do tag late, re-run
+> from the Account step (`-StartAtStep Account`) rather than from PartnerAccount.
 
 `-CsvFile` needs an **absolute** path — a relative one resolves against your shell's working
 directory, not the bundle, and the script stops with "CSV file not found".
@@ -395,9 +419,15 @@ You should therefore see the *result* of those fixes in this reload rather than 
 arrival: Opportunity, Application and Partner Account all reconcile higher than the figures this
 document previously carried, which is what those merges were for.
 
-Two small non-Account asks remain open and cost a handful of records each — a `Gov Employees` value on
-25 Opportunities and two identity-platform gaps. They are in
-`AIRTABLE-DATA-QUALITY-REQUESTS.md`; neither blocks a reload.
+One small non-Account ask remains open and costs 2 records — `CLEAR` is not an identity-platform
+picklist value. It is in `AIRTABLE-DATA-QUALITY-REQUESTS.md` and does not block a reload.
+
+Two Opportunity expectations to confirm on this reload:
+
+| Check | Expected |
+| --- | --- |
+| `Demographic tags dropped (unmapped)` | **0** |
+| `Identity platform tags dropped (unmapped)` | **2** — the two `CLEAR` tags, and nothing else |
 
 ### The general shape
 

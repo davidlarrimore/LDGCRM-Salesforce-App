@@ -17,8 +17,8 @@ something you fixed is no longer here, that is the confirmation it landed.
 something migrates, it is a rule, not a request: see
 [TRANSFORMATION-RULES.md → Settled business rules](../engineering/TRANSFORMATION-RULES.md#settled-business-rules--closed-not-open-questions).
 That covers derived contact names, the `Launch Level` default, the `None` impediment, portal-team
-optionality, contact merging, Partner Portal Admin sourcing and the decommissioned Applications —
-**please don't re-raise those.**
+optionality, contact merging, Partner Portal Admin sourcing, the decommissioned Applications and the
+`Gov Employees` → `Federal Employees` rename — **please don't re-raise those.**
 
 **Measured 2026-08-16** against a fresh full Airtable pull (719 Accounts, 1,514 Contacts, 904
 Opportunities, 1,058 Applications) and a full Dev wipe-and-reload.
@@ -35,8 +35,8 @@ nothing, and the last 2 were resolved on the Salesforce side.
 **Thank you** — the merges, the `Office of the Secretary - DOC` parent fix and the Virgin Islands
 rename all landed, and they are the reason this section is empty.
 
-The two items left both need a change in **Salesforce**, not in Airtable. They are recorded below so
-the state of the data is visible in one place.
+The one item left needs a change in **Salesforce**, not in Airtable. It is recorded below so the
+state of the data is visible in one place.
 
 ---
 
@@ -53,27 +53,19 @@ the answer is none, it does not belong here.
 
 ---
 
-## 1. `Gov Employees` is not a Salesforce value — 25 Opportunities
+## 1. `CLEAR` is not a Salesforce value — 2 Opportunities
 
-Airtable's `Demographic Served` on Opportunities uses **`Gov Employees`**, which is not one of the
-values the Salesforce field allows. The tag is dropped on **25 Opportunities** — the records load
-fine, they just arrive without that classification.
+Airtable's `Alternative Identity Platforms` offers **`CLEAR`**, which has no matching Salesforce
+value, so the selection is dropped on **2 Opportunities**. The records load fine, they just arrive
+without that platform listed.
 
-**This is a Salesforce fix, not an Airtable one.** Adding `Gov Employees` to
-`LDGCRM_Demographic_Served__c` **and** to the `Login_gov` record type migrates all 25 on the next run.
+**This is a Salesforce fix, not an Airtable one.** `CLEAR` is a real, distinct identity-verification
+vendor, so it is deliberately not filed under a near-neighbour. Adding it to
+`LDGCRM_Alternative_Identity_Platforms__c` **and** to the `Login_gov` record type migrates both on
+the next run.
 
 > ⚠️ Both halves are needed. A value added to the field but not assigned to the record type still
 > fails — record-type picklist narrowing is enforced on load and is invisible to the usual tooling.
-
----
-
-## 2. Identity platforms — two small gaps
-
-- **`CLEAR`** (2 Opportunities) has no matching Salesforce value, so those selections are dropped.
-  Adding it to both identity-platform fields **and** the `Login_gov` record type migrates them.
-- **`Ping / Forgerock`** (6 Opportunities) lands in a Salesforce value spelled
-  **`Ping/Foregerock`** — an extra "e". Airtable's spelling is correct; fixing Salesforce makes the
-  mapping a straight pass-through.
 
 ---
 
@@ -89,5 +81,5 @@ worth tidying when these picklists are next touched.
 
 | Document | Holds |
 | --- | --- |
-| [../engineering/SALESFORCE-CHANGE-REQUESTS.md](../engineering/SALESFORCE-CHANGE-REQUESTS.md) | **Config** changes only a change set can make — the two items above belong here once picked up |
+| [../engineering/SALESFORCE-CHANGE-REQUESTS.md](../engineering/SALESFORCE-CHANGE-REQUESTS.md) | **Config** changes only a change set can make — the item above belongs here once picked up |
 | [SALESFORCE-ACCOUNT-CLEANUP.md](SALESFORCE-ACCOUNT-CLEANUP.md) | **Data** defects — duplicate and misfiled Accounts in the production org, to be worked after the migration |
