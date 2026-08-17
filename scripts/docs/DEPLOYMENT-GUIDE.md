@@ -363,6 +363,9 @@ Then the deployment-specific checks, all of them as a non-admin:
   row count will catch this either.
 - **Owners look right**, particularly anyone the roster flagged.
 
+**Meetings are deliberately not migrated**, so an empty Activity timeline is the expected result and
+not a gap to report. The Login.gov team pick them up separately after go-live.
+
 ### Two things that cannot be undone later
 
 **Manual ownership changes belong after the final load.** The fallback owner is written explicitly
@@ -371,19 +374,6 @@ load is the last one before anyone starts tidying.
 
 **Rollback is a best-effort tidy-up, not a safety net.** Read [ROLLBACK.md](ROLLBACK.md) before
 relying on it, and before the run rather than during it.
-
----
-
-## After go-live
-
-- **Meetings are not migrated in the initial load** — a project owner decision, solved separately
-  afterwards. The Airtable data is captured on every pull, so nothing needs preserving specially.
-- **Duplicate and misfiled Accounts in production** are tracked by the GSA Salesforce team, to be
-  worked after the migration. Two of them force a manual re-tagging step on every sandbox rebuild,
-  which resolving them would remove.
-
-Both are written up in the engineering repository — **BACKLOG.md** and
-**SALESFORCE-ACCOUNT-CLEANUP.md**.
 
 ---
 
