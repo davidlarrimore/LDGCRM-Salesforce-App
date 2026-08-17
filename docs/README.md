@@ -55,6 +55,7 @@ does.
 | [engineering/TRANSFORMATION-RULES.md](engineering/TRANSFORMATION-RULES.md) | The authority on field-by-field mapping — every rule and every gotcha, per object |
 | [engineering/BACKLOG.md](engineering/BACKLOG.md) | Agreed but unbuilt work, and the decisions each item still needs |
 | [engineering/SALESFORCE-CHANGE-REQUESTS.md](engineering/SALESFORCE-CHANGE-REQUESTS.md) | **For the Salesforce config owner.** Things only a change set can fix — field settings blocking a load, and formulas producing wrong numbers |
+| [engineering/PRODUCTION-CHANGE-SET-INVENTORY.md](engineering/PRODUCTION-CHANGE-SET-INVENTORY.md) | **For the GSA IT Engineering team.** Every component in the production change set, to verify against a target org. A dated snapshot — regenerate it rather than editing it |
 
 **Read `TRANSFORMATION-RULES.md`'s General Principles before writing any new transform.** They are
 distilled from mistakes that reached a real org, and most of them describe a way Salesforce or

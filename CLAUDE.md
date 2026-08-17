@@ -684,6 +684,15 @@ Current scripts:
   metadata types — see `tools/metadata/ldgcrm-manifest-ignore.json` for confirmed non-LDGCRM
   components that should stop resurfacing in that report). Then runs `sf project retrieve start`
   against the manifest. `-WhatIf` reports only; `-SkipDiscovery` retrieves the manifest as-is.
+- `tools/metadata/Export-ChangeSetInventory.ps1` — regenerates
+  `docs/engineering/PRODUCTION-CHANGE-SET-INVENTORY.md`, the component-by-component listing handed to
+  GSA IT Engineering to verify a deployment. **Retrieve from the org that BUILT the change set, not
+  the one being verified** — an inbound change set is not retrievable from the receiving org, which
+  answers `INVALID_CROSS_REFERENCE_KEY: No package named '<name>' found`, indistinguishable from a
+  typo. Hence `-Environment` defaults to `Dev`. Curated per-component notes (an API-name typo, a
+  Flow-populated field, an external ID holding a name) live in
+  `tools/metadata/changeset-inventory-notes.json` keyed `<Type>|<member>` and are merged in, so
+  regenerating never destroys them — **never hand-edit the generated markdown**.
 - `tools/Export-OpsBundle.ps1` — builds the hand-off zip from `scripts/`. Run `-WhatIf` first.
 - `tools/Test-BundleStructure.ps1` — **run this after touching anything under `scripts/`.** Touches
   no org, so it is always safe. It checks the things that *cannot* be noticed by running the pipeline

@@ -1,0 +1,81 @@
+[
+    {
+        "comment": "Curated notes merged into the generated inventory. The generator produces every ROW from the retrieved metadata; these carry the handful of facts that are not in the XML and would otherwise be destroyed on the next regeneration. Key format is '<MetadataType>|<member>', matching the package.xml member exactly. Text is appended to the component's generated description."
+    },
+    {
+        "key": "CustomField|LDGCRM_Application_Contact__c.LDGCRM_contact__c",
+        "note": "**Note the lower-case `c` in the API name** - a real typo, and load scripts must respect it."
+    },
+    {
+        "key": "CustomField|LDGCRM_Application_Contact__c.LGDCRM_P3_Partner_Portal_Admin__c",
+        "note": "**Note the transposed `LGDCRM_` prefix.**"
+    },
+    {
+        "key": "CustomField|LDGCRM_Application_Contact__c.LDGCRM_External_ID__c",
+        "note": "**Composite key** `<contactExtId>|<applicationExtId>`, not a single Airtable `rec...` ID."
+    },
+    {
+        "key": "CustomField|LDGCRM_Market_Segment__c.LDGCRM_External_ID__c",
+        "note": "**Stores the segment *name*** (`\"Benefits\"`, `\"Defense\"`, ...), not a `rec...` ID."
+    },
+    {
+        "key": "CustomField|OpportunityContactRole.LDGCRM_External_ID__c",
+        "note": "**Not flagged `externalId`, and it cannot be** - Salesforce forbids External ID fields on this object. The object is loaded by insert + read-then-diff rather than upsert."
+    },
+    {
+        "key": "CustomField|LDGCRM_Opportunity_Impediment__c.LDGCRM_Blocked_Revenue__c",
+        "note": "**Populated by Flow - do not write directly.**"
+    },
+    {
+        "key": "CustomField|LDGCRM_Impediment__c.LDGCRM_Blocked_Revenue__c",
+        "note": "Roll-up Summary - Salesforce rejects direct writes."
+    },
+    {
+        "key": "CustomField|LDGCRM_Partner_Account__c.LDGCRM_Market_Segment__c",
+        "note": "**Set by Flow** - the migration must never write it."
+    },
+    {
+        "key": "CustomField|Opportunity.LDGCRM_Market_Segment__c",
+        "note": "**Set by Flow** - the migration must never write it."
+    },
+    {
+        "key": "CustomField|LDGCRM_application__c.LDGCRM_Market_Segment__c",
+        "note": "**Set by Flow** - the migration must never write it."
+    },
+    {
+        "key": "CustomField|Opportunity.LDGCRM_Status_Summary_Modified_Datetime__c",
+        "note": "**Set by Flow.**"
+    },
+    {
+        "key": "CustomField|LDGCRM_application__c.LDGCRM_Broker_App_Parent__c",
+        "note": "Self-referential lookup - cannot resolve within its own upsert batch and needs a second pass."
+    },
+    {
+        "key": "CustomObject|LDGCRM_Application_Contact__c",
+        "note": "Junction of Application and Contact via **two Lookups**, not Master-Detail - which is why it needs a duplicate-check Flow."
+    },
+    {
+        "key": "CustomObject|LDGCRM_Opportunity_Impediment__c",
+        "note": "True junction with **two Master-Detail** relationships (Impediment and Opportunity), so both parents must exist first."
+    },
+    {
+        "key": "CustomObject|LDGCRM_Partner_Account__c",
+        "note": "Master-Detail child of Account; represents the partner agreement."
+    },
+    {
+        "key": "CustomObject|LDGCRM_application__c",
+        "note": "Required Lookup to Partner Account; optional Lookup to Opportunity."
+    },
+    {
+        "key": "CustomObject|LDGCRM_Market_Segment__c",
+        "note": "Five fixed segments, assigned down the hierarchy by Flow."
+    },
+    {
+        "key": "RecordType|LDGCRM_application__c.LDGCRM_Application",
+        "note": "The object's only active record type."
+    },
+    {
+        "key": "RecordType|Opportunity.Login_gov",
+        "note": "Distinct from `TTS_OTCRM_Opportunity`, which this migration never writes."
+    }
+]

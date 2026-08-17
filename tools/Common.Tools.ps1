@@ -21,6 +21,7 @@
 #   metadata/Sync-Metadata.ps1              retrieves into sfdx/
 #   metadata/Get-LDGCRMDataDictionary.ps1   writes a dictionary of sfdx/ objects
 #   metadata/Find-UnexposedLDGCRMFields.ps1 reads sfdx/force-app/main/default
+#   metadata/Export-ChangeSetInventory.ps1  writes docs/engineering/
 #   Export-ReportPdf.ps1                    renders docs/*.html
 #   Build-ProdAccountSeed.ps1               superseded; kept for provenance
 #
