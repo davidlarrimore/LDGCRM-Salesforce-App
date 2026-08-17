@@ -58,9 +58,9 @@
     Impediment named "None" that this migration already excludes. Those rows
     produce no note at all.
 
-    Meetings columns are NOT included: that object is deferred pending Einstein
-    Activity Capture (see docs/engineering/BACKLOG.md 2). If unmatched meetings later land
-    here as notes, this chunk grows by up to ~1,800 records.
+    Meetings columns are NOT included: that object is out of the initial
+    migration by decision (see docs/engineering/BACKLOG.md 1). If unmatched
+    meetings later land here as notes, this chunk grows by up to ~1,800 records.
 #>
 
 param(

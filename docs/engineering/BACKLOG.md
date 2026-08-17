@@ -13,10 +13,18 @@ Ordered roughly by value, not by effort.
 
 ---
 
-## 1. Meetings (~1,850 Airtable rows, 0 loaded) — approach changed, now blocked on a spike
+## 1. Meetings (~1,850 Airtable rows, 0 loaded) — out of the initial migration by decision
 
-**Status: deferred by decision, and no longer a straight transform.** It now depends on an org
-configuration change that sits outside this repo. **A reload should proceed without Meetings.**
+**Status: not migrated in the initial load** (project owner, 2026-08-17). The Airtable data is backed
+up and the meeting history is solved separately, afterwards. **It is not a blocker on production**,
+and every reload proceeds without Meetings.
+
+**The backup needs no extra step.** `Get-AirtableExport.ps1` pulls the Meetings table like any other,
+and `scripts/data/airtable-exports/` is a current-state mirror the next pull overwrites, deliberately
+— **the latest pull is always the one to work from.** Re-pull when this is picked up rather than
+reaching for an older copy.
+
+The approach below stands as the eventual design; nothing here needs revisiting before go-live.
 
 ### Why the original approach was rejected
 

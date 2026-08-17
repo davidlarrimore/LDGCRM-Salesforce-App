@@ -285,8 +285,10 @@ missed (ready to paste into `$DefaultTables`), any it expected that has gone, an
 pulls every record perfectly well may still be unable to list tables, so a self-check that cannot run
 must not fail a good pull. `-SkipCoverageCheck` turns it off.
 
-**The folder is overwritten by the next pull** — it is a current-state mirror, not a retained backup.
-Copy it elsewhere if a particular snapshot needs keeping.
+**The folder is overwritten by the next pull, and that is the intent** — it is a current-state mirror.
+**Do not snapshot Airtable** (user, 2026-08-17): always keep and load the latest pull. If an export
+looks stale, re-pull rather than reaching for an older copy — and expect the counts to move when you
+do, so re-baseline rather than treating older figures as pass/fail targets.
 
 **An export can go stale in ways that change a column's SHAPE, not just its values** — Airtable
 converted Opportunities' `Existing Identity Platforms` / `Alternative Identity Platforms` from linked

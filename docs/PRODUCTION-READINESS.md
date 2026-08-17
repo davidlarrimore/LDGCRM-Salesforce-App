@@ -9,18 +9,16 @@
 > source controlled *because* those are not: run output tells you what happened once, this tells you
 > where the programme is.
 
-**Last reviewed:** 2026-08-16 · **Target org:** `gsa-peo` (production, not yet authorized on any
-dev machine).
+**Last reviewed:** 2026-08-17 · **Target org:** `gsa-peo` (production).
 
 ---
 
 ## Where we are in one line
 
-**Every object except Meetings is built and proven in Dev, the Account workstream is finished, and
-every blocking config change has landed.** What stands between that and production is **no longer
-engineering work of any kind**: it is a QA rehearsal that has to be redone, an Operations rehearsal in
-the Full sandbox that has not started, a production authorization nobody has requested, and a decision
-about Meetings.
+**The build is finished.** Every in-scope object loads, the Account workstream is closed, every
+blocking config change has landed, and there are no open Airtable asks. **What is left is two
+rehearsals** — one in QA that engineering can run today, and one in the Full sandbox that Operations
+run themselves.
 
 Per-object counts and per-script build status live in
 [engineering/ARCHITECTURE.md](engineering/ARCHITECTURE.md) — that file, not this one, is the
@@ -36,21 +34,37 @@ closed when it has been demonstrated, not when the code exists.**
 | # | Gate | Status | Owner |
 | --- | --- | --- | --- |
 | 1 | The pipeline loads every in-scope object | 🟢 **Done** — full Dev reload, 0 unexpected failures, derived fields verified by query | Engineering |
-| 2 | Meetings decided — build, defer, or drop | 🔴 **Blocked on a spike**, not on code | Project owner + SF admin |
-| 3 | Salesforce config changes landed | 🟢 **Done in Dev and QA** (verified 2026-08-15) — **nothing promoted to Full or Prod yet** | Salesforce config owner |
-| 4 | A full rehearsal in **QA**, end to end | 🟠 **Unblocked** — needs a factory reset and full reload | Engineering |
-| 5 | Airtable data quality at an accepted level | 🟢 **No open Airtable asks** — the 2 remaining items are Salesforce config | Salesforce config owner |
-| 6 | The **Full** sandbox exists and Operations rehearse in it | 🟠 **Provisioned** (`PEOfL2STGp`) — the rehearsal has not happened | GSA IT / Operations |
-| 7 | Production authorized, scheduled, supervised | 🔴 **Not started** | Project owner + GSA IT |
+| 2 | Salesforce config changes landed | 🟢 **Done in Dev and QA** (verified 2026-08-15) — **nothing promoted to Full yet** | Salesforce config owner |
+| 3 | A full rehearsal in **QA**, end to end | 🟠 **Unblocked** — needs a factory reset and full reload | Engineering |
+| 4 | Airtable data quality at an accepted level | 🟢 **No open Airtable asks** — the one remaining item is Salesforce config | Salesforce config owner |
+| 5 | Operations rehearse in the **Full** sandbox | 🟠 **Sandbox provisioned** (`PEOfL2STGp`) — the rehearsal has not happened | GSA IT / Operations |
 
-**Gates 2, 3, 5, 6 and 7 are not engineering work** — the pipeline cannot move them, and chasing
-them is the critical path.
+**Only gate 3 is engineering work.** Gate 2 closes when the Dev/QA config travels to Full, gate 5
+when Operations run the bundle themselves.
+
+---
+
+## What is deliberately out of scope
+
+**Meetings are not migrated in the initial load.** Decided by the project owner — the Airtable data is
+**backed up**, and the meeting history is solved separately, afterwards. It is **not a blocker on
+production** and it is not a gate.
+
+The approach that was being designed (stand up Einstein Activity Capture, fuzzy-match Airtable's
+meetings onto real calendar events, enrich rather than duplicate) is preserved in
+[engineering/BACKLOG.md](engineering/BACKLOG.md) §1, along with why loading them as synthesized Events
+was rejected. Nothing there needs revisiting before go-live.
+
+**The backup already exists and needs no extra step.** `Get-AirtableExport.ps1` pulls the Meetings
+table like any other, so the data is captured on every run. `scripts/data/airtable-exports/` is a
+**current-state mirror the next pull overwrites, deliberately** — the latest pull is the one that
+matters, and no snapshot is taken or kept. Re-pull when Meetings are picked up.
 
 ---
 
 ## 1. The pipeline loads every in-scope object — 🟢 Done
 
-A full wipe-and-reload of Dev (`peodv8dvn`) loads every object except Meetings with zero unexpected
+A full wipe-and-reload of Dev (`peodv8dvn`) loads every in-scope object with zero unexpected
 failures, reproduced across several reloads from empty against freshly pulled Airtable data.
 
 Two things that broke earlier rehearsals are now verified rather than assumed on every run:
@@ -62,31 +76,12 @@ Two things that broke earlier rehearsals are now verified rather than assumed on
 
 **What "done" does and does not mean here.** Every transform runs, resolves its lookups against a real
 org, and loads. It does **not** mean the data is complete: several hundred rows are deliberately
-*withheld* each run because their parent doesn't reconcile — that is gate 5, not a defect. It also
-does not mean it works in an org other than Dev — that is gate 4.
-
-**One object is not built:** Meetings — see gate 2.
+*withheld* each run because their parent doesn't reconcile — that is gate 4, not a defect. It also
+does not mean it works in an org other than Dev — that is gate 3.
 
 ---
 
-## 2. Meetings — 🔴 blocked on a spike, not on code
-
-~1,850 Airtable rows, 0 loaded. **The approach changed and the new one is not a transform.** Airtable
-holds a meeting date but no time, so loading them as Events means synthesizing scheduling history that
-never existed. The agreed direction is instead to stand up **Einstein Activity Capture**, let real
-calendar events sync, and fuzzy-match Airtable's meetings onto them.
-
-**The open question, and nobody should start designing the match until it is answered:** is Einstein
-Activity Capture feeding queryable `Event` records in this org? Dev held **0 standard Event records**
-when last checked, so today it is not.
-
-Full analysis in [engineering/BACKLOG.md](engineering/BACKLOG.md) §2.
-
-**Decision needed:** build the match, defer Meetings out of the migration, or drop them.
-
----
-
-## 3. Salesforce config changes — 🟢 done in Dev and QA
+## 2. Salesforce config changes — 🟢 done in Dev and QA
 
 **Every change request that blocked a load has landed**, verified 2026-08-15 by querying both orgs
 rather than reading the change-set record. Notably `LDGCRM_Level_of_Priority__c` carries all four
@@ -97,13 +92,13 @@ metadata, because record-type picklist narrowing is enforced by the Bulk API and
 [engineering/SALESFORCE-CHANGE-REQUESTS.md](engineering/SALESFORCE-CHANGE-REQUESTS.md) is now empty
 of open items.
 
-⚠️ **Nothing has been promoted to Full or Prod.** Neither org is authorized here, and the whole set of
-changes made in Dev still has to travel to both. **Treat this gate as green for the rehearsal and
-open for production** — it closes when the same verification has been run against Full.
+⚠️ **Nothing has been promoted to Full.** The whole set of changes made in Dev still has to travel
+there. **Treat this gate as green for the rehearsal and open for production** — it closes when the
+same verification has been run against Full.
 
 ---
 
-## 4. A full rehearsal in QA — 🟠 unblocked, not yet run
+## 3. A full rehearsal in QA — 🟠 unblocked, not yet run
 
 QA has loaded before, but **no run to date counts as a rehearsal.** The last one completed with every
 object count matching Dev while all nine LDGCRM Flows were inactive, so Market Segment came out blank
@@ -136,13 +131,13 @@ and `Millennium Challenge Corporation` — are matched by a **hand-applied exter
 Salesforce holds two Accounts of each name and only depth distinguishes them. The factory reset
 deletes tagged Accounts and the bootstrap recreates them untagged, so **skipping the re-tag silently
 withholds 5 records while the run still reports success.** Resolving the underlying duplicates (gate
-5's cleanup list) would remove the step entirely.
+4's cleanup list) would remove the step entirely.
 
 Run it with [../scripts/docs/RELOAD-QA-CHECKLIST.md](../scripts/docs/RELOAD-QA-CHECKLIST.md).
 
 ---
 
-## 5. Airtable data quality — 🟢 no open Airtable asks
+## 4. Airtable data quality — 🟢 no open Airtable asks
 
 Tracked in
 [data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md](data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md),
@@ -152,18 +147,17 @@ which lists **only what is still open**.
 Salesforce Account, 9 are created by the load, and the remaining 20 carry no Opportunities, Partner
 Accounts or Applications — so by the project owner's standing rule they cost nothing.
 
-Both remaining items are **Salesforce config**, not Airtable:
+The one remaining item is **Salesforce config**, not Airtable:
 
 | Item | Cost | Whose call |
 | --- | --- | --- |
-| `Gov Employees` is not a Salesforce picklist value | 25 Opportunities lose a tag | Salesforce config |
-| Identity platforms: `CLEAR` missing, `Ping/Foregerock` misspelt | 8 Opportunities | Salesforce config |
+| `CLEAR` is not an identity-platform picklist value | 2 Opportunities | Salesforce config |
 
 **A separate, non-blocking list now exists for Salesforce *data*:**
 [data-quality/SALESFORCE-ACCOUNT-CLEANUP.md](data-quality/SALESFORCE-ACCOUNT-CLEANUP.md) — duplicate
 and misfiled Accounts in the production org, to be worked **after** the migration. It costs no
 records today, but two of its duplicates force a **manual re-tagging step on every sandbox rebuild**
-(see gate 4), which resolving them would remove.
+(see gate 3), which resolving them would remove.
 
 **This gate never reaches zero, and it should not block production.** The pipeline is built to withhold
 rows it cannot place rather than guess, and to report exactly what it withheld and why. The decision to
@@ -179,24 +173,15 @@ re-raised**.
 
 ---
 
-## 6. The Full sandbox — 🟠 provisioned, rehearsal not started
+## 5. Operations rehearse in the Full sandbox — 🟠 not started
 
 `Full` is the org where **GSA IT Operations** rehearse the migration themselves, running the scripts
 and applying the change sets, immediately before production.
 
-**It exists.** Sandbox `PEOfL2STGp`, alias `peofl2stgp`, fully populated in the registry at
-`scripts/powershell-scripts/Common.Orgs.ps1` — alias, sandbox name, instance URL and Lightning URL.
-
-⚠️ **Provisioned is not the same as reachable.** Only Dev and QA are authorized on this machine, so
-`-Environment Full` currently fails at `Assert-LdgcrmOrgTarget` with "could not reach org alias" —
-which is the correct outcome, because the registry records which org Full *is*, not whether you can
-log into it. Authorize with:
-
-```powershell
-sf org login web --alias peofl2stgp --instance-url https://gsa-peo--peofl2stgp.sandbox.my.salesforce.com
-```
-
-**What this gate is actually waiting on is the rehearsal**, not the sandbox.
+**The sandbox exists.** `PEOfL2STGp`, alias `peofl2stgp`, fully populated in the registry at
+`scripts/powershell-scripts/Common.Orgs.ps1` — alias, sandbox name, instance URL and Lightning URL, so
+nothing in the pipeline needs changing to target it. **What this gate waits on is the rehearsal**,
+not the sandbox.
 
 **Why it is a separate gate from QA.** QA proves the *pipeline* works in a second org. Full proves the
 *hand-off* works — that someone who did not build this can run it from the documentation.
@@ -218,38 +203,31 @@ Two consequences that matter for this gate:
   Account export (gitignored, and only needed if Operations also rehearse in a *developer* sandbox),
   and Airtable Personal Access Token access, which requires an admin account on the base.
 
-**Needed:** the sandbox provisioned, then authorized per the runbook in
-[engineering/ARCHITECTURE.md](engineering/ARCHITECTURE.md) ("Environments and org aliases") — which
-means filling in `Alias`, `SandboxName`, `InstanceUrl` and `LightningUrl` for `Full` in the registry.
-Nothing else in the pipeline needs to change.
+Authorize the alias per the runbook in
+[engineering/ARCHITECTURE.md](engineering/ARCHITECTURE.md) ("Environments and org aliases"):
+
+```powershell
+sf org login web --alias peofl2stgp --instance-url https://gsa-peo--peofl2stgp.sandbox.my.salesforce.com
+```
 
 ---
 
-## 7. Production — 🔴 not started
+## Not tracked here
 
-**Production is not authorized on any machine here, deliberately.** The local `gsa-peo` alias was
-deleted when it was discovered that it had always pointed at the Dev sandbox while carrying the
-production org's name — so any stale command using it now fails loudly instead of writing to
-production.
+**Org authorization, the production window and who supervises it** are logistics handled outside this
+document. They are not gates, and their absence from the table is deliberate rather than an oversight.
 
-What is already built for this, and does not need revisiting:
+The production safeguards they rely on are already built and need no further work: two independent
+confirmation tokens (`-Confirmation "LOAD"` plus `-ProductionConfirmation <alias>` for
+`-Environment Prod`), `Assert-LdgcrmOrgTarget` verifying the alias against the registry and reading
+`Organization.IsSandbox` from the org itself, a Sandbox Factory Reset that cannot target production at
+parameter-bind time, and `Invoke-MigrationRollback.ps1` — which is a best-effort tidy-up, not a safety
+net, so read [../scripts/docs/ROLLBACK.md](../scripts/docs/ROLLBACK.md) before relying on it.
 
-- **Two independent confirmation tokens.** `-Confirmation "LOAD"` approves the load;
-  `-ProductionConfirmation <alias>` is additionally required for `-Environment Prod`, so automation
-  written for a sandbox cannot be retargeted at production by changing one flag.
-- **`Assert-LdgcrmOrgTarget`** verifies the alias against the registry *and* reads
-  `Organization.IsSandbox` from the org itself before any script proceeds.
-- **The Sandbox Factory Reset cannot target production by construction** — `-Environment` does not
-  accept `Prod` at parameter binding. There is deliberately no production confirmation prompt on it,
-  because offering one would create a way to approve it by mistake.
-- **A rollback exists** (`Invoke-MigrationRollback.ps1`) — but read
-  [../scripts/docs/ROLLBACK.md](../scripts/docs/ROLLBACK.md) first: it is a best-effort tidy-up, not a
-  safety net, and deleting a created record does **not** undo an updated one.
-
-**Still needed:** production authorization, a scheduled and supervised window, agreement on who runs
-it, and one thing that must be re-checked rather than assumed — **the `purecloud.ContactWebHookv1`
-managed trigger on Contact insert.** Its body is hidden and cannot be inspected; it was user-confirmed
-inert in Dev. It is an outward-facing side effect this pipeline cannot see, and it has no kill switch.
+⚠️ **One thing must be re-checked before a production run rather than assumed:** the
+`purecloud.ContactWebHookv1` managed trigger on Contact insert. Its body is hidden and cannot be
+inspected, it has no kill switch, and it was only ever user-confirmed inert in Dev. It is an
+outward-facing side effect this pipeline cannot see.
 
 ---
 
