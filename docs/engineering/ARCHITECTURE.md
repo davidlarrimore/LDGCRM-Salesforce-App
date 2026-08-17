@@ -638,6 +638,79 @@ Conversely `Write-LoadRunReport` is called inside a `try`, and a failure there d
 report and a warning. Reporting must never be able to change the outcome of a load, and post-load
 validation — not this — remains the thing that decides whether a run passed.
 
+## ⚠️ What the load turns on and off
+
+**The complete list of org configuration the pipeline changes.** Written for whoever owns Salesforce
+config. The three sections after it carry the reasoning and the mechanics; this is the summary and
+the boundary.
+
+| # | Change | Why | Environments | Restored after? |
+| --- | --- | --- | --- | --- |
+| 1 | Every active **Contact duplicate rule** → inactive | `OTCRM_Contact_Duplicate` matches on first + last name only, both `Exact`. It rejected **167 Contacts** on the 2026-08-15 Dev load. *"There are 1,000 people named Robert Smith in the world"* (project owner) | **All, Prod included** | **No — permanent** |
+| 2 | Every active **Contact matching rule** → inactive | Housekeeping behind #1. A matching rule is what a duplicate rule consumes; leaving it Active is inert but untidy | **All, Prod included** | **No — permanent** |
+| 3 | The nine **LDGCRM Flows** → active | Three before-save Flows derive `LDGCRM_Market_Segment__c` down the parent chain. Inactive, the load **still reports success** and the field is blank org-wide | **Sandbox only** — rejected for `Prod` | **No — permanent** |
+| 4 | `TriggerControls__c` "Contact" `On__c` → `false` | FCIC's `GSA_FCIC_ContactTrigger` creates a junk Account for every Contact inserted with a blank `AccountId` — 371 of them on a normal run | All | **Yes** — `finally` block, verified by re-query |
+
+### When each one happens
+
+The first three are **pre-flight**, before step 1 of 13 loads a single record — deliberately, because
+each is a precondition for the data being *correct* rather than merely present, and discovering that
+eight steps in means reloading. The fourth is scoped to the one step that needs it.
+
+| Phase | What happens |
+| --- | --- |
+| Pre-flight, check 6 | Flow state read. With `-ActivateFlows`, inactive and stale flows are switched on, then **re-read to verify**. Without it, an inactive flow is a blocking finding and the run stops |
+| Pre-flight, check 8 | Active Contact duplicate rules switched off (#1), then the matching rules behind them (#2). **Order is not negotiable** — a matching rule cannot be deactivated while an active duplicate rule consumes it |
+| Pre-flight, check 4 | The `TriggerControls__c` "Contact" record is *checked for existence only*. A missing record blocks the run here rather than failing at step 6 |
+| **Step 6 of 13 — Contact** | `On__c` captured, set `false`, Contact loaded, restored in a `finally` and confirmed by re-query — all inside the one step |
+| Post-run validation | Re-reads `TriggerControls__c.Contact.On__c` and flags it if still `false` |
+
+Nothing in steps 1-5 or 7-13 changes org configuration.
+
+### The boundary — what it will not do
+
+Every change above **flips the status of a component that already exists**. Where Salesforce exposes
+no record-level write (#1 and #2), the pipeline retrieves the component **from the target org**,
+changes one status element, and deploys it **back to that same org**. No XML crosses an org boundary,
+no component is created, and no definition is altered.
+
+It will not add a field, a picklist value or a record-type assignment; it will not promote anything
+between orgs; it cannot *create* a Flow that is absent. Where a load is blocked by any of those, the
+pipeline names the missing component precisely and **stops** — a change set and someone else's hands.
+See CLAUDE.md, "Metadata promotion is by CHANGE SET only".
+
+`Test-LdgcrmReadiness.ps1` changes nothing at all: it queries and describes only.
+
+### What is reverted, and what is not
+
+**Only #4.** Its restore is the most defensive code in the pipeline, because the setting belongs to
+another live application: the value is captured *before* anything changes (it does not assume "on"),
+restored in a `finally` so it survives a throw, a dead CLI or an interrupt, **verified by re-query**,
+and on failure the script prints the exact `sf data update record` command to run by hand. This is
+not theoretical — the real Contact load exited non-zero on 4 duplicate-rule rejections and the
+restore still ran. Post-run validation then re-checks it independently.
+
+**1, 2 and 3 are deliberately permanent**, for the same reason in each case: a setting that had to be
+in that state for the load to be correct must stay in it. Restoring it would mean the next run flips
+it again and the org oscillates, and in the window between runs the org is back to producing exactly
+the wrong data the change existed to prevent — a re-enabled duplicate rule blocks Contacts created in
+the UI, a deactivated Flow leaves Market Segment blank on every record a user creates by hand.
+**Do not add a `finally` that puts any of them back.**
+
+The asymmetry is the point: #4 is switched off to stop *another app's* automation interfering with
+this load, so it is a loan. #1-#3 put the org into the state it should have been in already, so they
+are a correction.
+
+### Two things it cannot switch off
+
+- **`purecloud.ContactWebHookv1`** (installed managed package, Genesys) fires on every Contact
+  insert. Body hidden, not retrievable, no kill switch — **what it does is unknowable from this
+  repo**. Confirmed inert in gsa-peo 2026-08-13; re-confirm before any production run.
+- **`ContentDocumentLinkTrigger`**, hit by the Notes load, *appears* to have a switch
+  (`Trigger_Settings__mdt.ContentDocumentLinkTrigger.isActive__c`) but it is inert: `IsDisabled()`
+  sets a flag and returns from itself while the dispatcher calls `beforeInsert` unconditionally.
+  `Invoke-NotesLoad.ps1` pre-checks `UserRecordAccess` for every parent instead.
+
 ## ⚠️ Pre-flight: the nine Flows must be ACTIVE (added 2026-08-14)
 
 `Invoke-PreflightChecks` (in `Invoke-FullMigrationLoad.ps1`) asserts that all nine LDGCRM Flows exist
@@ -798,6 +871,52 @@ These are TTS OTCRM's rules, not this app's — but **TTS OTCRM is defunct** (pr
 clear this with and no live users behind the rule. Deactivating it is the same action in Prod as in a
 sandbox. That wholesale removal is a separate future exercise and not this migration's job.
 
+## ⚠️ Loading Contact disables another app's Apex trigger
+
+**Contact is the one object whose load flips a setting owned by a different application, and the one
+change in this whole pipeline that is put back afterwards.**
+
+gsa-peo is shared with the unrelated FCIC app, whose `GSA_FCIC_ContactTrigger` fires on every Contact
+insert. Its before-insert path creates a **junk Account** — named after the person, hard-coded to the
+`FCIC_Individual` Account record type — for **every Contact inserted with a blank `AccountId`**. None
+of this is visible in `sfdx/force-app`: the manifest is LDGCRM-scoped, so other apps' automation was
+never retrieved. It was found only because an 18-row test batch silently created 4 Accounts.
+
+371 of the migrated Contacts have no resolvable Account (mostly the unmatched-Account data-quality
+issue), so a normal load would create 371 junk Accounts in an org where Account counts are already a
+moving target *and* where this migration's own Account reconciliation depends on those counts being
+meaningful.
+
+The FCIC app ships a supported kill switch — a `TriggerControls__c` custom setting the trigger checks
+first (`if(contactTriggersAreOn)`), with one record per object: `Task`, `Case`, `Contact`,
+`LiveChatTranscript`. Using it is the intended mechanism, not a workaround.
+`Invoke-SalesforceLoad.ps1` reaches it via `-DisableTriggerControl`, and
+`Invoke-FullMigrationLoad.ps1` sets that automatically on the Contact step (`TriggerOff = "Contact"`).
+
+What that flag does, and the guarantees around it:
+1. Reads and **records the current value** before changing anything (it does not assume "on").
+2. Switches it off, runs the load.
+3. **Restores it in a `finally` block** — so it is restored even if the load throws, the CLI dies, or
+   the operator interrupts. This is not theoretical: the real Contact load *did* exit non-zero (4
+   duplicate-rule rejections) and the restore still ran.
+4. **Verifies the restore with a re-query** and prints a loud, explicit manual-fix command if it
+   fails. Leaving FCIC's trigger disabled would silently break another team's app.
+5. It is **off by default** and should stay that way. It changes config another app owns, so it needs
+   explicit human sign-off per load.
+
+Pre-flight blocks the run if there is not exactly one `TriggerControls__c` record named `Contact`,
+and the post-run check re-reads it and flags it if it is still off.
+
+Confirmed after the real load: **zero junk Accounts created** (org total held at 1,350) and
+`TriggerControls__c.Contact.On__c` back to `true`.
+
+**Not covered by any of this:** the *other* active Contact trigger, `purecloud.ContactWebHookv1`,
+belongs to an installed **managed** package (Genesys PureCloud). Its body is hidden, it cannot be
+retrieved, and it has no kill switch — so it fires on every Contact insert and **what it does is
+unknowable from this repo**. It was user-confirmed inert in gsa-peo (2026-08-13). **Re-confirm before
+any production run**: a webhook on Contact insert is an outward-facing side effect this pipeline
+cannot inspect.
+
 ## Running what's built so far
 
 ```powershell
@@ -841,22 +960,9 @@ scripts\powershell-scripts\Invoke-SalesforceLoad.ps1 `
 
 ### ⚠️ Loading Contact requires disabling another app's Apex trigger
 
-**Contact is the one object whose load flips a setting owned by a different application. Read this
-before running it.**
-
-gsa-peo is shared with the unrelated FCIC app, whose `GSA_FCIC_ContactTrigger` fires on every Contact
-insert. Its before-insert path creates a **junk Account** — named after the person, hard-coded to the
-`FCIC_Individual` Account record type — for **every Contact inserted with a blank `AccountId`**. None
-of this is visible in `sfdx/force-app`: the manifest is LDGCRM-scoped, so other apps' automation was
-never retrieved. It was found only because an 18-row test batch silently created 4 Accounts.
-
-371 of the migrated Contacts have no resolvable Account (mostly the unmatched-Account data-quality
-issue), so a normal load would create 371 junk Accounts in an org where Account counts are already a
-moving target *and* where this migration's own Account reconciliation depends on those counts being
-meaningful.
-
-The FCIC app ships a supported kill switch — a `TriggerControls__c` custom setting the trigger checks
-first — so `Invoke-SalesforceLoad.ps1` uses it via `-DisableTriggerControl`:
+See "Loading Contact disables another app's Apex trigger" above for what `-DisableTriggerControl`
+does and the guarantees around it. It is **off by default** and needs explicit human sign-off per
+load, because it changes config another application owns.
 
 ```powershell
 scripts\powershell-scripts\Invoke-SalesforceLoad.ps1 `
@@ -864,27 +970,6 @@ scripts\powershell-scripts\Invoke-SalesforceLoad.ps1 `
     -CsvFile "data\salesforce-loads\Contact-upsert.csv" `
     -DisableTriggerControl "Contact"
 ```
-
-What that flag does, and the guarantees around it:
-1. Reads and **records the current value** before changing anything (it does not assume "on").
-2. Switches it off, runs the load.
-3. **Restores it in a `finally` block** — so it is restored even if the load throws, the CLI dies, or
-   the operator interrupts. This is not theoretical: the real Contact load *did* exit non-zero (4
-   duplicate-rule rejections) and the restore still ran.
-4. **Verifies the restore with a re-query** and prints a loud, explicit manual-fix command if it
-   fails. Leaving FCIC's trigger disabled would silently break another team's app.
-5. It is **off by default** and should stay that way. It changes config another app owns, so it needs
-   explicit human sign-off per load.
-
-Confirmed after the real load: **zero junk Accounts created** (org total held at 1,350) and
-`TriggerControls__c.Contact.On__c` back to `true`.
-
-**Not covered by any of this:** the *other* active Contact trigger, `purecloud.ContactWebHookv1`,
-belongs to an installed **managed** package (Genesys PureCloud). Its body is hidden, it cannot be
-retrieved, and it has no kill switch — so it fires on every Contact insert and **what it does is
-unknowable from this repo**. It was user-confirmed inert in gsa-peo (2026-08-13). **Re-confirm before
-any production run**: a webhook on Contact insert is an outward-facing side effect this pipeline
-cannot inspect.
 
 `Build-AccountReconciliation.ps1` is read-only against Salesforce (a single SOQL query) and only
 writes local files:

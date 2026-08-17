@@ -54,7 +54,6 @@ does.
 | [engineering/ARCHITECTURE.md](engineering/ARCHITECTURE.md) | How the pipeline is built, per-script status, conventions, load order, environments |
 | [engineering/TRANSFORMATION-RULES.md](engineering/TRANSFORMATION-RULES.md) | The authority on field-by-field mapping — every rule and every gotcha, per object |
 | [engineering/BACKLOG.md](engineering/BACKLOG.md) | Agreed but unbuilt work, and the decisions each item still needs |
-| [engineering/SALESFORCE-CHANGE-REQUESTS.md](engineering/SALESFORCE-CHANGE-REQUESTS.md) | **For the Salesforce config owner.** Things only a change set can fix — field settings blocking a load, and formulas producing wrong numbers |
 | [engineering/PRODUCTION-CHANGE-SET-INVENTORY.md](engineering/PRODUCTION-CHANGE-SET-INVENTORY.md) | **For the GSA IT Engineering team.** Every component in the production change set, to verify against a target org. A dated snapshot — regenerate it rather than editing it |
 
 **Read `TRANSFORMATION-RULES.md`'s General Principles before writing any new transform.** They are
@@ -71,15 +70,17 @@ valid on the field but not the record type, a linked-record column that turns ou
 | [data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md](data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) | The people who own the **Airtable base**, not engineers | Open asks that **unblock records** if fixed, ordered by how many |
 | [data-quality/SALESFORCE-ACCOUNT-CLEANUP.md](data-quality/SALESFORCE-ACCOUNT-CLEANUP.md) | The **GSA Salesforce team** who own Account data in production | Duplicate and misfiled **Accounts in Salesforce**. To be worked **after** the production migration — nothing in it blocks the load |
 
-**Three documents, three different owners — put an item with the one who can fix it:**
+**Two documents, two different owners — put an item with the one who can fix it:**
 
 - **Airtable data** is wrong → the Airtable list.
 - **Salesforce data** is wrong → the Account cleanup list. The migration reconciles onto Accounts it
   did not create, so a duplicate Account in the org is not something the pipeline can route around
   cleanly.
-- A **Salesforce field setting** blocks a load →
-  [engineering/SALESFORCE-CHANGE-REQUESTS.md](engineering/SALESFORCE-CHANGE-REQUESTS.md). Metadata
-  moves by change set only, so the pipeline cannot fix it at all.
+
+A **Salesforce field setting** that blocks a load is no longer tracked as its own list — every such
+change has landed. Metadata moves by change set only, so if a new one appears, the pipeline names it
+and stops; raise it with the config owner directly. For the org settings the load changes **itself**,
+see [engineering/ARCHITECTURE.md](engineering/ARCHITECTURE.md), "What the load turns on and off".
 
 Every transform's review CSVs feed this list. Findings sitting unread in `scripts/logs/` are exactly
 what it exists to prevent — see [../scripts/logs/README.md](../scripts/logs/README.md).

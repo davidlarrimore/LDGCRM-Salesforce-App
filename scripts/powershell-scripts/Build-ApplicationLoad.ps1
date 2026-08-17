@@ -42,13 +42,12 @@
         themselves from fields this script does set (checkboxes, URLs, the
         Opportunity lookup).
       - LDGCRM_Annual_Revenue_Amount__c: no Airtable source found.
-      - LDGCRM_PP_Issuer_Strings__c: not migrated, and now DEPRECATED - the
-        project owner confirmed 2026-08-13 that this data is not being migrated
-        and the field is to be retired. Removal is not a plain delete: a formula
-        (LDGCRM_Level_1_Complete_Pct__c) depends on it, which in turn feeds
-        LDGCRM_Launch_Checklist_Completion__c. Tracked as CR-2 in
-        docs/engineering/SALESFORCE-CHANGE-REQUESTS.md. Nothing here needs to
-        change when it goes - this script never wrote it.
+      - LDGCRM_PP_Issuer_Strings__c: never migrated, and DELETED from the org on
+        2026-08-14. It could not be a plain delete: LDGCRM_Level_1_Complete_Pct__c
+        counted it as 1 of 9 checklist items and LDGCRM_Launch_Checklist_Completion__c
+        hard-codes that 9 as a weight, so dropping the item would have silently
+        moved a second metric. Resolved by re-pointing the checklist item at
+        LDGCRM_P3_Team_UUID__c instead. This script never wrote the field.
       - LDGCRM_Broker_App_Parent__c: a self-Lookup (Application -> Application).
         Deliberately NOT in the main upsert file - a first real load attempt
         (2026-08-12) confirmed Bulk API 2.0 does not resolve external-ID
@@ -73,8 +72,10 @@
     made because a BLANK level is worse than a conservative one: the
     LDGCRM_Launch_Checklist_Completion__c formula is a CASE on this field whose
     else value is 1, so a blank level reports the Application as 100%
-    launch-complete. See the block that sets it, and CR-3 in
-    docs/engineering/SALESFORCE-CHANGE-REQUESTS.md for the formula-side fix.
+    launch-complete. See the block that sets it. There is no formula-side fix
+    coming: the project owner accepted the formula as-is, which makes this
+    default the thing keeping the metric honest - removing it silently returns
+    hundreds of Applications to reporting 100%.
 
     Rows with no linked Partner Account are skipped (required field) and
     written to a review CSV, same pattern as every other required-lookup
@@ -804,9 +805,9 @@ foreach ($Row in $AirtableApplications) {
     # instead of a placeholder 100%.
     #
     # NOTE the trade-off, because it is not visible in Salesforce afterwards: a
-    # defaulted level is indistinguishable from an authored one. The fix for the
-    # underlying formula is CR-3 in docs/engineering/SALESFORCE-CHANGE-REQUESTS.md
-    # - this default protects the migrated records, not records created later.
+    # defaulted level is indistinguishable from an authored one. The project
+    # owner accepted the underlying formula as-is, so this default protects the
+    # migrated records and nothing protects records created later.
     $LaunchLevel = $DefaultLaunchLevel
     if ($Row.fields.'Launch Level') {
         if ($LaunchLevelMap.ContainsKey($Row.fields.'Launch Level')) {

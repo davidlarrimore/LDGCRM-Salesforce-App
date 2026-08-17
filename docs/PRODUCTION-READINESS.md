@@ -89,8 +89,8 @@ values **and** they are assigned to the `Login_gov` record type — checked by r
 metadata, because record-type picklist narrowing is enforced by the Bulk API and is invisible to
 `sf sobject describe`.
 
-[engineering/SALESFORCE-CHANGE-REQUESTS.md](engineering/SALESFORCE-CHANGE-REQUESTS.md) is now empty
-of open items.
+**Nothing is open.** The change-request list that tracked these was retired on 2026-08-17 once it
+emptied; git carries it. A new blocker gets raised with the config owner directly.
 
 ⚠️ **Nothing has been promoted to Full.** The whole set of changes made in Dev still has to travel
 there. **Treat this gate as green for the rehearsal and open for production** — it closes when the

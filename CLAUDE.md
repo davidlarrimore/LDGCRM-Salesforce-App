@@ -558,11 +558,17 @@ And **`sf project deploy start --metadata-dir` silently ignores a destructive ma
 `numberComponentsDeployed` / `deleted=True`, not just the status. `sf sobject describe` also served a
 stale cached answer; the Tooling API's `FieldDefinition` gave the truthful one.
 
-**Salesforce config changes the pipeline cannot make live in
-`docs/engineering/SALESFORCE-CHANGE-REQUESTS.md`** — the config-owner counterpart to the Airtable
-data-quality doc, and like it, that file holds **only what is still open**. As of 2026-08-15 **every
-change request that blocked a load has landed in Dev and QA** (verified against both orgs, not
-against the change-set record); only two cosmetic tidy-ups remain. Full and Prod are unverified.
+**There is no longer a Salesforce change-request list.** `docs/engineering/SALESFORCE-CHANGE-REQUESTS.md`
+was retired 2026-08-17 once it emptied — **every change request that blocked a load had landed in Dev
+and QA** (verified 2026-08-15 against both orgs, not against the change-set record). Full and Prod
+remain unverified, tracked as gate 3 in `docs/PRODUCTION-READINESS.md`. If a new config blocker
+appears, the pipeline's job is unchanged — name it precisely, stop, and raise it with the config
+owner. Do not recreate the document for a single item.
+
+**What the pipeline changes in the org ITSELF is a different question**, and the answer is
+`docs/engineering/ARCHITECTURE.md`, "What the load turns on and off" — the four org settings the load
+flips (Contact duplicate and matching rules, Flow activation, the FCIC trigger bypass), which are
+permanent, and the boundary it does not cross.
 
 **One settled decision that is now load-bearing in the pipeline:** a blank `Launch Level` falls
 through the `CASE` in `LDGCRM_Launch_Checklist_Completion__c` to its else value of `1`, so an
@@ -945,7 +951,7 @@ right place rather than growing this file or `docs/README.md`:
 | `docs/PRODUCTION-READINESS.md` | **The project owner and whoever is building it, together** | **The north star** — seven gates between here and the production load, with an owner each |
 | **`scripts/README.md`** | People **running** a migration — the bundle's front door | Routes to the runbooks below; environments, layout, the two traps |
 | **`scripts/docs/`** | People **running** a migration, assuming no prior knowledge | `SETUP.md`, `RUNNING-A-LOAD.md`, `TROUBLESHOOTING.md`, `ROLLBACK.md`, `RELOAD-QA-CHECKLIST.md` |
-| `docs/engineering/` | People **changing** the pipeline | `ARCHITECTURE.md` (was `docs/README.md`), `TRANSFORMATION-RULES.md`, `BACKLOG.md`, `SALESFORCE-CHANGE-REQUESTS.md` |
+| `docs/engineering/` | People **changing** the pipeline | `ARCHITECTURE.md` (was `docs/README.md`), `TRANSFORMATION-RULES.md`, `BACKLOG.md`, `PRODUCTION-CHANGE-SET-INVENTORY.md` |
 | `docs/data-quality/` | The **data owners** — not developers | `AIRTABLE-DATA-QUALITY-REQUESTS.md` (Airtable owners) and `SALESFORCE-ACCOUNT-CLEANUP.md` (the GSA Salesforce team — duplicate/misfiled Accounts, to be worked **after** the production migration) |
 | `docs/*.html` | **Stakeholders** | The current dated status report. Never edit an old one to refresh it — generate a new dated one |
 | `scripts/logs/README.md` | Anyone reading run output | What each kind of run leaves behind |
@@ -987,7 +993,6 @@ today:
 | --- | --- |
 | `docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md` | Currently-open asks that **cost records**. Its absence *is* the confirmation a fix landed |
 | `docs/data-quality/SALESFORCE-ACCOUNT-CLEANUP.md` | Duplicate/misfiled Accounts still present in the production org. Delete an item once it is resolved |
-| `docs/engineering/SALESFORCE-CHANGE-REQUESTS.md` | Config changes not yet promoted. Delete a CR once it is in every org |
 | `docs/engineering/BACKLOG.md` | Work agreed but **not yet built**. A built item is deleted, not marked done |
 | `docs/PRODUCTION-READINESS.md` | Current gate status. No struck-through gates, no superseded run write-ups |
 | `docs/*.html` | Nothing, normally — reports are generated on demand and removed once superseded |

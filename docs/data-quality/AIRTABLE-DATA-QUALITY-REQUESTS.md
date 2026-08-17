@@ -77,9 +77,11 @@ worth tidying when these picklists are next touched.
 
 ---
 
-## The Salesforce side has its own lists
+## The Salesforce side has its own list
 
 | Document | Holds |
 | --- | --- |
-| [../engineering/SALESFORCE-CHANGE-REQUESTS.md](../engineering/SALESFORCE-CHANGE-REQUESTS.md) | **Config** changes only a change set can make — the item above belongs here once picked up |
 | [SALESFORCE-ACCOUNT-CLEANUP.md](SALESFORCE-ACCOUNT-CLEANUP.md) | **Data** defects — duplicate and misfiled Accounts in the production org, to be worked after the migration |
+
+**Config** changes only a change set can make are no longer tracked as a list — every one that
+blocked a load has landed. Raise a new one with the Salesforce config owner directly.

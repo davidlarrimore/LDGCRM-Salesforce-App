@@ -215,6 +215,39 @@ There is one inverted check worth knowing about: `LDGCRM_Screen_Flow_Developer_D
 bulk-deletes migrated records and is **Dev-only**. Pre-flight fails if it is found in QA, Full or
 Prod. If that fires, find out how it got there — do not just deactivate it.
 
+### ⚠️ What the load changes in your org
+
+**The load does not only write records — it changes four org settings.** Three are permanent. If you
+are running against an org somebody else owns, this is the list to send them *before* you run it.
+
+| Change | When | Environments | Put back after? |
+| --- | --- | --- | --- |
+| Active **Contact duplicate rules** switched off | Pre-flight, automatically. No flag | **All, production included** | **No** |
+| Active **Contact matching rules** switched off | Pre-flight, right after the duplicate rules | **All, production included** | **No** |
+| The nine **LDGCRM Flows** switched on | Pre-flight, only with `-ActivateFlows` | **Sandbox only** — refused for `Prod` | **No** |
+| FCIC's **Contact trigger** switched off (`TriggerControls__c`) | During the Contact step only — step 6 of 13 | All | **Yes**, and the restore is verified |
+
+Each is covered in full elsewhere on this page: the Flows [just above](#pre-flight-and-the-nine-flows),
+the duplicate rules in [SETUP.md](SETUP.md) section 5, and the trigger bypass in
+[The Contact step disables another team's trigger](#the-contact-step-disables-another-teams-trigger).
+
+**Why they are permanent.** A setting that had to be in that state for the load to be correct has to
+stay in it. Put it back and the next run flips it again, and in between, the org returns to producing
+exactly the wrong data the change prevented — a re-enabled duplicate rule blocks Contacts created in
+the UI, a switched-off Flow leaves Market Segment blank on every record anyone creates by hand. The
+Contact trigger is the exception because it belongs to a **different live application**, so switching
+it off is a loan, not a correction.
+
+**What it will never do:** add a field, add a picklist value, change a record type, or move metadata
+between orgs. Every change above flips the status of something that already exists in the org it is
+running against. If a load needs metadata that is missing, the run **stops and names it** — that
+needs a change set, from someone else. The readiness check (`-Readiness`) changes nothing at all.
+
+> **The full reasoning, and the mechanics for each, are in `ARCHITECTURE.md` under "What the load
+> turns on and off".** That file is **not in this folder** — it lives in the engineering repository
+> under `docs/engineering/` and is written for people changing the pipeline. Ask whoever handed you
+> this bundle if you need it.
+
 ### The steps, in order
 
 | # | Step | Object | Why here |
@@ -604,8 +637,10 @@ against the same org can race or double-load.
 | Undo a load | [ROLLBACK.md](ROLLBACK.md) |
 | Diagnose a failure | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | Wipe and reload a sandbox properly | [RELOAD-QA-CHECKLIST.md](RELOAD-QA-CHECKLIST.md) |
+| Tell an org owner what the load will change | [What the load changes in your org](#-what-the-load-changes-in-your-org), above |
 | Know what a specific field maps to | **TRANSFORMATION-RULES.md** † |
 | Fix the source data | **AIRTABLE-DATA-QUALITY-REQUESTS.md** † |
+| Understand *why* the load changes org settings | **ARCHITECTURE.md**, "What the load turns on and off" † |
 
 † Not in this folder — those live in the engineering repository under `docs/`, because they are
 written for people changing the pipeline or fixing the Airtable base rather than for people running

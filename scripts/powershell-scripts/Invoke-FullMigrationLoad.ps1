@@ -1087,8 +1087,7 @@ function Invoke-PreflightChecks {
         Exact. It belongs to TTS OTCRM, not to this app, and it is what rejected
         167 Contacts with DUPLICATES_DETECTED on the 2026-08-15 Dev load -
         "there are 1,000 people named Robert Smith in the world; email should be
-        unique, first and last name doesn't have to be" (project owner). CR-6 in
-        docs/engineering/SALESFORCE-CHANGE-REQUESTS.md carries the full case.
+        unique, first and last name doesn't have to be" (project owner).
 
         THE LOAD SWITCHES THEM OFF ITSELF, in every environment including Prod
         (project owner, 2026-08-15: "these things should absolutely be performed
