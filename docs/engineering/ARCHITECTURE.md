@@ -450,7 +450,7 @@ Airtable pull of 2026-08-12.
 | `Build-OpportunityContactRoleLoad.ps1` | Prep — OpportunityContactRole. **The one object that cannot be upserted** | Built and **loaded 2026-08-13: 515 rows**. The previously-documented `externalId=true` fix is **impossible** — Salesforce forbids External ID fields on this object entirely — so it uses an INSERT + read-then-diff for idempotency instead. Extended the `ContactRole` StandardValueSet with 2 new Role values. 83 rows skipped pending an unresolved Opportunity/Contact. |
 | `Build-MeetingLoad.ps1` | Prep — Activity/Event | **Not built, and the approach changed 2026-08-13.** Airtable holds a date but no time, and synthesizing one fabricates scheduling history. Instead: stand up **Einstein Activity Capture**, let real calendar events sync, and fuzzy-match Airtable's meetings onto them (date + organizer + attendee overlap + subject), enriching the real event rather than inventing one. Depends on org configuration outside this repo and an unresolved spike — see `BACKLOG.md` §1. **Out of the initial migration by decision (2026-08-17)** — the Airtable data is backed up and meetings are solved afterwards. |
 | `Invoke-SalesforceLoad.ps1` | Load — generic `sf data upsert bulk`/`sf data update bulk` wrapper, any object | Built. Classifies each row failure against that object's `-ExpectedFailurePatterns` and exits **2** for an expected partial. **`-StepResultPath` (added 2026-08-13)** additionally writes that classification, the counts and the job id as JSON, because it runs as a child process and an exit code carries three states — which is why the orchestrator's summary could say "PARTIAL" but never how many or why. Written in a `finally`, so a step that throws still reports. |
-| `Invoke-FullMigrationLoad.ps1` | Load — the orchestrator. Runs every transform and load in dependency order as one operation | Built. Pre-flight → restore point → sequence → post-load validation → **run report**. `-PlanOnly` runs every transform and loads nothing (read-only, doubles as the readiness check); `-StartAtStep`/`-OnlySteps` resume. Stops at the first real failure, because everything downstream would silently withhold rows. **Pre-flight asserts the nine LDGCRM Flows are ACTIVE (added 2026-08-14) and blocks if not** — see below. `-ActivateFlows` switches on whatever is off (sandbox only, rejected for `Prod`). |
+| `Invoke-FullMigrationLoad.ps1` | Load — the orchestrator. Runs every transform and load in dependency order as one operation | Built. Pre-flight → restore point → sequence → post-load validation → **run report**. `-PlanOnly` runs every transform and loads nothing (read-only, doubles as the readiness check); `-StartAtStep`/`-OnlySteps` resume. Stops at the first real failure, because everything downstream would silently withhold rows. **Pre-flight asserts the nine LDGCRM Flows are ACTIVE (added 2026-08-14) and blocks if not** — see below. Pre-flight switches on whatever is off, in every environment; `-PlanOnly` reports instead. |
 | `Common.LoadReport.ps1` | Load — builds the per-run report (`SUMMARY.txt` + `load-summary.csv`/`errors.csv`/`findings.csv`) | Built 2026-08-13. See "Reading a run" below. |
 | `Build-NotesLoad.ps1` | Notes — prep `ContentNote`/`ContentDocumentLink` for freeform columns, last chunk | Built 2026-08-13. ~537 notes ready; ~59 placeholder values (`None`/`N/A`) skipped, ~200 waiting on a parent the Account data-quality issue withheld. Diffs against what is already attached, which is what makes a re-run safe. |
 | `Invoke-NotesLoad.ps1` | Notes — load. **The one chunk with its own loader**, not `Invoke-SalesforceLoad.ps1` | Built 2026-08-13. Attaching a note is three steps against two objects (insert `ContentNote` → read back each `ContentDocumentId` → insert `ContentDocumentLink`), and `ContentNote` has no external ID, so created note Ids are written to disk before anything else is attempted. Has an access preflight for the org's unmanaged `ContentDocumentLinkTrigger`, whose kill switch is inert. |
@@ -648,7 +648,7 @@ the boundary.
 | --- | --- | --- | --- | --- |
 | 1 | Every active **Contact duplicate rule** → inactive | `OTCRM_Contact_Duplicate` matches on first + last name only, both `Exact`. It rejected **167 Contacts** on the 2026-08-15 Dev load. *"There are 1,000 people named Robert Smith in the world"* (project owner) | **All, Prod included** | **No — permanent** |
 | 2 | Every active **Contact matching rule** → inactive | Housekeeping behind #1. A matching rule is what a duplicate rule consumes; leaving it Active is inert but untidy | **All, Prod included** | **No — permanent** |
-| 3 | The nine **LDGCRM Flows** → active | Three before-save Flows derive `LDGCRM_Market_Segment__c` down the parent chain. Inactive, the load **still reports success** and the field is blank org-wide | **Sandbox only** — rejected for `Prod` | **No — permanent** |
+| 3 | The nine **LDGCRM Flows** → active | Three before-save Flows derive `LDGCRM_Market_Segment__c` down the parent chain. Inactive, the load **still reports success** and the field is blank org-wide | **All, production included** — pre-flight, no flag | **No — permanent** |
 | 4 | `TriggerControls__c` "Contact" `On__c` → `false` | FCIC's `GSA_FCIC_ContactTrigger` creates a junk Account for every Contact inserted with a blank `AccountId` — 371 of them on a normal run | All | **Yes** — `finally` block, verified by re-query |
 
 ### When each one happens
@@ -659,7 +659,7 @@ eight steps in means reloading. The fourth is scoped to the one step that needs 
 
 | Phase | What happens |
 | --- | --- |
-| Pre-flight, check 6 | Flow state read. With `-ActivateFlows`, inactive and stale flows are switched on, then **re-read to verify**. Without it, an inactive flow is a blocking finding and the run stops |
+| Pre-flight, check 6 | Flow state read. Inactive and stale flows are switched on, in every environment, then **re-read to verify**. Skipped on `-PlanOnly`, which reports what a real run would switch on. A flow still off after the attempt is a blocking finding |
 | Pre-flight, check 8 | Active Contact duplicate rules switched off (#1), then the matching rules behind them (#2). **Order is not negotiable** — a matching rule cannot be deactivated while an active duplicate rule consumes it |
 | Pre-flight, check 4 | The `TriggerControls__c` "Contact" record is *checked for existence only*. A missing record blocks the run here rather than failing at step 6 |
 | **Step 6 of 13 — Contact** | `On__c` captured, set `false`, Contact loaded, restored in a `finally` and confirmed by re-query — all inside the one step |
@@ -753,11 +753,23 @@ The only meaningful comparison is **within one org**: active version vs latest v
 the stale check uses. Whether the active version carries the *intended logic* is a change-set
 question the bundle cannot answer — it has no access to `sfdx/`.
 
-### `-ActivateFlows`
+### Flow activation
 
-Switches on every flow that is off or stale, by setting `FlowDefinition.Metadata.activeVersionNumber`
-to a version already in the org. **Sandbox only** — rejected for `-Environment Prod` at parameter
-binding. Pre-flight still reports on Prod; it just changes nothing there.
+Pre-flight switches on every flow that is off or stale, by setting
+`FlowDefinition.Metadata.activeVersionNumber` to a version already in the org. **In every
+environment, production included, and without being asked** — there is no flag.
+
+**There was a `-ActivateFlows` switch, and it was sandbox-only. Both went on 2026-08-18**, at the
+project owner's direction. The reasoning is the one already applied to the Contact duplicate and
+matching rules: the flows have to be on for the load to be correct *everywhere*, so making production
+the one org where that depends on an operator remembering a manual step is how a production migration
+acquires a defect nobody sees until afterwards. It is also the lighter of the two things this
+pipeline does to production configuration — a one-field setting PATCH, against the full metadata
+retrieve-and-redeploy the duplicate rules require.
+
+**`-PlanOnly` activates nothing.** It lists what a real run would switch on and carries on; a dry run
+that writes is not a dry run. Inactive flows are a *warning* on a plan run and a *blocking* finding on
+a real one, where blocking now means the PATCH was attempted and the verifying re-query still says off.
 
 **It cannot create a Flow.** Absent, or present with no versions, needs a change set; the pipeline
 names it and stops.

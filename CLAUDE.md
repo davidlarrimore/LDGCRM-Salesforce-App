@@ -243,10 +243,13 @@ objects carrying custom fields: Account, Contact, Opportunity, `OpportunityConta
 this pipeline produces.** QA was loaded 2026-08-14 with 8,740 records and 0 unexpected failures while
 all nine were switched off — nothing failed, nothing was withheld, every object count matched Dev,
 and Market Segment was blank on 100% of Partner Accounts, Opportunities and Applications. Flow
-activation changes field *contents*, not row counts. `Invoke-FullMigrationLoad.ps1`'s pre-flight now
-asserts all nine are active and **blocks the run**; `-ActivateFlows` switches on whatever is off
-(sandbox only — rejected for `Prod`). It cannot *create* a Flow: absent means change set. See
-`docs/engineering/ARCHITECTURE.md`, "Pre-flight: the nine Flows must be ACTIVE".
+activation changes field *contents*, not row counts. `Invoke-FullMigrationLoad.ps1`'s pre-flight
+**switches on whatever is off, in every environment including `Prod`, without being asked** — there
+is no `-ActivateFlows` flag any more (it existed and was sandbox-only; both were removed 2026-08-18
+at the project owner's direction, on the grounds that the load already deactivates the Contact
+duplicate and matching rules in production through a *heavier* mechanism). `-PlanOnly` activates
+nothing and reports instead. It still cannot *create* a Flow: absent means change set, and that
+blocks. See `docs/engineering/ARCHITECTURE.md`, "Pre-flight: the nine Flows must be ACTIVE".
 
 **A Flow's version number is a PER-ORG counter and means nothing across orgs** — every save in the
 source org increments that org's sequence, every change set deployment increments the target's

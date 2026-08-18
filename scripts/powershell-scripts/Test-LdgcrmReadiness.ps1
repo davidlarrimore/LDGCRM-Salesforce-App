@@ -643,12 +643,12 @@ if (-not $SkipOrgChecks) {
         if ($Absent.Count -gt 0) {
             Add-Result -Category "Automation" -Name "LDGCRM Flows active" -Status "FAIL" `
                 -Detail ("{0} ABSENT from this org: {1}" -f $Absent.Count, ($Absent -join ", ")) `
-                -Fix "An absent flow cannot be activated - it needs a CHANGE SET. -ActivateFlows cannot create one."
+                -Fix "An absent flow cannot be activated - it needs a CHANGE SET. The load cannot create one."
         }
         elseif ($Inactive.Count -gt 0) {
-            Add-Result -Category "Automation" -Name "LDGCRM Flows active" -Status "FAIL" `
+            Add-Result -Category "Automation" -Name "LDGCRM Flows active" -Status "WARN" `
                 -Detail ("{0} of {1} inactive: {2}" -f $Inactive.Count, $Expected.Count, ($Inactive -join ", ")) `
-                -Fix "Blocks the load. -ActivateFlows switches these on (sandbox only, rejected for Prod)."
+                -Fix "The load switches these on itself, in every environment, before the first row is written."
         }
         else {
             Add-Result -Category "Automation" -Name "LDGCRM Flows active" -Status "PASS" `

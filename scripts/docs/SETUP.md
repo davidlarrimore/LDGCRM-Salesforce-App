@@ -280,8 +280,8 @@ success, so nothing in the run output tells you it happened.
 
 **How it does it**, since no API switches a duplicate rule off directly: it retrieves the rule *from
 the org it is loading*, changes one line, and deploys it *straight back to that same org*. Nothing
-moves between orgs and no definition changes — it is the same kind of action as `-ActivateFlows`
-pointing an org at a flow version it already has.
+moves between orgs and no definition changes — it is the same kind of action as the flow activation
+that points an org at a flow version it already has.
 
 > ### ⚠️ They stay off. Do not switch them back on
 >

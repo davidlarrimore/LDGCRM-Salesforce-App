@@ -208,22 +208,28 @@ Pre-flight prints one line per category:
   LDGCRM Flows           9 of 9 active and current
 ```
 
-Anything less than 9 of 9 **blocks the run**. If the flows are present in the org but switched off,
-you can turn them on as part of the load:
+**Pre-flight switches on any that are off, and you do not have to ask it to.** There is no flag:
 
 ```powershell
-# Check what is off, change nothing
+# Reports what a real run would switch on. Writes nothing.
 .\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment QA -PlanOnly
 
-# Switch on whatever is off, then load
-.\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment QA -ActivateFlows -Confirmation "LOAD"
+# Switches on whatever is off, then loads.
+.\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment QA -Confirmation "LOAD"
 ```
 
-`-ActivateFlows` is **sandbox only** — it is rejected for `-Environment Prod`, the same structural
-block `-BootstrapAccounts` uses. Activating a Flow in production is a change-controlled action for a
-human in Setup. Pre-flight still *reports* on Prod; it just will not change anything there.
+> **There is no `-ActivateFlows` switch** (removed 2026-08-18). It existed, and it was sandbox-only.
+> Activation now happens in **every environment, production included**, exactly as the Contact
+> duplicate and matching rules are already handled — and for the same reason. The flows have to be on
+> for the load to be correct everywhere, so making production the one org where that depends on
+> somebody remembering a manual step is how a production migration acquires a defect nobody sees
+> until afterwards.
+>
+> It is also the *lighter* of the two things the load does to production configuration: a one-field
+> setting PATCH pointing the org at a flow version already in it, against the full metadata
+> retrieve-and-redeploy the duplicate rules need.
 
-Three things to know before using it:
+Three things to know:
 
 - **It is permanent.** Unlike the Contact trigger bypass, nothing is restored afterwards. That is
   deliberate: a Flow that had to be on for the load to be correct must stay on, or the org goes back
@@ -248,7 +254,7 @@ are running against an org somebody else owns, this is the list to send them *be
 | --- | --- | --- | --- |
 | Active **Contact duplicate rules** switched off | Pre-flight, automatically. No flag | **All, production included** | **No** |
 | Active **Contact matching rules** switched off | Pre-flight, right after the duplicate rules | **All, production included** | **No** |
-| The nine **LDGCRM Flows** switched on | Pre-flight, only with `-ActivateFlows` | **Sandbox only** — refused for `Prod` | **No** |
+| The nine **LDGCRM Flows** switched on | Pre-flight, automatically. No flag. Skipped on `-PlanOnly` | **All, production included** | **No** |
 | FCIC's **Contact trigger** switched off (`TriggerControls__c`) | During the Contact step only — step 6 of 13 | All | **Yes**, and the restore is verified |
 
 Each is covered in full elsewhere on this page: the Flows [just above](#pre-flight-and-the-nine-flows),

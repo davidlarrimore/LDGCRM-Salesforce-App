@@ -87,24 +87,6 @@ param(
     [switch]$ContinueOnError,
 
     <#
-        Switch on any of the nine LDGCRM Flows that pre-flight finds inactive,
-        then carry on. Without it an inactive flow simply BLOCKS the run.
-
-        This flips an org SETTING (FlowDefinition's active version pointer) at a
-        flow version already present in the org. It deploys nothing and creates
-        nothing - see Set-LdgcrmFlowActiveVersion for why that keeps it on the
-        right side of the change-set rule.
-
-        Sandbox only, like -BootstrapAccounts: activating a Flow in production is
-        a change-controlled action for a human in Setup, not something a load
-        pipeline does unattended. Rejected below for -Environment Prod.
-
-        NOT RESTORED AFTERWARDS, unlike the TriggerControls__c bypass. A flow
-        that had to be on for the load to be correct must stay on.
-    #>
-    [switch]$ActivateFlows,
-
-    <#
         Run Test-LdgcrmReadiness.ps1 before pre-flight and stop on any failure.
 
         Readiness checks the bundle, the Airtable pull and the org's SHAPE -
@@ -393,11 +375,11 @@ function Disable-LdgcrmContactDuplicateRules {
         environment for a successful load."
 
         RUNS IN EVERY ENVIRONMENT, PRODUCTION INCLUDED (project owner,
-        2026-08-15) - unlike -ActivateFlows, which is sandbox-only. The rules
-        block the Contact load identically everywhere and the decision is that
-        they stay off everywhere, so making Prod the one org where an operator
-        must remember a manual step is how a production load acquires a silent
-        167-record hole.
+        2026-08-15). The rules block the Contact load identically everywhere
+        and the decision is that they stay off everywhere, so making Prod the
+        one org where an operator must remember a manual step is how a
+        production load acquires a silent 167-record hole. Flow activation was
+        brought under the same rule on 2026-08-18.
 
         NOTHING IS RESTORED. Deliberate, same as flow activation: the rules stay
         off permanently. Do not add a finally block that puts them back.
@@ -581,11 +563,12 @@ function Invoke-PreflightChecks {
         complete success, an unresolvable fallback owner aborts halfway through
         the sequence rather than at the start.
 
-        All checks are read-only EXCEPT flow activation, which happens only when
-        the caller passes -ActivateFlows. That is the one thing pre-flight is
-        allowed to fix rather than just report - it is an org setting, not
-        metadata. Everything else it can only diagnose; a missing flow or field
-        needs a change set and someone else's hands.
+        All checks are read-only EXCEPT flow activation, which runs unasked in
+        every environment on a real load, and is skipped entirely on -PlanOnly.
+        That is the one thing pre-flight is allowed to fix rather than just
+        report - it is an org setting, not metadata. Everything else it can only
+        diagnose; a missing flow or field needs a change set and someone else's
+        hands.
 
         Returns a hashtable of findings; the caller decides whether to stop.
     #>
@@ -738,14 +721,50 @@ function Invoke-PreflightChecks {
 
     Write-Host ("  LDGCRM Flows           {0} of {1} active and current" -f $FlowsOk.Count, $ExpectedActiveFlows.Count)
 
-    # --- prep, where the operator asked for it ------------------------------
+    <#
+        --- prep: switching the flows on --------------------------------------
+
+        THERE IS NO -ActivateFlows SWITCH. There was until 2026-08-18, and it
+        was sandbox-only. Both went, at the project owner's direction.
+
+        Activation now happens in EVERY environment, production included, and
+        without being asked - the same treatment the Contact duplicate and
+        matching rules already get in the Contact step, for the same reason.
+        The flows have to be on for the load to be correct everywhere, so
+        making production the one org where that depends on somebody
+        remembering a manual step is how a production migration acquires a
+        defect nobody sees until afterwards.
+
+        It is also the LIGHTER of the two actions this script takes against
+        production configuration: a one-field setting PATCH pointing an org at
+        a flow version already in it, against the full metadata retrieve-and-
+        redeploy the duplicate rules need. It deploys nothing, creates nothing,
+        and moves nothing between orgs - see Set-LdgcrmFlowActiveVersion.
+
+        NOT RESTORED AFTERWARDS, unlike the TriggerControls__c bypass. A flow
+        that had to be on for the load to be correct must stay on.
+
+        A flow that is ABSENT, or present with no versions, still needs a
+        CHANGE SET and still blocks. -PlanOnly activates nothing.
+    #>
     $Activatable = New-Object System.Collections.Generic.List[object]
     foreach ($F in $FlowsInactive) { if ($null -ne $F.LatestVersion) { $Activatable.Add($F) } }
     foreach ($F in $FlowsStale)    { $Activatable.Add($F) }
 
-    if ($ActivateFlows -and $Activatable.Count -gt 0) {
+    # A dry run must not write. Report what a real run would switch on, and let
+    # the findings below stay non-blocking for anything a real run would fix.
+    if ($PlanOnly -and $Activatable.Count -gt 0) {
         Write-Host ""
-        Write-Host "  -ActivateFlows: switching on $($Activatable.Count) flow(s) in $Org." -ForegroundColor Yellow
+        Write-Host "  -PlanOnly: NOT activating. A real run would switch on $($Activatable.Count) flow(s):" -ForegroundColor Yellow
+        foreach ($F in $Activatable) {
+            Write-Host ("    {0} -> v{1}" -f $F.DeveloperName, $F.LatestVersion) -ForegroundColor Yellow
+        }
+        Write-Host ""
+    }
+
+    if (-not $PlanOnly -and $Activatable.Count -gt 0) {
+        Write-Host ""
+        Write-Host "  Switching on $($Activatable.Count) inactive flow(s) in $Org." -ForegroundColor Yellow
         Write-Host "  Permanent: these are not switched back off after the load." -ForegroundColor Yellow
         Write-Host ""
 
@@ -801,14 +820,28 @@ function Invoke-PreflightChecks {
         if ($null -eq $F.LatestVersion) {
             $Findings.Blocking += "Flow $($F.DeveloperName) is present but has no versions. Needs a CHANGE SET."
         }
+        elseif ($PlanOnly) {
+            # A real run activates this. Reporting it is right; stopping a dry
+            # run over something the load itself fixes is not.
+            $Findings.Warning += ("Flow $($F.DeveloperName) is switched off (v$($F.LatestVersion) is in the org). " +
+                                  "A real run switches it on; -PlanOnly does not write.")
+        }
         else {
-            $Findings.Blocking += ("Flow $($F.DeveloperName) is switched off (v$($F.LatestVersion) is in the org). " +
-                                   "Re-run with -ActivateFlows, or switch it on in Setup.")
+            # Reached only after activation ran AND the verifying re-query still
+            # says off, so the PATCH did not take.
+            $Findings.Blocking += ("Flow $($F.DeveloperName) is still switched off after activation was attempted " +
+                                   "(v$($F.LatestVersion) is in the org). Switch it on in Setup and re-run.")
         }
     }
     foreach ($F in $FlowsStale) {
-        $Findings.Blocking += ("Flow $($F.DeveloperName) runs v$($F.ActiveVersion) but v$($F.LatestVersion) is in this org " +
-                               "and was never activated. Re-run with -ActivateFlows.")
+        if ($PlanOnly) {
+            $Findings.Warning += ("Flow $($F.DeveloperName) runs v$($F.ActiveVersion) but v$($F.LatestVersion) is in this org. " +
+                                  "A real run points it at the newer version; -PlanOnly does not write.")
+        }
+        else {
+            $Findings.Blocking += ("Flow $($F.DeveloperName) still runs v$($F.ActiveVersion) after activation was attempted; " +
+                                   "v$($F.LatestVersion) is in this org. Switch it on in Setup and re-run.")
+        }
     }
     foreach ($F in $FlowsTrespassing) {
         $Findings.Blocking += ("Flow $($F.DeveloperName) must not exist in $Env - it bulk-deletes migrated records and is " +
@@ -1579,15 +1612,15 @@ elseif ($Environment -eq "Prod") {
 # run" block.
 $RunDirectory = Get-LogDirectory -Category "data-migration"
 
-# Sandbox only, same structural block as -BootstrapAccounts below. Activating a
-# Flow in production is a change-controlled action for a human in Setup; a load
-# pipeline running unattended is the wrong actor for it. Pre-flight still
-# REPORTS inactive flows in Prod - that report is exactly what you want before a
-# production load, and it is read-only.
-if ($ActivateFlows -and $Environment -eq "Prod") {
-    throw ("SAFETY STOP: -ActivateFlows is not available for -Environment Prod. Re-run without it to get " +
-           "the pre-flight report, and hand any inactive flows to whoever owns production configuration.")
-}
+# Flow activation used to be blocked here for -Environment Prod, on the grounds
+# that switching a Flow on is change-controlled and belongs to a person in
+# Setup. That was inconsistent with what this script already does to production
+# in the Contact step, where it deactivates another team's duplicate and
+# matching rules permanently, through a heavier mechanism - a metadata retrieve
+# and redeploy, rather than the one-field setting PATCH a flow needs. Removed
+# 2026-08-18 at the project owner's direction: pre-flight now activates in every
+# environment, so production cannot be the one org that loads with its
+# automation off because somebody forgot a manual step.
 
 # --- optional readiness check ----------------------------------------------
 # Runs before pre-flight: it checks org shape, pre-flight checks run-time state.

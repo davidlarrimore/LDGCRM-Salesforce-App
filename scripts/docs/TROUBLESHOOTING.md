@@ -547,7 +547,8 @@ withheld, and the object counts matched Dev exactly. Three before-save Flows der
 all 842 Opportunities and all 1,026 Applications. **Flow activation changes field contents, not row
 counts**, so no count check could have caught it.
 
-**Fix:** re-run the load with `-ActivateFlows` (sandbox only), or switch them on in Setup. See
+**Fix:** re-run the load. Pre-flight switches them on itself, without being asked, in every
+environment including production. See
 [RUNNING-A-LOAD.md](RUNNING-A-LOAD.md#pre-flight-and-the-nine-flows).
 
 **Then reload the data.** Turning the Flows on does *not* backfill records that are already there:
@@ -568,7 +569,7 @@ is two versions behind, and the two numbers are not comparable at all.
 
 The only version comparison that means anything is **within one org**: active version vs latest
 version. If those differ, a newer version was deployed and never switched on, which pre-flight
-reports as stale and `-ActivateFlows` fixes.
+reports as stale and switches on itself.
 
 ---
 

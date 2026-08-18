@@ -45,9 +45,9 @@ The order is not a preference, and two of the three ways of getting it wrong fai
 
 Phases 1 and 2 can be done days ahead. Only 3–5 need a window.
 
-**Switching the nine Flows on is not a phase**, because nothing manual happens in a sandbox: the load
-activates them itself and refuses to run while any is off. Production is the exception — see
-[phase 3](#3-prepare-the-load).
+**Switching the nine Flows on is not a phase, in any environment**, because nothing manual happens:
+pre-flight activates them itself, without being asked, and refuses to run while any is still off.
+Production is no longer an exception to this — see [phase 4](#4-run-the-migration).
 
 ---
 
@@ -258,12 +258,8 @@ By this point the metadata is in and the people exist.
 
 ### 🔴 Production only
 
-Three things a sandbox run does not need.
+Two things a sandbox run does not need.
 
-- **Activate the nine LDGCRM Flows in Setup first.** In a sandbox the load switches them on itself;
-  `-ActivateFlows` is refused for `-Environment Prod`, so pre-flight reports which are inactive and
-  stops. Run it once to get that list, then hand it to the config owner. **Flows commonly arrive from
-  a deployment as Draft** — all nine did in QA — so expect to have to do this.
 - **A change window agreed in advance.**
 - **`purecloud.ContactWebHookv1` re-confirmed by hand.** A managed Genesys trigger that fires on every
   Contact insert. Its body is hidden, it cannot be retrieved, and it has no kill switch — what it does
@@ -293,7 +289,7 @@ see this list *before* the run.
 | --- | --- | --- |
 | Every active **Contact duplicate rule** → inactive | **All, production included** | **No — permanent** |
 | Every active **Contact matching rule** → inactive | **All, production included** | **No — permanent** |
-| The nine **LDGCRM Flows** → active | **Sandbox only** — production activates them in Setup, phase 3 | **No — permanent** |
+| The nine **LDGCRM Flows** → active | **All, production included** — pre-flight does it, with no flag | **No — permanent** |
 | `TriggerControls__c` "Contact" `On__c` → `false` | All | **Yes** — restored and re-queried, inside the Contact step |
 
 The duplicate rule is `OTCRM_Contact_Duplicate`, which matches on first and last name only and cost
