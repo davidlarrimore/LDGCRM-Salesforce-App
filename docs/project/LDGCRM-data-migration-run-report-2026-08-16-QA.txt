@@ -1,0 +1,167 @@
+﻿============================================================================================================
+ MIGRATION LOAD REPORT
+============================================================================================================
+ Run            Invoke-FullMigrationLoad-20260816-113351
+ Environment    QA  (peodv15dvn)
+ Started        2026-08-16 11:33:51
+ Duration       00:20:19
+ Mode           LOAD
+ Compared with  Invoke-FullMigrationLoad-20260814-143933
+
+------------------------------------------------------------------------------------------------------------
+ 1. WHAT LOADED
+------------------------------------------------------------------------------------------------------------
+  OBJECT                                 SUBMITTED    LOADED  FAILED  WITHHELD  RESULT
+  LDGCRM_Market_Segment__c                       5         5       0         2  loaded
+  LDGCRM_Impediment__c                          37        37       0         1  loaded
+  Account (AccountCreate)                        9         9       0         0  loaded
+  Account (Account)                            691       691       0         0  loaded
+  LDGCRM_Partner_Account__c                     99        99       0         0  loaded
+  Contact                                    1,918     1,918       0        33  loaded
+  Opportunity                                  904       904       0         0  loaded
+  LDGCRM_application__c (Application)        1,052     1,052       0         7  loaded
+  LDGCRM_application__c (PopulateBrok...        69        69       0         0  loaded
+  LDGCRM_Opportunity_Impediment__c             311       311       0         0  loaded
+  LDGCRM_Application_Contact__c              2,793     2,793       0        18  loaded
+  OpportunityContactRole                       596       596       0        11  loaded
+  ContentNote                                  737       737       0         0  loaded
+  TOTAL                                      9,221     9,221       0        72
+
+  WITHHELD counts rows the transform never submitted. They are NOT load errors -
+  Salesforce never saw them - so nothing else in a load result will mention them.
+
+------------------------------------------------------------------------------------------------------------
+ 2. LOAD FAILURES - rows Salesforce rejected
+------------------------------------------------------------------------------------------------------------
+
+  UNEXPECTED - no configured cause matches. These stop the run.
+    (none)
+
+  EXPECTED - a known cause for that object, within its allowance.
+    (none)
+
+------------------------------------------------------------------------------------------------------------
+ 3. ROWS WITHHELD - never submitted, so no load error mentions them
+------------------------------------------------------------------------------------------------------------
+  Contact                       33  No Account - not loaded  (NEW)
+                                    Contact-no-account-20260816-113351.csv
+                                33    SKIPPED - not loaded. No Account link in Airtable, and neither a li...
+
+  ApplicationContact            18  Withheld - not submitted  (NEW)
+                                    ApplicationContact-skipped-20260816-113351.csv
+                                18    Junction needs both sides present; the missing side was itself with...
+
+  OpportunityContactRole        11  Withheld - not submitted  (NEW)
+                                    OpportunityContactRole-skipped-20260816-113351.csv
+                                11    Both sides must resolve to a real Salesforce Id. The missing side w...
+
+  Application                    6  Withheld - not submitted  (NEW)
+                                    Application-skipped-20260816-113351.csv
+                                 6    No linked Partner Account. LDGCRM_Partner_Account__c is a required ...
+
+  MarketSegment                  2  Withheld - not submitted  (was 2, unchanged)
+                                    MarketSegment-skipped-20260816-113351.csv
+                                 2    No Name. LDGCRM_Market_Segment__c's Name is required and the segmen...
+
+  Application                    1  Broker parent not linked  (NEW)
+                                    Application-broker-parent-skipped-20260816-113351.csv
+                                 1    This Application is its OWN Broker App Parent. A record cannot be i...
+
+  Impediment                     1  Withheld - not submitted  (NEW)
+                                    Impediment-skipped-20260816-113351.csv
+                                 1    The 'None' placeholder is deliberately not migrated (business rule ...
+
+------------------------------------------------------------------------------------------------------------
+ 4. NEEDS A HUMAN - the pipeline refused to guess
+------------------------------------------------------------------------------------------------------------
+  Opportunity                  285  Owner did not resolve  (NEW)
+                                    Opportunity-unresolved-owner-20260816-113351.csv
+                               259    No active Salesforce User has this email (checked with and without ...
+                                26    No active Salesforce User has this email (checked with and without ...
+
+  PartnerAccount                50  Owner not mapped  (NEW)
+                                    PartnerAccount-unmapped-owner-20260816-113351.csv
+                                50    No active Salesforce User matches this email (checked with and with...
+
+  Application                   28  Portal team needs review  (NEW)
+                                    Application-portal-team-review-20260816-113351.csv
+                                12    1 of this Application's 2 issuer strings have a blank (or '#N/A') T...
+                                 9    The partner-portal team belongs to the Application, and Airtable du...
+                                 3    2 of this Application's 3 issuer strings have a blank (or '#N/A') T...
+                                 2    1 of this Application's 3 issuer strings have a blank (or '#N/A') T...
+                                 2    1 of this Application's 4 issuer strings have a blank (or '#N/A') T...
+
+  Contact                       22  Account inferred from email domain  (NEW)
+                                    Contact-domain-inferred-account-20260816-113351.csv
+                                22    INFERRED, not a recorded link: every other contact on this domain t...
+
+  Account                       15  Matched more than one - not guessed  (NEW)
+                                    Account-reconciliation-ambiguous-20260816-113351.csv
+                                 8    similar name within the agency. The migration will not guess betwee...
+                                 5    an Account of this name already exists elsewhere in the org - eithe...
+                                 1    DUPLICATE AIRTABLE ROW. Salesforce Account <id> ('INTERPOL Washingt...
+                                 1    same name at top level - possibly the same body, filed differently....
+
+  OpportunityImpediment          7  Conflicting severity  (NEW)
+                                    OpportunityImpediment-severity-conflict-20260816-113351.csv
+                                 7    This Opportunity appears in BOTH 'Opportunities blocked' and 'Oppor...
+
+  Account                        4  Matched no Salesforce record  (NEW)
+                                    Account-reconciliation-unmatched-20260816-113351.csv
+                                 2    nothing in the org resembles this name. Needs an Account creating -...
+                                 1    no match in this agency; same-named Accounts belong to OTHER agenci...
+                                 1    no match in this agency; same-named Accounts belong to OTHER agenci...
+
+------------------------------------------------------------------------------------------------------------
+ 5. LOADED WITH A CAVEAT - derived, dropped or truncated on the way in
+------------------------------------------------------------------------------------------------------------
+  Contact                      804  Name derived, not authored  (NEW)
+                                    Contact-name-review-20260816-113351.csv
+                               580    Airtable has no Name. The address encodes one, so it was split into...
+                               217    No Name in Airtable, and the address has no defensible split point ...
+                                 7    No Name and no Email - nothing identifies this person. Skipped; Las...
+
+  Opportunity                   35  Value dropped or blanked  (NEW)
+                                    Opportunity-value-review-20260816-113351.csv
+                                25    Not one of the 6 values allowed on Opportunity's LDGCRM_Demographic...
+                                 5    Not a URL - left blank rather than written into a Url-type field.
+                                 3    URL exceeds Salesforce's 255-char hard limit for a Url-type field (...
+                                 2    No matching value in the restricted picklist - tag dropped. Add it ...
+
+  Contact                        9  Role/shared mailbox, name not split  (NEW)
+                                    Contact-role-mailbox-20260816-113351.csv
+                                 9    The address looks like a shared or role inbox, not a person. It was...
+
+------------------------------------------------------------------------------------------------------------
+ 6. UNCLASSIFIED REVIEW OUTPUT - a finding this report does not recognise
+------------------------------------------------------------------------------------------------------------
+  Notes                        737  Unclassified review output  (NEW)
+                                    created-note-ids.csv
+
+  AccountCreate                 18  Unclassified review output  (NEW)
+                                    AccountCreation-needs-review-20260816-113351.csv
+                                13    similar name within the agency. NOT created - a human must decide w...
+                                 4    an Account of this name already exists elsewhere in the org - eithe...
+                                 1    same name at top level - possibly the same body, filed differently....
+
+------------------------------------------------------------------------------------------------------------
+ 7. POST-LOAD VALIDATION - the failures a success count cannot show
+------------------------------------------------------------------------------------------------------------
+  PROBLEMS   (none)
+
+------------------------------------------------------------------------------------------------------------
+ 8. WHERE TO LOOK NEXT
+------------------------------------------------------------------------------------------------------------
+  Everything from this run is in:
+    C:\Users\DaveKLarrimore\Desktop\Salesforce\scripts\logs\data-migration\Invoke-FullMigrationLoad-20260816-113351
+
+    SUMMARY.txt                    this report
+    load-summary.csv               one row per step
+    errors.csv                     one row per distinct error, classified
+    findings.csv                   one row per review CSV
+    <Script>.log                   each step's full transcript
+    <object>-*-failed-records.csv  the rows Salesforce rejected, with payloads
+    external-ids-*.csv             what existed before - a rollback needs these
+
+  A clean report is not a verified migration. Walk docs/RELOAD-QA-CHECKLIST.md.
+

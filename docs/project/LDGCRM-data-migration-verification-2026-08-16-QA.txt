@@ -1,0 +1,49 @@
+LDGCRM DATA MIGRATION - PRE-FLIGHT AND POST-LOAD VERIFICATION
+Run          Invoke-FullMigrationLoad-20260816-113351
+Environment  QA sandbox PEOdV15DVn (peodv15dvn)
+Started      2026-08-16 11:33:51
+Extracted from that run's transcript, Invoke-FullMigrationLoad.log.
+
+ PRE-FLIGHT
+============================================================
+  Airtable export        22 file(s), newest 0.1 day(s) old
+  Market Segments        1 present, 0 resolvable (external ID set)
+                         none are resolvable yet - the MarketSegment step will fix this
+  Fallback owner         resolved (005t0000008mlknAAA)
+  Contact trigger switch present (currently On__c=True)
+  Note related lists     not checkable via API - confirm RelatedContentNoteList
+                         is on the Partner Account and Application layouts
+  LDGCRM Flows           9 of 9 active and current
+  Contact dup rules      3 present, none active
+
+  WARNING: No LDGCRM_Market_Segment__c record carries an external ID, so nothing can resolve a segment yet. The MarketSegment step loads them; if you have EXCLUDED that step (-OnlySteps/-StartAtStep), every downstream record will load with a blank Market Segment and nothing will error.
+
+Pre-flight passed.
+
+
+ POST-LOAD VALIDATION
+============================================================
+
+  OBJECT                               BEFORE    AFTER    DELTA
+  Account                               1,362    1,371       +9
+  LDGCRM_Partner_Account__c                 1      100      +99
+  Contact                                   0    1,918    +1918
+  Opportunity                               1      905     +904
+  LDGCRM_application__c                     1    1,053    +1052
+  LDGCRM_Impediment__c                      0       37      +37
+  LDGCRM_Opportunity_Impediment__c          0      311     +311
+  LDGCRM_Application_Contact__c             0    2,793    +2793
+  OpportunityContactRole                    0      596     +596
+  LDGCRM_Market_Segment__c                  1        6       +5
+
+  FCIC_Individual Accounts (junk)        0 now, 0 before, 0 new
+  TriggerControls__c Contact.On__c       True
+  Opportunity                            0 record(s) owned by an inactive user
+  Contact                                0 record(s) owned by an inactive user
+  LDGCRM_application__c                  0 record(s) owned by an inactive user
+  Opportunity                            0 migrated record(s) with no Market Segment
+  LDGCRM_application__c                  0 migrated record(s) with no Market Segment
+  Partner Portal Team UUID               696 intended, 696 in the org
+  Partner Portal Admin flag              1083 intended, 1083 in the org
+
+Post-load validation passed.
