@@ -1,0 +1,141 @@
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css">
+<style>
+.b1 { fill:#f4f6f8; stroke:#3f4a54; stroke-width:1.6; }
+.b2 { fill:#e9f1fb; stroke:#1b4f8a; stroke-width:1.8; }
+.b3 { fill:#eef7f0; stroke:#2f6b45; stroke-width:1.8; }
+.b4 { fill:#fdf6e9; stroke:#a8700f; stroke-width:1.6; }
+.warn { fill:#fbeeee; stroke:#8a2f2f; stroke-width:1.8; }
+.hdrow{ fill:#eef1f4; stroke:#c8ced5; stroke-width:1.1; }
+.row  { fill:#ffffff; stroke:#dde3e9; stroke-width:1.1; }
+.rowp { fill:#fdfaf3; stroke:#dde3e9; stroke-width:1.1; }
+.s1 { font-size:13px; font-weight:bold; fill:#1c2530; }
+.s2 { font-size:11.5px; fill:#3f4a54; }
+.s3 { font-size:11px; fill:#5a6672; }
+.mn { font-size:11px; fill:#1b4f8a; font-family:"Consolas","Courier New",monospace; }
+.ph { font-size:13px; font-weight:bold; fill:#1b4f8a; letter-spacing:0.7px; }
+.sh { font-size:11.5px; font-weight:bold; fill:#3f4a54; letter-spacing:0.5px; }
+.ch { font-size:10.5px; font-weight:bold; fill:#5a6672; letter-spacing:0.5px; }
+.wt { font-size:12px; fill:#8a2f2f; }
+.wb { font-size:13px; font-weight:bold; fill:#8a2f2f; }
+</style></head><body>
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="840" viewBox="0 0 1560 840">
+<defs>
+<marker id="a1" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#3f4a54"/></marker>
+</defs>
+<rect width="1560" height="840" fill="#ffffff"/>
+
+<!-- ============ AXIS 1 ============ -->
+<rect class="band" x="30" y="30" width="736" height="614" rx="5"/>
+<text class="ph" x="46" y="54">AXIS 1 &#8212; WHAT YOU CAN DO</text>
+<text class="s3" x="290" y="54">Object, field and tab access. Granted by permission set group.</text>
+
+<rect class="b1" x="46" y="68" width="704" height="46" rx="5"/>
+<text class="s1" x="60" y="88">A person</text>
+<text class="s2" x="60" y="105">A member of the Login.gov partnership team, or GSA production support.</text>
+<path class="ln" d="M398 114 V132" marker-end="url(#a1)"/>
+
+<rect class="b1" x="46" y="136" width="704" height="62" rx="5"/>
+<text class="s1" x="60" y="156">Profile &#8212; unchanged by this application</text>
+<text class="s2" x="60" y="173">GSA Standard Salesforce User, GSA Standard Basic User, GSA Standard Platform User,</text>
+<text class="s2" x="60" y="189">GSA System Administrator. No application permission is granted at profile level.</text>
+<path class="ln" d="M398 198 V216" marker-end="url(#a1)"/>
+
+<text class="sh" x="46" y="234">ONE OF THREE PERMISSION SET GROUPS</text>
+
+<rect class="b2" x="46" y="242" width="704" height="62" rx="5"/>
+<text class="s1" x="60" y="262">LDGCRM - G - Partnership Team Member - CRE</text>
+<text class="mn" x="60" y="279">LDGCRM_Partnership_Team_Member_CRE  +  OrgWide_Hide_Salesforce_Classic_System</text>
+<text class="s2" x="60" y="296">Create, Read, Edit on all nine objects. 325 field permissions. Delete on the two junctions only.</text>
+
+<rect class="b2" x="46" y="312" width="704" height="62" rx="5"/>
+<text class="s1" x="60" y="332">LDGCRM - G - Partnership Viewer - R</text>
+<text class="mn" x="60" y="349">LDGCRM_Partnership_Viewer_R  +  OrgWide_Hide_Salesforce_Classic_System</text>
+<text class="s2" x="60" y="366">Read on all nine objects. 245 field permissions. View All on Account, Contact, Market Segment.</text>
+
+<rect class="b2" x="46" y="382" width="704" height="62" rx="5"/>
+<text class="s1" x="60" y="402">LDGCRM - G - Production Support - CRED</text>
+<text class="mn" x="60" y="419">LDGCRM_Production_Support_CRED  +  OrgWide_Hide_Salesforce_Classic_System</text>
+<text class="s2" x="60" y="436">Create, Read, Edit, Delete on all nine objects. 324 field permissions. Modify All on Market Segment.</text>
+
+<path class="ln" d="M398 444 V464" marker-end="url(#a1)"/>
+
+<rect class="b1" x="46" y="468" width="704" height="160" rx="5"/>
+<text class="s1" x="60" y="488">Each group grants the same four things</text>
+<text class="s2" x="60" y="508">1.  Visibility of the Login.gov Partnerships CRM app.</text>
+<text class="s2" x="60" y="527">2.  The eight tabs it uses: Market Segments, Accounts, Partner Accounts, Opportunities,</text>
+<text class="s2" x="60" y="543">     Applications, Contacts, Impediments, Events.</text>
+<text class="s2" x="60" y="562">3.  Object CRUD and field-level security on the nine objects.</text>
+<text class="s2" x="60" y="581">4.  Record type visibility: Account.Federal, Contact.Federal, Opportunity.Login.gov and</text>
+<text class="s2" x="60" y="597">     LDGCRM_application__c.LDGCRM_Application. Contact.GSA is granted by the Team Member</text>
+<text class="s2" x="60" y="613">     and Production Support groups, but not by the Viewer group.</text>
+
+<!-- ============ AXIS 2 ============ -->
+<rect class="band" x="790" y="30" width="740" height="614" rx="5"/>
+<text class="ph" x="806" y="54">AXIS 2 &#8212; WHICH RECORDS YOU SEE</text>
+<text class="s3" x="1074" y="54">Org-wide default, then public group, then sharing rule.</text>
+
+<text class="sh" x="806" y="82">ORG-WIDE DEFAULTS, INTERNAL &#8212; READ FROM THE ORG, NOT FROM THE PACKAGE</text>
+
+<rect class="hdrow" x="806" y="90" width="708" height="26"/>
+<text class="ch" x="818"  y="107">OBJECT</text>
+<text class="ch" x="1044" y="107">ORG-WIDE DEFAULT</text>
+<text class="ch" x="1250" y="107">WHO CAN SEE A RECORD</text>
+
+<rect class="row" x="806" y="116" width="708" height="24"/>
+<text class="s2" x="818" y="133">Account</text><text class="s2" x="1044" y="133">Private</text><text class="s2" x="1250" y="133">Owner, plus whoever a sharing rule reaches</text>
+<rect class="row" x="806" y="140" width="708" height="24"/>
+<text class="s2" x="818" y="157">Contact</text><text class="s2" x="1044" y="157">Private</text><text class="s2" x="1250" y="157">Owner, plus whoever a sharing rule reaches</text>
+<rect class="row" x="806" y="164" width="708" height="24"/>
+<text class="s2" x="818" y="181">Opportunity</text><text class="s2" x="1044" y="181">Private</text><text class="s2" x="1250" y="181">Owner, plus whoever a sharing rule reaches</text>
+<rect class="row" x="806" y="188" width="708" height="24"/>
+<text class="s2" x="818" y="205">Partner Account</text><text class="s2" x="1044" y="205">Controlled by Parent</text><text class="s2" x="1250" y="205">Exactly whoever can see its Account</text>
+<rect class="row" x="806" y="212" width="708" height="24"/>
+<text class="s2" x="818" y="229">Opportunity Impediment</text><text class="s2" x="1044" y="229">Controlled by Parent</text><text class="s2" x="1250" y="229">Exactly whoever can see its parents</text>
+<rect class="rowp" x="806" y="236" width="708" height="24"/>
+<text class="s2" x="818" y="253">Application</text><text class="s2" x="1044" y="253">Public Read/Write</text><text class="s2" x="1250" y="253">Anyone with object access, no rule needed</text>
+<rect class="rowp" x="806" y="260" width="708" height="24"/>
+<text class="s2" x="818" y="277">Application Contact</text><text class="s2" x="1044" y="277">Public Read/Write</text><text class="s2" x="1250" y="277">Anyone with object access, no rule needed</text>
+<rect class="rowp" x="806" y="284" width="708" height="24"/>
+<text class="s2" x="818" y="301">Impediment</text><text class="s2" x="1044" y="301">Public Read/Write</text><text class="s2" x="1250" y="301">Anyone with object access, no rule needed</text>
+<rect class="rowp" x="806" y="308" width="708" height="24"/>
+<text class="s2" x="818" y="325">Market Segment</text><text class="s2" x="1044" y="325">Public Read/Write</text><text class="s2" x="1250" y="325">Anyone with object access, no rule needed</text>
+
+<text class="sh" x="806" y="360">TWO PUBLIC GROUPS</text>
+<rect class="b3" x="806" y="368" width="348" height="72" rx="5"/>
+<text class="s1" x="818" y="388">LDGCRM Team Members</text>
+<text class="mn" x="818" y="405">LDGCRM_Team_Members</text>
+<text class="s2" x="818" y="422">Read/write on shared records. Includes</text>
+<text class="s2" x="818" y="435">managers above a member in the role hierarchy.</text>
+
+<rect class="b3" x="1166" y="368" width="348" height="72" rx="5"/>
+<text class="s1" x="1178" y="388">LDGCRM Viewers</text>
+<text class="mn" x="1178" y="405">LDGCRM_Viewers</text>
+<text class="s2" x="1178" y="422">Read only on shared records. Includes</text>
+<text class="s2" x="1178" y="435">managers above a member in the role hierarchy.</text>
+
+<text class="sh" x="806" y="470">FOURTEEN SHARING RULES POINT AT THOSE TWO GROUPS</text>
+<rect class="b3" x="806" y="478" width="348" height="80" rx="5"/>
+<text class="s1" x="818" y="498">6 criteria-based &#8212; these do the work</text>
+<text class="s2" x="818" y="516">Account and Contact by record type (Federal,</text>
+<text class="s2" x="818" y="531">and GSA on Contact); Opportunity by record</text>
+<text class="s2" x="818" y="546">type Login.gov. Read to Viewers, Edit to Team.</text>
+
+<rect class="b4" x="1166" y="478" width="348" height="80" rx="5"/>
+<text class="s1" x="1178" y="498">8 owner-based &#8212; no effect today</text>
+<text class="s2" x="1178" y="516">On Application, Application Contact, Impediment</text>
+<text class="s2" x="1178" y="531">and Market Segment. Those four are already</text>
+<text class="s2" x="1178" y="546">Public Read/Write, so the rules add nothing.</text>
+
+<text class="s3" x="806" y="580">The split is exact: every criteria rule sits on a Private object and every owner rule sits on a Public Read/Write</text>
+<text class="s3" x="806" y="596">object. Record-level restriction is therefore carried entirely by the six criteria rules.</text>
+
+<!-- ============ bottom ============ -->
+<rect class="warn" x="30" y="664" width="1500" height="152" rx="5"/>
+<text class="wb" x="50" y="690">A person needs BOTH axes. Neither one alone shows them a single record.</text>
+<text class="wt" x="50" y="712">A permission set group decides what you may do to an object and its fields. An org-wide default, a public group and a sharing rule decide which records exist for you at all.</text>
+<text class="wt" x="50" y="730">Someone with the permission set group and no group membership opens an application that looks empty. Someone in the public group with no permission set group cannot open the app.</text>
+<text class="wb" x="50" y="758">Two things do not travel in the change set, and both look like nothing went wrong.</text>
+<text class="wt" x="50" y="780">1.  Public group MEMBERSHIP. The group definitions deploy carrying no members, so after deployment the sharing rules exist, reference real groups, and grant access to nobody.</text>
+<text class="wt" x="50" y="802">2.  Org-wide defaults for Account, Contact and Opportunity. These are org-level sharing settings. Confirm all nine values in the target org before concluding the model is in place.</text>
+
+</svg></body></html>

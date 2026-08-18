@@ -1,0 +1,37 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #ffffff; }
+svg { display: block; background: #ffffff; font-family: Arial, Helvetica, sans-serif; }
+
+.bx   { fill:#f4f6f8; stroke:#3f4a54; stroke-width:1.6; }
+.bx-c { fill:#e9f1fb; stroke:#1b4f8a; stroke-width:1.8; }
+.bx-j { fill:#eef7f0; stroke:#2f6b45; stroke-width:1.8; }
+.bx-o { fill:#fafafa; stroke:#9aa3ac; stroke-width:1.6; stroke-dasharray:6 4; }
+.bx-w { fill:#fdf6e9; stroke:#a8700f; stroke-width:1.8; }
+
+.hd   { fill:#3f4a54; }
+.hd-c { fill:#1b4f8a; }
+.hd-j { fill:#2f6b45; }
+.hd-o { fill:#9aa3ac; }
+.hd-w { fill:#a8700f; }
+
+.t1 { font-size:15px; font-weight:bold; fill:#ffffff; }
+.t2 { font-size:11.5px; fill:#1c2530; font-family:"Consolas","Courier New",monospace; }
+.t3 { font-size:11px; fill:#4a5560; }
+
+.ln    { stroke:#5a6672; stroke-width:1.6; fill:none; }
+.ln-md { stroke:#1b4f8a; stroke-width:2.6; fill:none; }
+.ln-f  { stroke:#c07000; stroke-width:1.8; fill:none; stroke-dasharray:7 4; }
+.ln-o  { stroke:#9aa3ac; stroke-width:1.6; fill:none; stroke-dasharray:6 4; }
+.ln-h  { stroke:#1b4f8a; stroke-width:2.2; fill:none; }
+
+.lbl   { font-size:11px; fill:#2b3540; }
+.lbl-f { font-size:11px; fill:#8a4b00; font-weight:bold; }
+.cap   { font-size:12.5px; fill:#2b3540; }
+.capb  { font-size:13.5px; fill:#1c2530; font-weight:bold; }
+.secb  { font-size:14px; fill:#1c2530; font-weight:bold; }
+.lbl, .lbl-f, .cap, .capb, .secb {
+  paint-order: stroke; stroke:#ffffff; stroke-width:3.5px; stroke-linejoin:round;
+}
+.legbox { fill:#ffffff; stroke:#c8ced5; stroke-width:1.2; }
+.band   { fill:#f7f9fb; stroke:#dde3e9; stroke-width:1.2; }
+.bandlb { font-size:12px; fill:#5a6672; font-weight:bold; letter-spacing:0.6px; }

@@ -1,0 +1,181 @@
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css">
+<style>
+.stp  { fill:#f4f6f8; stroke:#3f4a54; stroke-width:1.6; }
+.stpc { fill:#e9f1fb; stroke:#1b4f8a; stroke-width:1.8; }
+.dec  { fill:#fdf6e9; stroke:#a8700f; stroke-width:1.8; }
+.term { fill:#eef7f0; stroke:#2f6b45; stroke-width:1.8; }
+.termx{ fill:#fbeeee; stroke:#8a2f2f; stroke-width:1.8; }
+.s1 { font-size:13.5px; font-weight:bold; fill:#1c2530; }
+.s2 { font-size:12px; fill:#3f4a54; }
+.s3 { font-size:11px; fill:#5a6672; font-family:"Consolas","Courier New",monospace; }
+.ph { font-size:12.5px; font-weight:bold; fill:#1b4f8a; letter-spacing:0.7px; }
+.phn{ font-size:12px; fill:#5a6672; }
+.yn { font-size:11.5px; font-weight:bold; fill:#8a4b00; paint-order:stroke; stroke:#fff; stroke-width:3.5px; }
+</style></head><body>
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="790" viewBox="0 0 1560 790">
+<defs>
+<marker id="a1" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#3f4a54"/></marker>
+<marker id="a2" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#a8700f"/></marker>
+</defs>
+<rect width="1560" height="790" fill="#ffffff"/>
+
+<!-- ===== phase 1 ===== -->
+<rect class="band" x="30" y="46" width="1500" height="228" rx="5"/>
+<text class="ph"  x="46" y="70">PHASE 1 &#8212; PIPELINE</text>
+<text class="phn" x="240" y="70">Qualify the agency and get to a signed agreement. One Opportunity per prospective agreement (Record Type: Login.gov).</text>
+
+<!-- A -->
+<rect class="stp" x="46" y="96" width="200" height="76" rx="5"/>
+<text class="s1" x="146" y="126" text-anchor="middle">Agency interest</text>
+<text class="s2" x="146" y="145" text-anchor="middle">Referral, outreach or</text>
+<text class="s2" x="146" y="160" text-anchor="middle">inbound enquiry</text>
+
+<path class="ln" d="M246 134 H288" marker-end="url(#a1)"/>
+
+<!-- B -->
+<rect class="stpc" x="292" y="96" width="200" height="76" rx="5"/>
+<text class="s1" x="392" y="122" text-anchor="middle">Opportunity created</text>
+<text class="s2" x="392" y="141" text-anchor="middle">Account, owner, market</text>
+<text class="s2" x="392" y="156" text-anchor="middle">segment, revenue estimate</text>
+
+<path class="ln" d="M492 134 H534" marker-end="url(#a1)"/>
+
+<!-- C decision -->
+<path class="dec" d="M630 86 L724 134 L630 182 L536 134 Z"/>
+<text class="s1" x="630" y="130" text-anchor="middle">Qualified?</text>
+<text class="s2" x="630" y="147" text-anchor="middle">7-stage path</text>
+
+<path class="ln" d="M724 134 H768" marker-end="url(#a1)"/>
+<text class="yn" x="742" y="126" text-anchor="middle">yes</text>
+
+<!-- D -->
+<rect class="stp" x="772" y="96" width="210" height="76" rx="5"/>
+<text class="s1" x="877" y="122" text-anchor="middle">Scoped</text>
+<text class="s2" x="877" y="141" text-anchor="middle">Service level, IdV volumes,</text>
+<text class="s2" x="877" y="156" text-anchor="middle">cost estimate, go-live date</text>
+
+<path class="ln" d="M982 134 H1024" marker-end="url(#a1)"/>
+
+<!-- E -->
+<rect class="stp" x="1028" y="96" width="200" height="76" rx="5"/>
+<text class="s1" x="1128" y="122" text-anchor="middle">Agreements</text>
+<text class="s2" x="1128" y="141" text-anchor="middle">IAA / IGCE routed</text>
+<text class="s2" x="1128" y="156" text-anchor="middle">and executed</text>
+
+<path class="ln" d="M1228 134 H1270" marker-end="url(#a1)"/>
+
+<!-- F terminal -->
+<rect class="term" x="1274" y="106" width="200" height="56" rx="28"/>
+<text class="s1" x="1374" y="132" text-anchor="middle">Closed Won</text>
+<text class="s2" x="1374" y="150" text-anchor="middle">Agreement in place</text>
+
+<!-- Closed Lost branch -->
+<path class="ln" d="M630 182 V224" marker-end="url(#a1)"/>
+<text class="yn" x="640" y="206" text-anchor="start">no</text>
+<rect class="termx" x="540" y="228" width="180" height="34" rx="17"/>
+<text class="s1" x="630" y="250" text-anchor="middle">Closed Lost</text>
+
+<!-- Impediments note -->
+<rect class="stpc" x="46" y="200" width="446" height="60" rx="5"/>
+<text class="s1" x="60" y="222">Impediments logged while the Opportunity is open</text>
+<text class="s2" x="60" y="240">Severity Blocker or Impediment. A Blocker rolls the Opportunity&#8217;s estimated</text>
+<text class="s2" x="60" y="254">annual revenue into the Impediment&#8217;s Blocked Revenue roll-up.</text>
+
+<!-- wrap connector F -> G -->
+<path class="ln" d="M1374 162 V300 H160 V346" marker-end="url(#a1)"/>
+
+<!-- ===== phase 2 ===== -->
+<rect class="band" x="30" y="320" width="1500" height="230" rx="5"/>
+<text class="ph"  x="46" y="344">PHASE 2 &#8212; AGREEMENT AND LAUNCH</text>
+<text class="phn" x="380" y="344">One Partner Account per agreement, one Application per integration under it.</text>
+
+<!-- G -->
+<rect class="stpc" x="46" y="366" width="228" height="76" rx="5"/>
+<text class="s1" x="160" y="392" text-anchor="middle">Partner Account</text>
+<text class="s2" x="160" y="411" text-anchor="middle">Created under the existing</text>
+<text class="s2" x="160" y="426" text-anchor="middle">federal Account (Master-Detail)</text>
+
+<path class="ln" d="M274 404 H316" marker-end="url(#a1)"/>
+
+<!-- H -->
+<rect class="stpc" x="320" y="366" width="212" height="76" rx="5"/>
+<text class="s1" x="426" y="392" text-anchor="middle">Application(s) created</text>
+<text class="s2" x="426" y="411" text-anchor="middle">One per integration.</text>
+<text class="s2" x="426" y="426" text-anchor="middle">Status: Pending Agreement</text>
+
+<path class="ln" d="M532 404 H574" marker-end="url(#a1)"/>
+
+<!-- I -->
+<rect class="stp" x="578" y="366" width="222" height="76" rx="5"/>
+<text class="s1" x="689" y="392" text-anchor="middle">Launch checklist worked</text>
+<text class="s2" x="689" y="411" text-anchor="middle">Items required depend on the</text>
+<text class="s2" x="689" y="426" text-anchor="middle">Launch Level (1 to 5)</text>
+
+<path class="ln" d="M800 404 H842" marker-end="url(#a1)"/>
+
+<!-- J decision -->
+<path class="dec" d="M942 356 L1040 404 L942 452 L844 404 Z"/>
+<text class="s1" x="942" y="399" text-anchor="middle">Ready and</text>
+<text class="s1" x="942" y="415" text-anchor="middle">requested?</text>
+
+<path class="ln" d="M1040 404 H1082" marker-end="url(#a1)"/>
+<text class="yn" x="1058" y="396" text-anchor="middle">yes</text>
+
+<!-- loop back -->
+<path class="ln" d="M942 452 V486 H689 V446" marker-end="url(#a1)"/>
+<text class="yn" x="820" y="480" text-anchor="middle">no &#8212; keep working the checklist</text>
+
+<!-- K -->
+<rect class="stp" x="1086" y="366" width="192" height="76" rx="5"/>
+<text class="s1" x="1182" y="392" text-anchor="middle">Move to Production</text>
+<text class="s2" x="1182" y="411" text-anchor="middle">Request raised; launch</text>
+<text class="s2" x="1182" y="426" text-anchor="middle">activities completed</text>
+
+<path class="ln" d="M1278 404 H1316" marker-end="url(#a1)"/>
+
+<!-- L terminal -->
+<rect class="term" x="1320" y="376" width="196" height="56" rx="28"/>
+<text class="s1" x="1418" y="400" text-anchor="middle">Active</text>
+<text class="s2" x="1418" y="418" text-anchor="middle">Live in production</text>
+
+<!-- later statuses -->
+<text class="s2" x="46" y="522">Application statuses after Active: Partner Pause &#183; Service Level Change Scheduled &#183; Volume Increase Scheduled &#183; Pending Partner Decommission &#183; Not Active &#183; Decommissioned</text>
+
+<!-- ===== throughout ===== -->
+<rect class="band" x="30" y="580" width="1500" height="180" rx="5"/>
+<text class="ph"  x="46" y="604">THROUGHOUT</text>
+<text class="phn" x="200" y="604">Records maintained alongside both phases, and what the app is read for.</text>
+
+<rect class="stpc" x="46" y="622" width="352" height="118" rx="5"/>
+<text class="s1" x="60" y="646">People</text>
+<text class="s2" x="60" y="666">Contacts (Federal or GSA record type), one</text>
+<text class="s2" x="60" y="682">record per person. Application Contacts join a</text>
+<text class="s2" x="60" y="698">person to an integration and carry the Partner</text>
+<text class="s2" x="60" y="714">Portal Admin flag. Opportunity Contact Roles</text>
+<text class="s2" x="60" y="730">record who is involved in a deal.</text>
+
+<rect class="stpc" x="418" y="622" width="352" height="118" rx="5"/>
+<text class="s1" x="432" y="646">Market segmentation</text>
+<text class="s2" x="432" y="666">Five segments: Benefits, Defense, Finance &amp;</text>
+<text class="s2" x="432" y="682">Regulation, Infrastructure, State &amp; Local.</text>
+<text class="s2" x="432" y="698">Set once on the Account, then stamped down</text>
+<text class="s2" x="432" y="714">the chain by Flow onto Partner Accounts,</text>
+<text class="s2" x="432" y="730">Opportunities and Applications.</text>
+
+<rect class="stp" x="790" y="622" width="352" height="118" rx="5"/>
+<text class="s1" x="804" y="646">Record visibility</text>
+<text class="s2" x="804" y="666">Object and field access comes from three</text>
+<text class="s2" x="804" y="682">permission set groups. Which records a person</text>
+<text class="s2" x="804" y="698">sees comes from two public groups and the</text>
+<text class="s2" x="804" y="714">sharing rules pointing at them. A user needs</text>
+<text class="s2" x="804" y="730">both to see anything.</text>
+
+<rect class="stp" x="1162" y="622" width="354" height="118" rx="5"/>
+<text class="s1" x="1176" y="646">Reporting</text>
+<text class="s2" x="1176" y="666">Eleven custom report types over the Login.gov</text>
+<text class="s2" x="1176" y="682">objects, in the Login.gov Reports folder, with</text>
+<text class="s2" x="1176" y="698">the Login.gov Dashboards folder alongside.</text>
+<text class="s2" x="1176" y="714">Pipeline, blocked revenue, upcoming launches</text>
+<text class="s2" x="1176" y="730">and launch risk are the standing questions.</text>
+
+</svg></body></html>

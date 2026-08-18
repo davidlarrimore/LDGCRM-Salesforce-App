@@ -1,0 +1,229 @@
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head><body>
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="900" viewBox="0 0 1560 900">
+<defs>
+<marker id="ar" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#5a6672"/></marker>
+<marker id="arf" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#c07000"/></marker>
+<marker id="aro" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#9aa3ac"/></marker>
+<marker id="dm" viewBox="0 0 12 10" refX="11.5" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 5 L6 0 L12 5 L6 10 z" fill="#1b4f8a"/></marker>
+</defs>
+<rect width="1560" height="900" fill="#ffffff"/>
+
+<!-- ============ relationships ============ -->
+
+<!-- Account -> Market Segment -->
+<path class="ln" d="M372 204 L258 392" marker-end="url(#ar)"/>
+<text class="lbl" x="296" y="308" text-anchor="middle">Lookup</text>
+
+<!-- Partner Account -> Market Segment (Flow) -->
+<path class="ln-f" d="M340 412 H266" marker-end="url(#arf)"/>
+<text class="lbl-f" x="303" y="404" text-anchor="middle">Flow</text>
+
+<!-- Application -> Market Segment (Flow), shared trunk -->
+<path class="ln-f" d="M336 698 H296 V442 H266" marker-end="url(#arf)"/>
+<text class="lbl-f" x="288" y="636" text-anchor="end">Flow</text>
+
+<!-- Opportunity -> Market Segment (Flow), joins the trunk -->
+<path class="ln-f" d="M716 476 V530 H296"/>
+<circle cx="296" cy="530" r="4" fill="#c07000"/>
+<text class="lbl-f" x="530" y="523" text-anchor="middle">Flow</text>
+
+<!-- Partner Account -> Account : Master-Detail -->
+<path class="ln-md" d="M420 388 V210" marker-end="url(#dm)"/>
+<text class="lbl" x="429" y="288" text-anchor="start">Master-Detail</text>
+<text class="lbl" x="429" y="302" text-anchor="start">(Account RT = Federal)</text>
+
+<!-- Application -> Partner Account -->
+<path class="ln" d="M420 656 V478" marker-end="url(#ar)"/>
+<text class="lbl" x="429" y="552" text-anchor="start">Lookup</text>
+<text class="lbl" x="429" y="566" text-anchor="start">(required)</text>
+
+<!-- Application -> Opportunity -->
+<path class="ln" d="M520 656 L698 482" marker-end="url(#ar)"/>
+<text class="lbl" x="600" y="596" text-anchor="middle">Lookup (optional)</text>
+<text class="lbl" x="600" y="610" text-anchor="middle">Opp RT = Login.gov</text>
+
+<!-- Application self lookup -->
+<path class="ln" d="M390 740 V766 H500 V746" marker-end="url(#ar)"/>
+<text class="lbl" x="445" y="782" text-anchor="middle">Broker App Parent (self-lookup, second pass)</text>
+
+<!-- Opportunity -> Account -->
+<path class="ln" d="M698 384 L518 210" marker-end="url(#ar)"/>
+<text class="lbl" x="592" y="276" text-anchor="middle">AccountId</text>
+<text class="lbl" x="592" y="290" text-anchor="middle">(standard)</text>
+
+<!-- Opportunity -> Partner Account -->
+<path class="ln" d="M670 430 H566" marker-end="url(#ar)"/>
+<text class="lbl" x="618" y="422" text-anchor="middle">Lookup</text>
+
+<!-- Activity -> Account (WhatId) -->
+<path class="ln-o" d="M670 162 H566" marker-end="url(#aro)"/>
+<text class="lbl" x="618" y="154" text-anchor="middle">WhatId</text>
+
+<!-- Activity -> Opportunity (WhatId) -->
+<path class="ln-o" d="M780 204 V384" marker-end="url(#aro)"/>
+<text class="lbl" x="789" y="300" text-anchor="start">WhatId</text>
+<text class="lbl" x="789" y="314" text-anchor="start">(polymorphic)</text>
+
+<!-- OpportunityContactRole -> Opportunity -->
+<path class="ln" d="M1030 204 L862 384" marker-end="url(#ar)"/>
+<text class="lbl" x="920" y="276" text-anchor="middle">standard</text>
+<text class="lbl" x="920" y="290" text-anchor="middle">junction</text>
+
+<!-- OpportunityContactRole -> Contact -->
+<path class="ln" d="M1170 204 L1320 384" marker-end="url(#ar)"/>
+<text class="lbl" x="1276" y="276" text-anchor="middle">standard</text>
+<text class="lbl" x="1276" y="290" text-anchor="middle">junction</text>
+
+<!-- Opportunity Impediment -> Opportunity : Master-Detail -->
+<path class="ln-md" d="M990 430 H896" marker-end="url(#dm)"/>
+<text class="lbl" x="943" y="422" text-anchor="middle">M-D</text>
+
+<!-- Opportunity Impediment -> Impediment : Master-Detail -->
+<path class="ln-md" d="M1040 656 V478" marker-end="url(#dm)"/>
+<text class="lbl" x="1049" y="560" text-anchor="start">Master-Detail</text>
+
+<!-- Application Contact -> Application -->
+<path class="ln" d="M670 698 H566" marker-end="url(#ar)"/>
+<text class="lbl" x="618" y="690" text-anchor="middle">Lookup</text>
+
+<!-- Application Contact -> Contact -->
+<path class="ln" d="M890 672 L1276 462" marker-end="url(#ar)"/>
+<text class="lbl" x="1010" y="600" text-anchor="middle">Lookup (required)</text>
+
+<!-- Contact -> Account -->
+<path class="ln" d="M1330 388 V76 H460 V118" marker-end="url(#ar)"/>
+<text class="lbl" x="900" y="68" text-anchor="middle">AccountId (standard)</text>
+
+<!-- Contact -> Partner Account -->
+<path class="ln" d="M1300 388 V250 H480 V386" marker-end="url(#ar)"/>
+<text class="lbl" x="900" y="242" text-anchor="middle">Lookup</text>
+
+<!-- ============ entities ============ -->
+
+<!-- Market Segment -->
+<g>
+<rect class="bx-c" x="40" y="388" width="220" height="84" rx="5"/>
+<path class="hd-c" d="M45 388 H255 A5 5 0 0 1 260 393 V414 H40 V393 A5 5 0 0 1 45 388 Z"/>
+<text class="t1" x="51" y="406">Market Segment</text>
+<text class="t2" x="51" y="431">LDGCRM_Market_Segment__c</text>
+<text class="t3" x="51" y="447">Five fixed segments</text>
+<text class="t3" x="51" y="461">External ID holds the NAME</text>
+</g>
+
+<!-- Account -->
+<g>
+<rect class="bx" x="340" y="120" width="220" height="84" rx="5"/>
+<path class="hd" d="M345 120 H555 A5 5 0 0 1 560 125 V146 H340 V125 A5 5 0 0 1 345 120 Z"/>
+<text class="t1" x="351" y="138">Account</text>
+<text class="t2" x="351" y="163">Account</text>
+<text class="t3" x="351" y="179">Record Type: Federal</text>
+<text class="t3" x="351" y="193">Reconciled onto, never created</text>
+</g>
+
+<!-- Partner Account -->
+<g>
+<rect class="bx-c" x="340" y="388" width="220" height="84" rx="5"/>
+<path class="hd-c" d="M345 388 H555 A5 5 0 0 1 560 393 V414 H340 V393 A5 5 0 0 1 345 388 Z"/>
+<text class="t1" x="351" y="406">Partner Account</text>
+<text class="t2" x="351" y="431">LDGCRM_Partner_Account__c</text>
+<text class="t3" x="351" y="447">The partner agreement</text>
+<text class="t3" x="351" y="461">Sharing controlled by Account</text>
+</g>
+
+<!-- Application -->
+<g>
+<rect class="bx-c" x="340" y="656" width="220" height="84" rx="5"/>
+<path class="hd-c" d="M345 656 H555 A5 5 0 0 1 560 661 V682 H340 V661 A5 5 0 0 1 345 656 Z"/>
+<text class="t1" x="351" y="674">Application</text>
+<text class="t2" x="351" y="699">LDGCRM_application__c</text>
+<text class="t3" x="351" y="715">RT: LDGCRM_Application (only)</text>
+<text class="t3" x="351" y="729">Carries the launch checklist</text>
+</g>
+
+<!-- Activity -->
+<g>
+<rect class="bx-o" x="670" y="120" width="220" height="84" rx="5"/>
+<path class="hd-o" d="M675 120 H885 A5 5 0 0 1 890 125 V146 H670 V125 A5 5 0 0 1 675 120 Z"/>
+<text class="t1" x="681" y="138">Activity</text>
+<text class="t2" x="681" y="163">Task / Event</text>
+<text class="t3" x="681" y="179">LDGCRM_Meeting_Type__c</text>
+<text class="t3" x="681" y="193">Not migrated in the initial load</text>
+</g>
+
+<!-- Opportunity -->
+<g>
+<rect class="bx" x="670" y="388" width="220" height="84" rx="5"/>
+<path class="hd" d="M675 388 H885 A5 5 0 0 1 890 393 V414 H670 V393 A5 5 0 0 1 675 388 Z"/>
+<text class="t1" x="681" y="406">Opportunity</text>
+<text class="t2" x="681" y="431">Opportunity</text>
+<text class="t3" x="681" y="447">Record Type: Login.gov</text>
+<text class="t3" x="681" y="461">Sales process: 7 stages</text>
+</g>
+
+<!-- Application Contact -->
+<g>
+<rect class="bx-j" x="670" y="656" width="220" height="84" rx="5"/>
+<path class="hd-j" d="M675 656 H885 A5 5 0 0 1 890 661 V682 H670 V661 A5 5 0 0 1 675 656 Z"/>
+<text class="t1" x="681" y="674">Application Contact</text>
+<text class="t2" x="681" y="699" font-size="10.5">LDGCRM_Application_Contact__c</text>
+<text class="t3" x="681" y="715">Two Lookups, not Master-Detail</text>
+<text class="t3" x="681" y="729">Composite External ID</text>
+</g>
+
+<!-- OpportunityContactRole -->
+<g>
+<rect class="bx-j" x="990" y="120" width="220" height="84" rx="5"/>
+<path class="hd-j" d="M995 120 H1205 A5 5 0 0 1 1210 125 V146 H990 V125 A5 5 0 0 1 995 120 Z"/>
+<text class="t1" x="1001" y="138">Opportunity Contact Role</text>
+<text class="t2" x="1001" y="163" font-size="10.5">OpportunityContactRole</text>
+<text class="t3" x="1001" y="179">No External ID is possible here</text>
+<text class="t3" x="1001" y="193">Loaded by insert + read-then-diff</text>
+</g>
+
+<!-- Opportunity Impediment -->
+<g>
+<rect class="bx-j" x="990" y="388" width="220" height="84" rx="5"/>
+<path class="hd-j" d="M995 388 H1205 A5 5 0 0 1 1210 393 V414 H990 V393 A5 5 0 0 1 995 388 Z"/>
+<text class="t1" x="1001" y="406">Opportunity Impediment</text>
+<text class="t2" x="1001" y="431" font-size="10">LDGCRM_Opportunity_Impediment__c</text>
+<text class="t3" x="1001" y="447">Two Master-Details, so both</text>
+<text class="t3" x="1001" y="461">parents must exist first</text>
+</g>
+
+<!-- Impediment -->
+<g>
+<rect class="bx-c" x="990" y="656" width="220" height="84" rx="5"/>
+<path class="hd-c" d="M995 656 H1205 A5 5 0 0 1 1210 661 V682 H990 V661 A5 5 0 0 1 995 656 Z"/>
+<text class="t1" x="1001" y="674">Impediment</text>
+<text class="t2" x="1001" y="699">LDGCRM_Impediment__c</text>
+<text class="t3" x="1001" y="715">Blocked Revenue is a roll-up</text>
+<text class="t3" x="1001" y="729">summary, not a writable field</text>
+</g>
+
+<!-- Contact -->
+<g>
+<rect class="bx" x="1280" y="388" width="220" height="84" rx="5"/>
+<path class="hd" d="M1285 388 H1495 A5 5 0 0 1 1500 393 V414 H1280 V393 A5 5 0 0 1 1285 388 Z"/>
+<text class="t1" x="1291" y="406">Contact</text>
+<text class="t2" x="1291" y="431">Contact</text>
+<text class="t3" x="1291" y="447">Record Types: Federal, GSA</text>
+<text class="t3" x="1291" y="461">One record per email address</text>
+</g>
+
+<!-- ============ legend ============ -->
+<rect class="legbox" x="40" y="800" width="1480" height="82" rx="4"/>
+<rect class="bx-c" x="58" y="815" width="26" height="15" rx="3"/>
+<text class="cap" x="92" y="827">Custom object (LDGCRM_ prefix)</text>
+<rect class="bx" x="340" y="815" width="26" height="15" rx="3"/>
+<text class="cap" x="374" y="827">Standard Salesforce object</text>
+<rect class="bx-j" x="600" y="815" width="26" height="15" rx="3"/>
+<text class="cap" x="634" y="827">Junction object</text>
+<rect class="bx-o" x="790" y="815" width="26" height="15" rx="3"/>
+<text class="cap" x="824" y="827">Present in the object model, not migrated in the initial load</text>
+<path class="ln-md" d="M58 858 H92" marker-end="url(#dm)"/>
+<text class="cap" x="106" y="862">Master-Detail: child is deleted with its parent and inherits its sharing</text>
+<path class="ln" d="M680 858 H714" marker-end="url(#ar)"/>
+<text class="cap" x="728" y="862">Lookup / standard relationship</text>
+<path class="ln-f" d="M1010 858 H1044" marker-end="url(#arf)"/>
+<text class="cap" x="1058" y="862">Lookup written by Flow. The migration must never write it</text>
+</svg></body></html>

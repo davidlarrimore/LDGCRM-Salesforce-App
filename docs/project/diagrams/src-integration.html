@@ -1,0 +1,154 @@
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css">
+<style>
+.src { fill:#f4f6f8; stroke:#3f4a54; stroke-width:1.8; }
+.mid { fill:#e9f1fb; stroke:#1b4f8a; stroke-width:2; }
+.tgt { fill:#eef7f0; stroke:#2f6b45; stroke-width:2; }
+.note{ fill:#fdf6e9; stroke:#a8700f; stroke-width:1.6; }
+.stp { fill:#ffffff; stroke:#7c8994; stroke-width:1.4; }
+.stpb{ fill:#e9f1fb; stroke:#1b4f8a; stroke-width:1.6; }
+.s1 { font-size:13.5px; font-weight:bold; fill:#1c2530; }
+.s2 { font-size:11.5px; fill:#3f4a54; }
+.s3 { font-size:11px; fill:#5a6672; }
+.mn { font-size:11px; fill:#1b4f8a; font-family:"Consolas","Courier New",monospace; }
+.mk { font-size:10.5px; fill:#5a6672; font-family:"Consolas","Courier New",monospace; }
+.ph { font-size:13px; font-weight:bold; fill:#1b4f8a; letter-spacing:0.7px; }
+.st { font-size:11.5px; fill:#1c2530; }
+.sn { font-size:11px; font-weight:bold; fill:#1b4f8a; }
+.pl { font-size:11.5px; font-weight:bold; fill:#2b3540; paint-order:stroke; stroke:#fff; stroke-width:3.5px; }
+</style></head><body>
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="830" viewBox="0 0 1560 830">
+<defs>
+<marker id="a1" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#1b4f8a"/></marker>
+<marker id="a2" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#5a6672"/></marker>
+</defs>
+<rect width="1560" height="830" fill="#ffffff"/>
+
+<!-- ================= BAND 1 ================= -->
+<rect class="band" x="30" y="30" width="1500" height="292" rx="5"/>
+<text class="ph" x="46" y="54">THE ONE-TIME DATA MIGRATION</text>
+<text class="s3" x="352" y="54">The only interface this application has, and it runs once per environment rather than on a schedule.</text>
+
+<!-- source -->
+<rect class="src" x="46" y="72" width="360" height="220" rx="6"/>
+<text class="s1" x="62" y="96">SOURCE &#8212; Airtable</text>
+<text class="s2" x="62" y="118">The partnership team&#8217;s working base, which</text>
+<text class="s2" x="62" y="134">this application replaces.</text>
+<text class="mk" x="62" y="158">https://api.airtable.com/v0/{baseId}/{tableId}</text>
+<text class="s2" x="62" y="180">Authentication:  Personal Access Token, sent as</text>
+<text class="s2" x="62" y="196">a Bearer header. Scopes data.records:read and</text>
+<text class="s2" x="62" y="212">schema.bases:read. Scoped to this base only.</text>
+<text class="s2" x="62" y="234">Read only. Nothing is ever written to Airtable.</text>
+<text class="s2" x="62" y="256">Paged 100 records at a time, paced under the</text>
+<text class="s2" x="62" y="272">5 requests per second limit. 22 tables pulled;</text>
+<text class="s2" x="62" y="288">10 are read by the transforms.</text>
+
+<path class="ln-h" d="M406 182 H492" marker-end="url(#a1)"/>
+<text class="pl" x="449" y="172" text-anchor="middle">HTTPS</text>
+<text class="pl" x="449" y="200" text-anchor="middle">GET</text>
+
+<!-- middle -->
+<rect class="mid" x="496" y="72" width="560" height="220" rx="6"/>
+<text class="s1" x="512" y="96">PIPELINE &#8212; the operations bundle</text>
+<text class="s2" x="512" y="118">Windows PowerShell 5.1 on a GSA workstation. No server, no service account, no scheduler.</text>
+<text class="s2" x="512" y="134">Run by GSA IT Operations, signed in as themselves.</text>
+
+<rect class="stp" x="512" y="148" width="528" height="40" rx="4"/>
+<text class="mn" x="524" y="166">1.  Get-AirtableExport.ps1</text>
+<text class="s2" x="524" y="182">Pulls each table to data/airtable-exports/&lt;Table&gt;.json, overwriting the last pull.</text>
+
+<rect class="stp" x="512" y="192" width="528" height="40" rx="4"/>
+<text class="mn" x="524" y="210">2.  Build-*.ps1  (one transform per object)</text>
+<text class="s2" x="524" y="226">Reads the JSON, queries the org read-only for lookups, writes UTF-8 no-BOM CSV.</text>
+
+<rect class="stp" x="512" y="236" width="528" height="40" rx="4"/>
+<text class="mn" x="524" y="254">3.  Invoke-SalesforceLoad.ps1  &#8594;  Salesforce CLI (sf)</text>
+<text class="s2" x="524" y="270">The only step that writes. Behind a typed confirmation, plus a second one for production.</text>
+
+<path class="ln-h" d="M1056 182 H1142" marker-end="url(#a1)"/>
+<text class="pl" x="1099" y="172" text-anchor="middle">Bulk API 2.0</text>
+<text class="pl" x="1099" y="200" text-anchor="middle">and REST</text>
+
+<!-- target -->
+<rect class="tgt" x="1146" y="72" width="368" height="220" rx="6"/>
+<text class="s1" x="1162" y="96">TARGET &#8212; Salesforce</text>
+<text class="s2" x="1162" y="118">The GSA PEO org, authenticated over OAuth as a</text>
+<text class="s2" x="1162" y="134">named administrator. No integration user.</text>
+<text class="s2" x="1162" y="158">Bulk API 2.0 UPSERT keyed on</text>
+<text class="mk" x="1162" y="176">LDGCRM_External_ID__c</text>
+<text class="s2" x="1162" y="194">so re-running a load updates rather than</text>
+<text class="s2" x="1162" y="210">duplicates. Parent lookups resolve by that same</text>
+<text class="s2" x="1162" y="226">external ID rather than by Salesforce Id.</text>
+<text class="s2" x="1162" y="250">Two exceptions: Opportunity Contact Role is</text>
+<text class="s2" x="1162" y="266">insert plus read-then-diff, and Notes go over</text>
+<text class="s2" x="1162" y="282">REST because their content is binary.</text>
+
+<!-- ================= BAND 2 ================= -->
+<rect class="band" x="30" y="342" width="1500" height="290" rx="5"/>
+<text class="ph" x="46" y="366">ONE ORCHESTRATED RUN</text>
+<text class="mn" x="272" y="366">Invoke-FullMigrationLoad.ps1</text>
+<text class="s3" x="560" y="366">Stops at the first real failure, because everything downstream would silently withhold rows instead.</text>
+
+<rect class="stpb" x="46" y="384" width="250" height="58" rx="5"/>
+<text class="s1" x="60" y="406">Pre-flight</text>
+<text class="s2" x="60" y="424">Eight checks. Blocks the run if</text>
+<text class="s2" x="60" y="437">any Flow is inactive.</text>
+<path class="ln" d="M296 413 H326" marker-end="url(#a2)"/>
+
+<rect class="stpb" x="330" y="384" width="250" height="58" rx="5"/>
+<text class="s1" x="344" y="406">Restore point</text>
+<text class="s2" x="344" y="424">Exports the external IDs already</text>
+<text class="s2" x="344" y="437">present, plus an Account pre-image.</text>
+<path class="ln" d="M580 413 H610" marker-end="url(#a2)"/>
+
+<rect class="stpb" x="614" y="384" width="250" height="58" rx="5"/>
+<text class="s1" x="628" y="406">Thirteen load steps</text>
+<text class="s2" x="628" y="424">In dependency order. Listed</text>
+<text class="s2" x="628" y="437">below.</text>
+<path class="ln" d="M864 413 H894" marker-end="url(#a2)"/>
+
+<rect class="stpb" x="898" y="384" width="250" height="58" rx="5"/>
+<text class="s1" x="912" y="406">Post-load validation</text>
+<text class="s2" x="912" y="424">Counts, owners, derived fields,</text>
+<text class="s2" x="912" y="437">and the trigger switch restored.</text>
+<path class="ln" d="M1148 413 H1178" marker-end="url(#a2)"/>
+
+<rect class="stpb" x="1182" y="384" width="286" height="58" rx="5"/>
+<text class="s1" x="1196" y="406">Run report</text>
+<text class="s2" x="1196" y="424">One directory per run, holding one</text>
+<text class="s2" x="1196" y="437">SUMMARY.txt. Written on every path.</text>
+
+<text class="s3" x="46" y="472">The thirteen steps, parents before children. A junction cannot be loaded until both of its sides exist.</text>
+
+<rect class="stp" x="46" y="484" width="164" height="34" rx="4"/><text class="sn" x="58" y="506">1</text><text class="st" x="76" y="506">Market Segment</text>
+<rect class="stp" x="218" y="484" width="164" height="34" rx="4"/><text class="sn" x="230" y="506">2</text><text class="st" x="248" y="506">Impediment</text>
+<rect class="stp" x="390" y="484" width="164" height="34" rx="4"/><text class="sn" x="402" y="506">3</text><text class="st" x="420" y="506">Account (create)</text>
+<rect class="stp" x="562" y="484" width="164" height="34" rx="4"/><text class="sn" x="574" y="506">4</text><text class="st" x="592" y="506">Account (reconcile)</text>
+<rect class="stp" x="734" y="484" width="164" height="34" rx="4"/><text class="sn" x="746" y="506">5</text><text class="st" x="764" y="506">Partner Account</text>
+<rect class="stp" x="906" y="484" width="164" height="34" rx="4"/><text class="sn" x="918" y="506">6</text><text class="st" x="936" y="506">Contact</text>
+<rect class="stp" x="1078" y="484" width="164" height="34" rx="4"/><text class="sn" x="1090" y="506">7</text><text class="st" x="1108" y="506">Opportunity</text>
+
+<rect class="stp" x="46" y="526" width="164" height="34" rx="4"/><text class="sn" x="58" y="548">8</text><text class="st" x="76" y="548">Application</text>
+<rect class="stp" x="218" y="526" width="164" height="34" rx="4"/><text class="sn" x="230" y="548">9</text><text class="st" x="248" y="548">Broker parent pass</text>
+<rect class="stp" x="390" y="526" width="164" height="34" rx="4"/><text class="sn" x="402" y="548">10</text><text class="st" x="426" y="548">Opp. Impediment</text>
+<rect class="stp" x="562" y="526" width="164" height="34" rx="4"/><text class="sn" x="574" y="548">11</text><text class="st" x="598" y="548">Application Contact</text>
+<rect class="stp" x="734" y="526" width="164" height="34" rx="4"/><text class="sn" x="746" y="548">12</text><text class="st" x="770" y="548">Opp. Contact Role</text>
+<rect class="stp" x="906" y="526" width="164" height="34" rx="4"/><text class="sn" x="918" y="548">13</text><text class="st" x="942" y="548">Notes</text>
+
+<rect class="note" x="1090" y="526" width="378" height="34" rx="4"/>
+<text class="s2" x="1102" y="548">Meetings are out of scope for the initial load.</text>
+
+<text class="s3" x="46" y="586">Latest full rehearsal, QA sandbox, 16 August 2026:  9,221 records submitted, 9,221 loaded, 0 failed, 72 withheld by the transforms, 20 minutes end to end.</text>
+<text class="s3" x="46" y="606">A withheld row is not a load error. It was never submitted, so no Salesforce result mentions it &#8212; which is why the run report counts loaded and withheld separately.</text>
+<text class="s3" x="46" y="624">The run is reversible for one load: Invoke-MigrationRollback.ps1 deletes only what that run created and restores the Account pre-image.</text>
+
+<!-- ================= BAND 3 ================= -->
+<rect class="note" x="30" y="652" width="1500" height="158" rx="5"/>
+<text class="s1" x="50" y="678">After go-live there is no interface at all.</text>
+<text class="s2" x="50" y="700">This application provides no source information to any other system, consumes no input from any other system, and produces no output to any other system. There is no</text>
+<text class="s2" x="50" y="718">MuleSoft flow, no middleware, no outbound message, no scheduled job, no Apex callout and no external endpoint. Nothing is exposed to the public internet.</text>
+<text class="s2" x="50" y="742">The records are read and written through the Salesforce Lightning UI by named GSA users, and through the Salesforce API by administrators, and by nothing else.</text>
+<text class="s2" x="50" y="766">Two pieces of automation belonging to OTHER applications in the same org do fire on Contact insert, and are documented in section 5: an unmanaged trigger from the FCIC</text>
+<text class="s2" x="50" y="784">application, which the load switches off through the supported custom-setting switch and switches back on afterwards, and a managed Genesys PureCloud webhook, whose</text>
+<text class="s2" x="50" y="802">body is hidden and which has no kill switch. Neither belongs to this application, and neither is invoked by it.</text>
+
+</svg></body></html>

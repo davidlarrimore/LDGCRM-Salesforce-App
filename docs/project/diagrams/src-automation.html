@@ -1,0 +1,158 @@
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css">
+<style>
+.obj  { fill:#e9f1fb; stroke:#1b4f8a; stroke-width:1.8; }
+.objs { fill:#f4f6f8; stroke:#3f4a54; stroke-width:1.6; }
+.note { fill:#fdf6e9; stroke:#a8700f; stroke-width:1.6; }
+.warn { fill:#fbeeee; stroke:#8a2f2f; stroke-width:1.8; }
+.hdrow{ fill:#eef1f4; stroke:#c8ced5; stroke-width:1.1; }
+.row  { fill:#ffffff; stroke:#dde3e9; stroke-width:1.1; }
+.s1 { font-size:13.5px; font-weight:bold; fill:#1c2530; }
+.s2 { font-size:11.5px; fill:#3f4a54; }
+.mn { font-size:11px; fill:#1b4f8a; font-family:"Consolas","Courier New",monospace; }
+.mnk{ font-size:10.5px; fill:#5a6672; font-family:"Consolas","Courier New",monospace; }
+.ph { font-size:12.5px; font-weight:bold; fill:#1b4f8a; letter-spacing:0.7px; }
+.phn{ font-size:12px; fill:#5a6672; }
+.ch { font-size:11px; font-weight:bold; fill:#5a6672; letter-spacing:0.5px; }
+.wt { font-size:12px; fill:#8a2f2f; }
+.wb { font-size:13px; font-weight:bold; fill:#8a2f2f; }
+.eff{ font-size:11.5px; fill:#2b3540; paint-order:stroke; stroke:#fff; stroke-width:3.5px; }
+</style></head><body>
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="975" viewBox="0 0 1560 975">
+<defs>
+<marker id="a1" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#c07000"/></marker>
+<marker id="a2" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#3f4a54"/></marker>
+</defs>
+<rect width="1560" height="975" fill="#ffffff"/>
+
+<!-- ================= PANEL A ================= -->
+<rect class="band" x="30" y="34" width="1500" height="418" rx="5"/>
+<text class="ph"  x="46" y="60">GROUP A &#8212; MARKET SEGMENT IS DERIVED, NEVER TYPED IN</text>
+<text class="phn" x="560" y="60">Four Flows. The migration writes Market Segment on Account only; everything below it is stamped automatically.</text>
+
+<!-- Account -->
+<rect class="objs" x="56" y="96" width="230" height="76" rx="5"/>
+<text class="s1" x="171" y="122" text-anchor="middle">Account</text>
+<text class="s2" x="171" y="140" text-anchor="middle">Market Segment set here,</text>
+<text class="s2" x="171" y="155" text-anchor="middle">by the migration or by hand</text>
+
+<!-- arrow 1 -->
+<path class="ln-f" d="M286 134 H548" marker-end="url(#a1)"/>
+<text class="eff" x="417" y="122" text-anchor="middle">on create, from the parent Account</text>
+<text class="mn"  x="417" y="152" text-anchor="middle">LDGCRM_Partner_Account_Before_Save_</text>
+<text class="mn"  x="417" y="166" text-anchor="middle">Create_Update_Market_Segment</text>
+
+<!-- Partner Account -->
+<rect class="obj" x="552" y="96" width="230" height="76" rx="5"/>
+<text class="s1" x="667" y="126" text-anchor="middle">Partner Account</text>
+<text class="s2" x="667" y="145" text-anchor="middle">Market Segment written</text>
+<text class="s2" x="667" y="160" text-anchor="middle">by Flow, before save</text>
+
+<!-- arrow 2 -->
+<path class="ln-f" d="M782 134 H1044" marker-end="url(#a1)"/>
+<text class="eff" x="913" y="122" text-anchor="middle">on create and update, via Partner Account</text>
+<text class="mn"  x="913" y="152" text-anchor="middle">LDGCRM_Application_Before_Save_</text>
+<text class="mn"  x="913" y="166" text-anchor="middle">Assign_Market_Segment</text>
+
+<!-- Application -->
+<rect class="obj" x="1048" y="96" width="230" height="76" rx="5"/>
+<text class="s1" x="1163" y="126" text-anchor="middle">Application</text>
+<text class="s2" x="1163" y="145" text-anchor="middle">Market Segment written</text>
+<text class="s2" x="1163" y="160" text-anchor="middle">by Flow, before save</text>
+
+<!-- arrow 3 : Account -> Opportunity -->
+<path class="ln-f" d="M171 172 V300 H548" marker-end="url(#a1)"/>
+<text class="eff" x="380" y="288" text-anchor="middle">on create and update, sets Account and Market Segment</text>
+<text class="mn"  x="380" y="318" text-anchor="middle">LDGCRM_Opportunity_Before_Save_</text>
+<text class="mn"  x="380" y="332" text-anchor="middle">Assign_Account_and_Market_Segment</text>
+
+<!-- Opportunity -->
+<rect class="obj" x="552" y="262" width="230" height="76" rx="5"/>
+<text class="s1" x="667" y="292" text-anchor="middle">Opportunity</text>
+<text class="s2" x="667" y="311" text-anchor="middle">Market Segment written</text>
+<text class="s2" x="667" y="326" text-anchor="middle">by Flow, before save</text>
+
+<!-- cascade note -->
+<rect class="note" x="830" y="252" width="670" height="96" rx="5"/>
+<text class="s1" x="846" y="276">Re-parenting is handled too</text>
+<text class="mn" x="846" y="296">LDGCRM_Partner_Account_After_Save_Update_Re_Parent_Cascade</text>
+<text class="s2" x="846" y="316">After save, on update. If a Partner Account is moved to a different Account, the new Account and</text>
+<text class="s2" x="846" y="332">Market Segment are cascaded down to that agreement&#8217;s Applications, so the chain stays correct.</text>
+
+<!-- panel A footnote -->
+<text class="s2" x="56" y="374">All three assignment Flows are BEFORE-SAVE, so the value is present in the same transaction that creates the record &#8212; no second update, no extra DML.</text>
+<text class="s2" x="56" y="392">Because they fire on create (and on parent change), activating them later does NOT backfill records that already exist. That is why activation is a pre-flight gate, not a follow-up task.</text>
+<text class="s2" x="56" y="410">Consequence for the load: the three migration transforms deliberately omit LDGCRM_Market_Segment__c from their CSVs. Writing it would fight the Flow rather than help it.</text>
+<text class="s2" x="56" y="428">The five fixed segments are Benefits, Defense, Finance &amp; Regulation, Infrastructure and State &amp; Local.</text>
+
+<!-- ================= PANEL B ================= -->
+<rect class="band" x="30" y="472" width="1500" height="388" rx="5"/>
+<text class="ph"  x="46" y="498">GROUP B &#8212; THE OTHER FIVE FLOWS</text>
+<text class="phn" x="360" y="498">Two guard the junction objects against duplicates; three maintain derived numbers and stamps.</text>
+
+<rect class="hdrow" x="46" y="512" width="1468" height="30"/>
+<text class="ch" x="60"   y="532">OBJECT</text>
+<text class="ch" x="276"  y="532">FLOW</text>
+<text class="ch" x="852"  y="532">TRIGGER</text>
+<text class="ch" x="1048" y="532">WHAT IT DOES</text>
+
+<!-- row 1 -->
+<rect class="row" x="46" y="542" width="1468" height="58"/>
+<text class="s2" x="60" y="566">Application Contact</text>
+<text class="s2" x="60" y="583">(junction)</text>
+<text class="mn" x="276" y="566">LDGCRM_ApplicationContact_BeforeSave_</text>
+<text class="mn" x="276" y="583">NewRecordDuplicateCheck</text>
+<text class="mnk" x="852" y="566">Before save</text>
+<text class="mnk" x="852" y="583">Create only</text>
+<text class="s2" x="1048" y="566">Blocks a second row joining the same Contact to the</text>
+<text class="s2" x="1048" y="583">same Application, with an error on the save.</text>
+
+<!-- row 2 -->
+<rect class="row" x="46" y="600" width="1468" height="58"/>
+<text class="s2" x="60" y="624">Opportunity Impediment</text>
+<text class="s2" x="60" y="641">(junction)</text>
+<text class="mn" x="276" y="624">LDGCRM_Opportunity_Impediment_Before_Save_</text>
+<text class="mn" x="276" y="641">New_Record_Duplicate_Check</text>
+<text class="mnk" x="852" y="624">Before save</text>
+<text class="mnk" x="852" y="641">Create only</text>
+<text class="s2" x="1048" y="624">Blocks a second row joining the same Impediment to</text>
+<text class="s2" x="1048" y="641">the same Opportunity.</text>
+
+<!-- row 3 -->
+<rect class="row" x="46" y="658" width="1468" height="58"/>
+<text class="s2" x="60" y="682">Opportunity Impediment</text>
+<text class="mn" x="276" y="682">LGDCRM_Opportunity_Impediment_Before_Save_</text>
+<text class="mn" x="276" y="699">Update_Blocked_Revenue</text>
+<text class="mnk" x="852" y="682">After save</text>
+<text class="mnk" x="852" y="699">Create and update</text>
+<text class="s2" x="1048" y="682">Sets Blocked Revenue from the Opportunity&#8217;s estimated</text>
+<text class="s2" x="1048" y="699">annual revenue when Severity is Blocker, else zero.</text>
+
+<!-- row 4 -->
+<rect class="row" x="46" y="716" width="1468" height="58"/>
+<text class="s2" x="60" y="740">Opportunity</text>
+<text class="mn" x="276" y="740">LGDCRM_Opportunity_After_Save_</text>
+<text class="mn" x="276" y="757">Update_Opportunity_Impediments</text>
+<text class="mnk" x="852" y="740">After save</text>
+<text class="mnk" x="852" y="757">Update</text>
+<text class="s2" x="1048" y="740">Re-drives the Blocked Revenue on that Opportunity&#8217;s</text>
+<text class="s2" x="1048" y="757">Impediment rows when its own revenue figures change.</text>
+
+<!-- row 5 -->
+<rect class="row" x="46" y="774" width="1468" height="58"/>
+<text class="s2" x="60" y="798">Opportunity</text>
+<text class="mn" x="276" y="798">LGDCRM_Opportunity_Before_Save_</text>
+<text class="mn" x="276" y="815">Update_Current_Status_Summary_DateTime</text>
+<text class="mnk" x="852" y="798">Before save</text>
+<text class="mnk" x="852" y="815">Update</text>
+<text class="s2" x="1048" y="798">Stamps Status Summary Last Modified Datetime with NOW()</text>
+<text class="s2" x="1048" y="815">whenever Current Status Summary is edited.</text>
+
+<text class="s2" x="46" y="848">Two things are worth reading twice: three Flows carry a transposed LGDCRM_ prefix, and one of those says Before_Save while its trigger is after save. Both are naming only, not behaviour.</text>
+
+<!-- ================= WARNING ================= -->
+<rect class="warn" x="30" y="880" width="1500" height="82" rx="5"/>
+<text class="wb" x="50" y="906">An inactive Flow does not fail anything. It quietly changes what the data says.</text>
+<text class="wt" x="50" y="928">A QA load ran with all nine Flows switched off: 8,740 records, zero failures, every object count matching the reference org &#8212; and Market Segment blank on 100% of Partner</text>
+<text class="wt" x="50" y="947">Accounts, Opportunities and Applications. Flow activation changes field contents, not row counts, so no count can detect it. Pre-flight now asserts all nine and blocks the run.</text>
+
+</svg></body></html>
