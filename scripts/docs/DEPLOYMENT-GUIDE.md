@@ -13,19 +13,19 @@
 > Ask whoever handed you this bundle for them.
 
 Use it for any org the app has not stood up in before — the Full sandbox rehearsal and production
-follow the same sequence. Production differs in three specific places, each marked **🔴 Production**.
+follow the same sequence. Everywhere production differs is marked **🔴 Production**.
 
 ---
 
 ## Metadata, then people, then data
 
-The order is not a preference. Each phase is a precondition for the next, and two of the three fail
-*quietly*:
+The order is not a preference, and two of the three ways of getting it wrong fail *quietly*:
 
 - **Load before the metadata lands** and the fields do not exist. This one is loud — the pipeline
   names the missing component and stops.
 - **Load before the Flows are switched on** and every count is correct while Market Segment is blank
-  across the whole migration. Nothing turns red. This has already happened once, in QA.
+  across the whole migration. Nothing turns red. This has already happened once, in QA, which is why
+  the load now activates them itself and refuses to run while any is off.
 - **Load before the users exist** and their records land on the fallback owner, indistinguishably
   from the people who are *meant* to land there. Provisioning them afterwards does not move the
   records — a re-load does, and re-loading after go-live overwrites whatever anyone has edited by
@@ -38,13 +38,16 @@ The order is not a preference. Each phase is a precondition for the next, and tw
 | # | Phase | Owner | Blocks the next? |
 | --- | --- | --- | --- |
 | 1 | [Deploy the metadata](#1-deploy-the-metadata) | GSA IT Engineering | **Yes** — the load has nowhere to write |
-| 2 | [Activate the nine Flows](#2-activate-the-nine-flows) | **Automatic** — the load does it | **Yes** — pre-flight blocks the load |
-| 3 | [Users, access and ownership](#3-users-access-and-ownership) | Salesforce admin + Partnerships | **Yes, in effect** — see above |
-| 4 | [Prepare the load](#4-prepare-the-load) | Whoever runs the pipeline | Yes |
-| 5 | [Run the migration](#5-run-the-migration) | Whoever runs the pipeline | — |
-| 6 | [Verify and hand over](#6-verify-and-hand-over) | All of the above | — |
+| 2 | [Users, access and ownership](#2-users-access-and-ownership) | Salesforce admin + Partnerships | **Yes, in effect** — see above |
+| 3 | [Prepare the load](#3-prepare-the-load) | Whoever runs the pipeline | Yes |
+| 4 | [Run the migration](#4-run-the-migration) | Whoever runs the pipeline | — |
+| 5 | [Verify and hand over](#5-verify-and-hand-over) | All of the above | — |
 
-Phases 1–3 can be done days ahead. Only 4–6 need a window.
+Phases 1 and 2 can be done days ahead. Only 3–5 need a window.
+
+**Switching the nine Flows on is not a phase**, because nothing manual happens in a sandbox: the load
+activates them itself and refuses to run while any is off. Production is the exception — see
+[phase 3](#3-prepare-the-load).
 
 ---
 
@@ -77,7 +80,7 @@ and they apply whether the components arrive by CLI or by change set:
 
 - **A profile is merged, not replaced.** Permissions already in the target's profile stay, so a green
   deployment does not mean the target profile matches the source. Page layout assignments are the
-  case this bites — see [3c](#3c-page-layouts--assign-them-on-the-profile-by-hand).
+  case this bites — see [2c](#2c-page-layouts--assign-them-on-the-profile-by-hand).
 - **A Flow can be Active in the source and land as Draft in the target.** All nine did exactly that
   in QA.
 - **Deleting is not the inverse of deploying.** Components removed from the source survive in the
@@ -107,45 +110,15 @@ Salesforce accepted; the inventory says what should be there.
 The single validation rule (`Account.Level1_and_Level2_account_restrictions`) deploys **inactive**,
 with an always-false condition. That matches its state in the source and has no effect on the load.
 
----
-
-## 2. Activate the nine Flows
-
-**The load does this for you.** `Invoke-FullMigrationLoad.ps1 -ActivateFlows` switches on whatever is
-off and re-reads the org to confirm, before step 1 loads a single record. Pre-flight checks all nine
-either way and **blocks the run** while any is inactive. Run once without `-ActivateFlows` to get the
-list first — that path is read-only.
-
-Three of the nine derive `LDGCRM_Market_Segment__c` down the parent chain — Account → Partner Account
-→ Opportunity → Application — on create.
-
-**A load with the Flows off looks exactly like a load with them on.** A QA load reported 8,740
-records and zero failures with all nine switched off: nothing failed, nothing was withheld, and every
-object count matched Dev, because flow activation changes what is in the fields, not how many records
-there are. Market Segment came out blank on every Partner Account, Opportunity and Application in the
-org.
-
-**Activating them afterwards does not repair it.** The three Market Segment Flows fire on create or
-on parent change, and the pipeline upserts — so a re-run is an update that never re-triggers them.
-The only fix is a factory reset and a full reload, which in production is not a fix at all.
-
-**The load can activate a Flow. It can never create one.** An absent Flow goes back to phase 1.
-
-- Flows can arrive from a deployment **inactive** — all nine landed in QA as Draft. Pre-flight
-  switches them on.
-- **Version numbers do not compare across orgs.** Each org counts its own saves, so Dev on v4 while
-  production is on v2 is normal and is not drift. Only active-versus-latest *within one org* means
-  anything.
-
-> **🔴 Open point for production.** `-ActivateFlows` is currently refused at parameter-bind time for
-> `-Environment Prod`, so today pre-flight reports the inactive flows and stops, and someone
-> activates them in Setup. Confirm which behaviour you want before the production run.
+**A Flow's version number is a per-org counter**, so Dev on v4 against a target on v2 is normal and
+is not drift. The only comparison that means anything is active-versus-latest *within one org* — a
+version deployed and never switched on.
 
 ---
 
-## 3. Users, access and ownership
+## 2. Users, access and ownership
 
-### 3a. Licences — "active" is not "can own a record"
+### 2a. Licences — "active" is not "can own a record"
 
 A Chatter Free, portal or community user is active and can own nothing. Assigning one fails with
 `OP_WITH_INVALID_USER_TYPE_EXCEPTION`, an error that names neither the user nor the field, so the
@@ -153,7 +126,7 @@ resolvers filter on `UserType = 'Standard'` and treat everyone else as absent.
 
 **Anyone who should own migrated records needs a Standard licence**, not merely an account.
 
-### 3b. Permission set groups — what people get assigned
+### 2b. Permission set groups — what people get assigned
 
 Assign people to the group, not to the bare permission set.
 
@@ -167,7 +140,7 @@ Assign people to the group, not to the bare permission set.
 `Contact.GSA`, `LDGCRM_application__c.LDGCRM_Application` and `Opportunity.Login_gov` visible, which
 is why those record types are marked *not* visible on the profiles themselves.
 
-### 3c. Page layouts — assign them on the profile, by hand
+### 2c. Page layouts — assign them on the profile, by hand
 
 **A permission set cannot assign a page layout. Only a profile can.** The permission set groups above
 hand someone the record type and the fields, and say nothing about which layout renders when they
@@ -204,7 +177,7 @@ record type, one Opportunity, one Application.
 > Account's `Federal` record type is assigned the `Account-Federal` layout, which is **not** in the
 > component set. It has to already exist in the target org.
 
-### 3d. Public groups — the step that carries no error message
+### 2d. Public groups — the step that carries no error message
 
 **Sharing on these objects is driven by two public groups, `LDGCRM_Team_Members` and
 `LDGCRM_Viewers`, and fourteen sharing rules that point at them.** The objects are
@@ -220,7 +193,7 @@ people. Nothing errors; the app simply looks empty to everyone who is not an adm
 A permission set group is not a substitute: one grants *object and field* access, the other decides
 *which records* you can see. People need both.
 
-### 3e. Record owners — provision before the load, not after
+### 2e. Record owners — provision before the load, not after
 
 Ownership is resolved **at load time**, from the Airtable collaborator on each row:
 
@@ -255,7 +228,7 @@ roster, not Airtable, and never by adding an alias map to the pipeline.
 Expect that report to be non-empty on a first production pre-flight. Run it early enough that
 provisioning can happen before the load.
 
-### 3f. 🔴 Production: load as a dedicated integration user
+### 2f. 🔴 Production: load as a dedicated integration user
 
 Run the production load under a service account, not a personal login. Otherwise the fallback owner
 is whoever was on shift, and thousands of records land on someone with no relationship to them. There
@@ -263,9 +236,9 @@ is precedent in this org: a service account owns 651 production Accounts for thi
 
 ---
 
-## 4. Prepare the load
+## 3. Prepare the load
 
-By this point the metadata is in, the Flows are on, and the people exist.
+By this point the metadata is in and the people exist.
 
 1. **Authorize the org alias.** Every script takes `-Environment`, never a bare alias, and resolves it
    through the registry — then asks the org who it is and refuses to continue if the answer disagrees.
@@ -283,14 +256,30 @@ By this point the metadata is in, the Flows are on, and the people exist.
    Data Loader GUI against the same sandbox, and other teams share the org outright. Loads are
    re-runnable; a load nobody expected is still an incident.
 
-**🔴 Production also needs a change window agreed in advance**, and one thing re-confirmed by hand:
-`purecloud.ContactWebHookv1`, a managed Genesys trigger that fires on every Contact insert. Its body
-is hidden, it cannot be retrieved, and it has no kill switch — what it does is unknowable from this
-repository. It was confirmed inert in the org in the past; confirm it again before a production run.
+### 🔴 Production only
+
+Three things a sandbox run does not need.
+
+- **Activate the nine LDGCRM Flows in Setup first.** In a sandbox the load switches them on itself;
+  `-ActivateFlows` is refused for `-Environment Prod`, so pre-flight reports which are inactive and
+  stops. Run it once to get that list, then hand it to the config owner. **Flows commonly arrive from
+  a deployment as Draft** — all nine did in QA — so expect to have to do this.
+- **A change window agreed in advance.**
+- **`purecloud.ContactWebHookv1` re-confirmed by hand.** A managed Genesys trigger that fires on every
+  Contact insert. Its body is hidden, it cannot be retrieved, and it has no kill switch — what it does
+  is unknowable from this repository. It was confirmed inert in the org in the past; confirm it again
+  before a production run.
+
+Why the Flows matter enough to be a gate rather than a warning: a QA load reported 8,740 records and
+zero failures with all nine switched off. Nothing failed, nothing was withheld, and every object count
+matched Dev, because flow activation changes what is *in* the fields rather than how many records
+there are — Market Segment came out blank on every Partner Account, Opportunity and Application.
+**Switching them on afterwards does not repair it**, since the three Market Segment Flows fire on
+create or parent change and the pipeline upserts. The only fix is a full reload.
 
 ---
 
-## 5. Run the migration
+## 4. Run the migration
 
 The mechanics are [RUNNING-A-LOAD.md](RUNNING-A-LOAD.md).
 
@@ -304,7 +293,7 @@ see this list *before* the run.
 | --- | --- | --- |
 | Every active **Contact duplicate rule** → inactive | **All, production included** | **No — permanent** |
 | Every active **Contact matching rule** → inactive | **All, production included** | **No — permanent** |
-| The nine **LDGCRM Flows** → active | **Sandbox only** — see phase 2 | **No — permanent** |
+| The nine **LDGCRM Flows** → active | **Sandbox only** — production activates them in Setup, phase 3 | **No — permanent** |
 | `TriggerControls__c` "Contact" `On__c` → `false` | All | **Yes** — restored and re-queried, inside the Contact step |
 
 The duplicate rule is `OTCRM_Contact_Duplicate`, which matches on first and last name only and cost
@@ -341,7 +330,7 @@ normally in a Full sandbox.
 
 ---
 
-## 6. Verify and hand over
+## 5. Verify and hand over
 
 **Success counts are not evidence.** Every serious defect found on this project passed its load
 cleanly. Three questions hide behind a green run, and it answers only the first:
@@ -356,10 +345,10 @@ verification sections apply to any org.
 
 Then the deployment-specific checks, all of them as a non-admin:
 
-- **Records are visible at all** — proves the public groups (3d) got populated.
+- **Records are visible at all** — proves the public groups (2d) got populated.
 - **The right layout renders** on a Contact of each record type, an Opportunity and an Application
-  (3c). A wrong layout renders perfectly happily, so nothing else will catch this.
-- **Market Segment is populated** on Partner Accounts, Opportunities and Applications (phase 2). No
+  (2c). A wrong layout renders perfectly happily, so nothing else will catch this.
+- **Market Segment is populated** on Partner Accounts, Opportunities and Applications. No
   row count will catch this either.
 - **Owners look right**, particularly anyone the roster flagged.
 
@@ -383,5 +372,5 @@ relying on it, and before the run rather than during it.
   the team. The pipeline only ever reads Airtable, so nothing technical forces the question; until it
   is answered, edits made in Airtable after the final pull are silently lost.
 - **The production window, and who supervises it.**
-- **How many Standard licences are needed**, which falls out of phase 3 once the roster is walked
+- **How many Standard licences are needed**, which falls out of phase 2 once the roster is walked
   against the target org.
