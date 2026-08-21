@@ -693,10 +693,10 @@ function Invoke-PreflightChecks {
     $StateByName = @{}
     foreach ($F in $FlowState) { $StateByName[$F.DeveloperName] = $F }
 
-    $FlowsMissing  = New-Object System.Collections.Generic.List[object]
-    $FlowsInactive = New-Object System.Collections.Generic.List[object]
-    $FlowsStale    = New-Object System.Collections.Generic.List[object]
-    $FlowsOk       = New-Object System.Collections.Generic.List[object]
+    $FlowsMissing  = [System.Collections.Generic.List[object]]::new()
+    $FlowsInactive = [System.Collections.Generic.List[object]]::new()
+    $FlowsStale    = [System.Collections.Generic.List[object]]::new()
+    $FlowsOk       = [System.Collections.Generic.List[object]]::new()
 
     foreach ($Name in $ExpectedActiveFlows) {
         if (-not $StateByName.ContainsKey($Name)) { $FlowsMissing.Add([PSCustomObject]@{ DeveloperName = $Name }); continue }
@@ -712,7 +712,7 @@ function Invoke-PreflightChecks {
         $FlowsOk.Add($F)
     }
 
-    $FlowsTrespassing = New-Object System.Collections.Generic.List[object]
+    $FlowsTrespassing = [System.Collections.Generic.List[object]]::new()
     if ($Env -ne "Dev") {
         foreach ($Name in $DevOnlyFlows) {
             if ($StateByName.ContainsKey($Name)) { $FlowsTrespassing.Add($StateByName[$Name]) }
@@ -747,7 +747,7 @@ function Invoke-PreflightChecks {
         A flow that is ABSENT, or present with no versions, still needs a
         CHANGE SET and still blocks. -PlanOnly activates nothing.
     #>
-    $Activatable = New-Object System.Collections.Generic.List[object]
+    $Activatable = [System.Collections.Generic.List[object]]::new()
     foreach ($F in $FlowsInactive) { if ($null -ne $F.LatestVersion) { $Activatable.Add($F) } }
     foreach ($F in $FlowsStale)    { $Activatable.Add($F) }
 
@@ -795,10 +795,10 @@ function Invoke-PreflightChecks {
         $StateByName = @{}
         foreach ($F in $FlowState) { $StateByName[$F.DeveloperName] = $F }
 
-        $FlowsMissing  = New-Object System.Collections.Generic.List[object]
-        $FlowsInactive = New-Object System.Collections.Generic.List[object]
-        $FlowsStale    = New-Object System.Collections.Generic.List[object]
-        $FlowsOk       = New-Object System.Collections.Generic.List[object]
+        $FlowsMissing  = [System.Collections.Generic.List[object]]::new()
+        $FlowsInactive = [System.Collections.Generic.List[object]]::new()
+        $FlowsStale    = [System.Collections.Generic.List[object]]::new()
+        $FlowsOk       = [System.Collections.Generic.List[object]]::new()
 
         foreach ($Name in $ExpectedActiveFlows) {
             if (-not $StateByName.ContainsKey($Name)) { $FlowsMissing.Add([PSCustomObject]@{ DeveloperName = $Name }); continue }
@@ -935,8 +935,8 @@ function Invoke-PreflightChecks {
                 $Active = $Lookup.IdByEmail
             }
 
-            $MissingButExpected = New-Object System.Collections.Generic.List[object]
-            $Unstated           = New-Object System.Collections.Generic.List[object]
+            $MissingButExpected = [System.Collections.Generic.List[object]]::new()
+            $Unstated           = [System.Collections.Generic.List[object]]::new()
             $PresentCount       = 0
             $CorrectlyAbsent    = 0
 
@@ -982,8 +982,8 @@ function Invoke-PreflightChecks {
                 collisions in this org), so a name matching 2+ active Users
                 only WARNS. Exactly one match is what blocks.
             #>
-            $WrongEmail    = New-Object System.Collections.Generic.List[object]
-            $NameAmbiguous = New-Object System.Collections.Generic.List[object]
+            $WrongEmail    = [System.Collections.Generic.List[object]]::new()
+            $NameAmbiguous = [System.Collections.Generic.List[object]]::new()
 
             $ProbeNames = @($MissingButExpected | ForEach-Object { ([string]$_.Name).Trim() } |
                             Where-Object { $_ } | Sort-Object -Unique)
@@ -1007,12 +1007,12 @@ function Invoke-PreflightChecks {
                 foreach ($U in $ByName) {
                     $N = ([string]$U.Name).Trim()
                     if (-not $UsersByName.ContainsKey($N)) {
-                        $UsersByName[$N] = New-Object System.Collections.Generic.List[object]
+                        $UsersByName[$N] = [System.Collections.Generic.List[object]]::new()
                     }
                     $UsersByName[$N].Add($U)
                 }
 
-                $StillMissing = New-Object System.Collections.Generic.List[object]
+                $StillMissing = [System.Collections.Generic.List[object]]::new()
 
                 foreach ($M in $MissingButExpected) {
                     $N = ([string]$M.Name).Trim()

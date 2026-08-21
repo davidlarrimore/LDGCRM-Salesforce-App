@@ -161,7 +161,7 @@ function Get-LdgcrmFlowState {
     $NumberById = @{}
     foreach ($V in $Versions) { $NumberById[$V.Id] = [int]$V.VersionNumber }
 
-    $Rows = New-Object System.Collections.Generic.List[object]
+    $Rows = [System.Collections.Generic.List[object]]::new()
     foreach ($D in $Definitions) {
         $ActiveNumber = $null
         $LatestNumber = $null

@@ -693,6 +693,17 @@ wrong thing:
   `Select-LdgcrmResettableObjects`, where a 4-item list silently became `Count=1`. Rule of thumb:
   **plain array + caller wraps in `@()` → return it bare; `List<T>` the caller uses as an object →
   return it with the comma.** State which contract a function has in its help block.
+- **`@($list)` throws `Argument types do not match` when the list was built with `New-Object`.**
+  Windows PowerShell 5.1 on current .NET Framework cannot bind the `@( )` operator to a
+  **PSObject-wrapped `List[object]`** — `New-Object` returns its result through the pipeline, so it
+  is wrapped; `[System.Collections.Generic.List[object]]::new()` is not. **The wrapper is the
+  trigger, not the type**: `List[string]`, `List[psobject]` and `ArrayList` bind fine however they
+  are built, and every *other* operation on the wrapped list works — `.ToArray()`, an `[object[]]`
+  cast, `foreach`, the pipeline, parameter binding — which is why nothing hints at it until an `@()`
+  runs. **Always build a `List[object]` with `::new()`.** It killed a UAT `-PlanOnly` run on
+  2026-08-21 in `Invoke-FullMigrationLoad.ps1`'s owner-roster name join — code Dev and QA never
+  reach, because it sits behind the Full/Prod gate. `tools/Test-BundleStructure.ps1` now bans the
+  `New-Object` form and probes the platform, so the ban explains itself.
 - **A here-string (`@'…'@`) does not reliably bind as a single argument to a native command.**
   `git commit -m @'…'@` split on the apostrophe in "Airtable's" and turned the message body into
   pathspecs. For multi-line commit messages write the message to a file and use `git commit -F`.

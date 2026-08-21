@@ -230,6 +230,59 @@ foreach ($Case in @(
                  -What "$(Split-Path -Leaf $Case.Script) rejects -Environment $($Case.Env)"
 }
 
+# --------------------------------------- 5. PowerShell platform traps
+Write-Host "Platform traps" -ForegroundColor Cyan
+
+<#
+    @($list) THROWS WHEN THE LIST WAS BUILT WITH New-Object.
+
+    Windows PowerShell 5.1 on the current .NET Framework cannot bind the @( )
+    operator to a PSObject-wrapped List[object]:
+
+        $l = New-Object System.Collections.Generic.List[object]
+        @($l)      ->  ArgumentException: Argument types do not match
+
+    THE WRAPPER IS WHAT BREAKS IT, NOT THE TYPE. New-Object emits its result
+    through the pipeline, so what reaches @( ) is a PSObject around the list,
+    and PSEnumerableBinder.MaybeDebase then builds an Expression.Condition()
+    whose two branches disagree on type. Building the same list with
+    [System.Collections.Generic.List[object]]::new() yields the raw object and
+    binds fine, as do List[string], List[psobject] and ArrayList however they
+    are built. EVERY OTHER OPERATION on the wrapped list is unaffected -
+    .ToArray(), an [object[]] cast, foreach, the pipeline, parameter binding -
+    which is why nothing else in the pipeline ever hinted at it.
+
+    It cost a UAT -PlanOnly run on 2026-08-21. The owner-roster name join in
+    Invoke-FullMigrationLoad.ps1 keyed a hashtable on List[object] values built
+    with New-Object and died the first time a roster name matched a User. Dev
+    and QA never saw it: that block only runs behind the Full/Prod gate.
+
+    So the rule is simply: build a List[object] with ::new(), never with
+    New-Object. The probe below asserts the platform still behaves as described,
+    so that if a future .NET update fixes it this check reads as unnecessary
+    rather than as wrong.
+#>
+$WrappedListThrows = $false
+try   { $Probe = New-Object System.Collections.Generic.List[object]; @($Probe) | Out-Null }
+catch { $WrappedListThrows = $true }
+
+Write-Host $(if ($WrappedListThrows) {
+    "  note  this PowerShell cannot bind @() to a New-Object List[object]"
+} else {
+    "  note  this PowerShell binds @() to a New-Object List[object] - the rule still holds for operator machines"
+}) -ForegroundColor DarkGray
+
+# This file is excluded from its own check: the probe above and the comment
+# explaining it both have to contain the very construction being banned.
+foreach ($File in @($BundleScripts) + @(Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -Filter *.ps1 -File)) {
+    if ($File.FullName -eq $PSCommandPath) { continue }
+
+    $Text = Get-Content -LiteralPath $File.FullName -Raw -Encoding UTF8
+    Assert-Check -Condition ($Text -notmatch 'New-Object\s+(System\.)?Collections\.Generic\.List\[\s*(object|System\.Object)\s*\]') `
+                 -What "builds List[object] with ::new(): $($File.FullName.Substring($Repo.Length + 1))" `
+                 -Detail "New-Object wraps the list in a PSObject and @(...) cannot bind that. Use [System.Collections.Generic.List[object]]::new()."
+}
+
 # ----------------------------------------------------------------- verdict
 Write-Host ""
 

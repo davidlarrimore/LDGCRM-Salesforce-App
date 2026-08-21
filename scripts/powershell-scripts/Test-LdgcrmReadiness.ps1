@@ -62,7 +62,7 @@ $ErrorActionPreference = "Stop"
 # ============================================================================
 # Single path for all findings: printed line, summary, CSV and exit code.
 
-$Script:Results = New-Object System.Collections.Generic.List[object]
+$Script:Results = [System.Collections.Generic.List[object]]::new()
 $Script:SectionName = ""
 $Script:SectionStart = 0
 

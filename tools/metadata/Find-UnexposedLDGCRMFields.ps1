@@ -70,8 +70,8 @@ try {
         }
     }
 
-    $Results = New-Object System.Collections.Generic.List[object]
-    $ObjectSummaries = New-Object System.Collections.Generic.List[object]
+    $Results = [System.Collections.Generic.List[object]]::new()
+    $ObjectSummaries = [System.Collections.Generic.List[object]]::new()
 
     foreach ($ObjectApiName in $ObjectApiNames) {
         Write-Host ""
