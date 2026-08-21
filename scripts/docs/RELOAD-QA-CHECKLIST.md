@@ -38,6 +38,7 @@ the part most likely to be skipped.
 | --- | --- | --- |
 | `Dev` | `peodv8dvn` | Default for every script |
 | `QA` | `peodv15dvn` | Migration rehearsal |
+| `UAT` | `peofl1uatp` | User acceptance testing, a **full** sandbox. **Accounts are real and are never wiped** |
 | `Full` | `peofl2stgp` | Operations dress rehearsal. **Accounts are real and are never wiped** |
 | `Prod` | `gsa-peo` | **PRODUCTION.** Not authorized locally |
 
@@ -57,6 +58,11 @@ verifying.
 ## Running it
 
 ```powershell
+# Pull first. The reconciliation in section 1 measures the Airtable side from
+# whatever is in data/airtable-exports/, so the reload and the counts you check
+# it against must come from the same pull. Nothing below pulls for you.
+.\powershell-scripts\Get-AirtableExport.ps1
+
 .\powershell-scripts\Invoke-SandboxFactoryReset.ps1 -Environment Dev -BootstrapAccounts
 # ⚠️ STOP - run the bootstrap a SECOND time and confirm it reports 0 missing. See below.
 .\powershell-scripts\Invoke-FullMigrationLoad.ps1   -Environment Dev -Confirmation "LOAD"

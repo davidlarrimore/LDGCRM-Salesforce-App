@@ -160,6 +160,7 @@ Write-Host "Environment rules" -ForegroundColor Cyan
 
 foreach ($Case in @(
     @{ Env = "Dev"; Rebuild = $true }, @{ Env = "QA"; Rebuild = $true },
+    @{ Env = "UAT"; Rebuild = $false },
     @{ Env = "Full"; Rebuild = $false }, @{ Env = "Prod"; Rebuild = $false }
 )) {
     Assert-Check -Condition ((Test-LdgcrmAccountRebuildAllowed -Environment $Case.Env) -eq $Case.Rebuild) `
@@ -170,16 +171,17 @@ $Table = Get-LdgcrmEnvironmentTable
 Assert-Check -Condition ($Table["Prod"].Alias -eq "gsa-peo" -and $Table["Prod"].IsProduction) `
              -What "Prod is alias 'gsa-peo' and flagged as production"
 
-# THE FULL-SANDBOX PATH, WHICH NOTHING ELSE CAN REACH. Full is provisioned
-# (PEOfL2STGp) but is not authorized on a dev machine, so a real reset against it
-# throws on alias resolution long before the Account filter matters - meaning
-# without this, the code protecting a copy of production would first run
-# unobserved against a copy of production.
+# THE FULL-SANDBOX PATH, WHICH NOTHING ELSE CAN REACH. UAT (PEOfL1UATp) and Full
+# (PEOfL2STGp) are provisioned but not authorized on a dev machine, so a real
+# reset against either throws on alias resolution long before the Account filter
+# matters - meaning without this, the code protecting a copy of production would
+# first run unobserved against a copy of production.
 $Sample = @("LDGCRM_Application_Contact__c", "Contact", "Account", "LDGCRM_Market_Segment__c")
 
 foreach ($Case in @(
     @{ Env = "Dev";  Expect = 4; Keeps = $true  },
     @{ Env = "QA";   Expect = 4; Keeps = $true  },
+    @{ Env = "UAT";  Expect = 3; Keeps = $false },
     @{ Env = "Full"; Expect = 3; Keeps = $false },
     @{ Env = "Prod"; Expect = 3; Keeps = $false }
 )) {
@@ -205,7 +207,7 @@ try { Select-LdgcrmResettableObjects -Environment "Full" -Objects @("Account") |
 catch { $Threw = $true }
 Assert-Check -Condition $Threw -What "Full reset of ONLY Account throws rather than no-opping"
 
-foreach ($Key in @("Dev", "QA", "Prod")) {
+foreach ($Key in @("Dev", "QA", "UAT", "Full", "Prod")) {
     Assert-Check -Condition ([bool]$Table[$Key].InstanceUrl -and [bool]$Table[$Key].LightningUrl) `
                  -What "$Key has both URLs recorded"
 }
@@ -215,6 +217,7 @@ foreach ($Key in @("Dev", "QA", "Prod")) {
 Write-Host "Bind-time blocks" -ForegroundColor Cyan
 
 foreach ($Case in @(
+    @{ Script = "powershell-scripts\Invoke-AccountBootstrap.ps1"; Env = "UAT";  Args = "-PlanOnly" },
     @{ Script = "powershell-scripts\Invoke-AccountBootstrap.ps1"; Env = "Full"; Args = "-PlanOnly" },
     @{ Script = "powershell-scripts\Invoke-AccountBootstrap.ps1"; Env = "Prod"; Args = "-PlanOnly" },
     @{ Script = "powershell-scripts\Invoke-SandboxFactoryReset.ps1";     Env = "Prod"; Args = "" }

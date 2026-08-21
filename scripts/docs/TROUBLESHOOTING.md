@@ -372,6 +372,38 @@ Then run the bootstrap by hand:
 
 ---
 
+## `No Airtable export found` — a load or a transform stops before it starts
+
+```
+No Airtable export found in ...\data\airtable-exports. Run Get-AirtableExport.ps1 first.
+No Airtable export found for 'Opportunities' at ...\Opportunities.json. Run powershell-scripts/Get-AirtableExport.ps1 first.
+```
+
+Working as intended, and it is telling you the fix. **Pulling from Airtable is a step you run** —
+nothing in the pipeline does it for you. The transforms read `data/airtable-exports/<Table>.json` off
+the disk and never contact Airtable, and `data/` is gitignored, so a fresh copy of this folder has no
+data in it at all.
+
+```powershell
+.\powershell-scripts\Get-AirtableExport.ps1
+```
+
+The second form names one table, which means the pull ran but not for that table — you probably used
+`-Tables` or `-MigrationOnly`. Re-run with no arguments to get the whole base.
+
+A related **warning**, which does not stop anything:
+
+```
+Airtable export is 12 days old. Re-run Get-AirtableExport.ps1 unless you deliberately want this snapshot.
+```
+
+Deliberately a warning, not a block, because reproducing an earlier run's counts is a legitimate
+reason to load an older pull. Every pull overwrites the folder in place, so if you re-pull, expect
+the numbers to move and re-baseline rather than treating the old ones as pass/fail targets. See
+[RUNNING-A-LOAD.md](RUNNING-A-LOAD.md#pull-or-dont).
+
+---
+
 ## Airtable returns 403
 
 **Airtable returns 403 for both "no permission" and "table doesn't exist or isn't visible."** The two

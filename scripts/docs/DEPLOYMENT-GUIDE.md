@@ -245,9 +245,12 @@ By this point the metadata is in and the people exist.
    One-time per machine: [SETUP.md](SETUP.md#authorizing-a-new-environment).
 2. **Set up the bundle and the Airtable token** — [SETUP.md](SETUP.md). Airtable access needs an admin
    on the base, so start it early.
-3. **Pull fresh Airtable data.** The export folder is a current-state mirror, overwritten each pull;
-   an old pull is never the right input. Expect counts to move when you re-pull, and re-baseline
-   rather than treating older figures as pass/fail targets.
+3. **Pull fresh Airtable data** — `.\powershell-scripts\Get-AirtableExport.ps1`. A step you run
+   yourself: the transforms read the JSON files off disk and no part of a load contacts Airtable, so
+   until this has run there is nothing to migrate. The export folder is a current-state mirror,
+   overwritten each pull; an old pull is never the right input. Expect counts to move when you
+   re-pull, and re-baseline rather than treating older figures as pass/fail targets.
+   [RUNNING-A-LOAD.md](RUNNING-A-LOAD.md#pulling-from-airtable) has the options.
 4. **Run the readiness check** — `Test-LdgcrmReadiness.ps1`. Read-only, safe against any environment
    including production. It checks the machine, the token, every Airtable table, which orgs you can
    reach, who you are in the target org, and that every field the load writes exists and is writable

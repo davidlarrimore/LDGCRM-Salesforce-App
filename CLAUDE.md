@@ -14,7 +14,7 @@ correlate Salesforce records back to their Airtable source.
 
 ## Environments (read this before running anything)
 
-**This is no longer a single-org setup.** Every script takes `-Environment Dev|QA|Full|Prod`
+**This is no longer a single-org setup.** Every script takes `-Environment Dev|QA|UAT|Full|Prod`
 (default `Dev`) and resolves the alias from the registry in `scripts/powershell-scripts/Common.Orgs.ps1`, which
 `Common.ps1` dot-sources so every script gets it. **Never hard-code an org alias in a script again.**
 
@@ -26,6 +26,7 @@ which org they are about to touch. It also carries **`AllowsAccountRebuild`**, s
 | --- | --- | --- | --- | --- | --- | --- |
 | `Dev` (default) | `peodv8dvn` | PEOdV8DVn | `https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com` | `https://gsa-peo--peodv8dvn.sandbox.lightning.force.com` | rebuilt | Development and pipeline testing. Everything documented below was done here. |
 | `QA` | `peodv15dvn` | PEOdV15DVn | `https://gsa-peo--peodv15dvn.sandbox.my.salesforce.com` | `https://gsa-peo--peodv15dvn.sandbox.lightning.force.com` | rebuilt | Full end-to-end migration rehearsal |
+| `UAT` | `peofl1uatp` | PEOfL1UATp | `https://gsa-peo--peofl1uatp.sandbox.my.salesforce.com` | `https://gsa-peo--peofl1uatp.sandbox.lightning.force.com` | **real** | User acceptance testing. A **full** sandbox, so it follows the Full rules, not the QA ones |
 | `Full` | `peofl2stgp` | PEOfL2STGp | `https://gsa-peo--peofl2stgp.sandbox.my.salesforce.com` | `https://gsa-peo--peofl2stgp.sandbox.lightning.force.com` | **real** | Operations team integration testing: scripts + change sets, immediately before production |
 | `Prod` | `gsa-peo` | — | `https://gsa-peo.my.salesforce.com` | `https://gsa-peo.lightning.force.com` | **real** | Live GSA PEO org *(not authorized here)* |
 
@@ -39,7 +40,7 @@ environment verified only as "is not a sandbox". `Assert-LdgcrmOrgTarget` now co
 Domain label** — the first host segment, stable across `my.salesforce.com` / `lightning.force.com` /
 `file.force.com` — so an org on a different domain stops the run.
 
-### ⚠️ Accounts are rebuilt in Dev/QA ONLY — never in Full or Prod
+### ⚠️ Accounts are rebuilt in Dev/QA ONLY — never in UAT, Full or Prod
 
 Decided 2026-08-14. `Test-LdgcrmAccountRebuildAllowed` (`Common.Orgs.ps1`) is the **single
 definition**, and three scripts consume it rather than each testing `-Environment` themselves:
@@ -47,14 +48,19 @@ definition**, and three scripts consume it rather than each testing `-Environmen
 removal would let an operator conclude the Accounts *were* reset), `Invoke-AccountBootstrap.ps1`
 refuses to start, and `Invoke-FullMigrationLoad.ps1` rejects `-BootstrapAccounts`.
 
-The reason is the same for both blocked environments: **a Full sandbox is a copy of production**, so
+The reason is the same for every blocked environment: **a full sandbox is a copy of production**, so
 its Accounts *are* the real records this migration reconciles onto. Deleting them would destroy the
 thing being tested and replace it with a stale export — a rehearsal passing against data that no
 longer resembles production is worse than no rehearsal. Every *other* object still resets normally
-in a Full sandbox; they carry `LDGCRM_External_ID__c` because this migration created them.
+in a UAT or Full sandbox; they carry `LDGCRM_External_ID__c` because this migration created them.
 
-`Invoke-AccountBootstrap.ps1`'s `-Environment` ValidateSet is now **`Dev|QA`** — Full and Prod are
-rejected at parameter-bind time, the same structural block the factory reset uses against
+**UAT (`peofl1uatp`) is a FULL sandbox, not a second QA** (added 2026-08-21). Its name is the tell —
+`PEOfL1UATp`, `fL` for full — and it is the reason it sits on the Full rules rather than the QA
+ones despite "UAT" reading like a test environment. Nothing about it is special-cased: it is one
+registry entry with `AllowsAccountRebuild = $false`, and all three consumers pick that up unchanged.
+
+`Invoke-AccountBootstrap.ps1`'s `-Environment` ValidateSet is now **`Dev|QA`** — UAT, Full and Prod
+are rejected at parameter-bind time, the same structural block the factory reset uses against
 production. Its `-ProductionConfirmation` parameter was removed: a flag whose only purpose is to
 approve something the script can no longer do reads as though a production path exists.
 
@@ -67,12 +73,18 @@ so `-Environment QA` works. It can trail Dev by a change set — **never assume 
 applies to QA**; verify against the org you are actually loading. Confirmed example: `priority_type__c`
 exists in Dev and **does not exist in QA at all**.
 
-**Full (`peofl2stgp`, sandbox `PEOfL2STGp`) is PROVISIONED and in the registry, but is NOT authorized
-on this machine** — only Dev and QA are. Those are different claims and the registry says which org
-Full *is*, not whether you can currently reach it: `Assert-LdgcrmOrgTarget` fails with "could not
-reach org alias", which is the correct outcome. Authorize with
-`sf org login web --alias peofl2stgp --instance-url https://gsa-peo--peofl2stgp.sandbox.my.salesforce.com`.
+**Full (`peofl2stgp`, sandbox `PEOfL2STGp`) and UAT (`peofl1uatp`, sandbox `PEOfL1UATp`) are in the
+registry, but NEITHER is authorized on this machine** — only Dev and QA are. Those are different
+claims and the registry says which org each *is*, not whether you can currently reach it:
+`Assert-LdgcrmOrgTarget` fails with "could not reach org alias", which is the correct outcome.
+Authorize with
+`sf org login web --alias peofl2stgp --instance-url https://gsa-peo--peofl2stgp.sandbox.my.salesforce.com`
+(and the matching `peofl1uatp` URL for UAT).
 **Anything saying Full is "not provisioned" is stale** — that was true until 2026-08-14.
+
+**UAT's sandbox name `PEOfL1UATp` is inferred from the alias, not confirmed against the org** — the
+casing is cosmetic (`Assert-LdgcrmOrgTarget` matches the instance URL case-insensitively), but if
+the org's real sandbox name differs in *spelling*, correct the registry when UAT is first authorized.
 
 **QA was fully loaded on 2026-08-14: 8,740 records, 0 unexpected failures**, using the same two
 commands as Dev (factory reset, then `Invoke-FullMigrationLoad.ps1 -BootstrapAccounts`). Every object

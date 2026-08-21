@@ -49,7 +49,7 @@
 #>
 
 param(
-    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
     [string]$Environment = "Dev",
 
     [string]$OrgAlias = "",
@@ -869,9 +869,9 @@ function Invoke-PreflightChecks {
         refusing to run would be stopping a working pipeline over a staffing
         question that only the business can answer.
 
-        A PRESENT-BUT-UNUSABLE OWNER DOES BLOCK (added 2026-08-15), in Full and
-        Prod only - which is automatic, since this whole check is inside the
-        Full/Prod gate. Dev and QA discard these owners as missing and assign
+        A PRESENT-BUT-UNUSABLE OWNER DOES BLOCK (added 2026-08-15), in the full
+        sandboxes and Prod only - which is automatic, since this whole check is
+        inside that gate. Dev and QA discard these owners as missing and assign
         the fallback, exactly as before. Two cases:
 
           - the User exists under a DIFFERENT email address;
@@ -883,14 +883,19 @@ function Invoke-PreflightChecks {
         the way. Left as warnings they are indistinguishable from the legitimate
         absence printed directly above them in the same report.
 
-        FULL AND PROD ONLY. Dev and QA are developer sandboxes seeded from
-        partial refreshes and carry no expectation that the Partnerships team
-        have logins at all - the project owner confirmed on 2026-08-15 that
-        there is no guarantee these users exist there. Running it anyway would
-        print a page of warnings on every development run, which is how a check
-        stops being read.
+        UAT, FULL AND PROD ONLY. UAT and Full are copies of production, so the
+        Partnerships team's logins are there to be found. Dev and QA are developer
+        sandboxes seeded from partial refreshes and carry no expectation that those
+        users exist at all - the project owner confirmed that on 2026-08-15. Running
+        it anyway would print a page of warnings on every development run, which is
+        how a check stops being read.
     #>
-    if ($Env -eq "Full" -or $Env -eq "Prod") {
+    # The partition is "does this org hold real production data?", which the
+    # registry already answers - the orgs whose Accounts may not be rebuilt are
+    # exactly the orgs copied from production. Read from there rather than
+    # listing environment names, so a new full sandbox is covered by being added
+    # to the registry and nothing else.
+    if (-not (Test-LdgcrmAccountRebuildAllowed -Environment $Env)) {
         $RosterPath = Join-Path (Get-LdgcrmRoot) "reference\salesforce-user-roster.csv"
 
         if (-not (Test-Path -LiteralPath $RosterPath)) {
@@ -1674,10 +1679,10 @@ $Baseline = Save-RestorePoint -Org $OrgAlias -Version "67.0" -Directory $RunDire
 # does not own, it is sandbox-only, and it has its own confirmation token.
 if ($BootstrapAccounts) {
     # Dev and QA only. Was an "-eq Prod" check until 2026-08-14, which let it
-    # through in a Full sandbox - where the Accounts are the real production
-    # records, so the bootstrap would have inserted a duplicate universe
-    # alongside them from a stale export. The rule now comes from the registry
-    # so this cannot disagree with the factory reset or the bootstrap itself.
+    # through in a full sandbox (UAT or Full) - where the Accounts are the real
+    # production records, so the bootstrap would have inserted a duplicate
+    # universe alongside them from a stale export. The rule now comes from the
+    # registry so this cannot disagree with the factory reset or the bootstrap.
     if (-not (Test-LdgcrmAccountRebuildAllowed -Environment $Environment)) {
         throw ("SAFETY STOP: -BootstrapAccounts inserts Accounts from a production export, and " +
                "environment '$Environment' already holds the real ones - running it there would " +

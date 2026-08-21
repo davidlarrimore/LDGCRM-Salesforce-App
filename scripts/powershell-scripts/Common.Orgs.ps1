@@ -9,10 +9,10 @@
 # =============================================================================
 # WHY THIS FILE EXISTS
 # =============================================================================
-# There are four environments, and a hard-coded org alias cannot survive that.
+# There are five environments, and a hard-coded org alias cannot survive that.
 # The scheme: AN ALIAS IS THE ORG'S OWN SANDBOX NAME, so an alias cannot drift
 # from the org it names. Scripts never take a bare alias from a human; they
-# take -Environment Dev|QA|Full|Prod and resolve it here.
+# take -Environment Dev|QA|UAT|Full|Prod and resolve it here.
 #
 # When production genuinely needs authorizing, see the auth runbook in
 # docs/SETUP.md ("Authorizing an org").
@@ -69,6 +69,32 @@ function Get-LdgcrmEnvironmentTable {
             IsProduction         = $false
             AllowsAccountRebuild = $true
         }
+        UAT = [PSCustomObject]@{
+            # NAMED 2026-08-21: PEOfL1UATp. A FULL sandbox - the "fL" in the
+            # name - used for user acceptance testing. It therefore follows the
+            # FULL SANDBOX RULES, not the QA ones, and the distinction is not
+            # cosmetic: a full sandbox is a copy of production, so its Accounts
+            # are the real records this migration reconciles onto. See
+            # Test-LdgcrmAccountRebuildAllowed.
+            #
+            # The alias is the sandbox name lower-cased, per the scheme at the
+            # top of this file. It may not be AUTHORIZED on your machine yet -
+            # if not, Assert-LdgcrmOrgTarget fails with "could not reach org
+            # alias", which is the correct outcome: the registry says which org
+            # UAT IS, not whether you can currently reach it. Authorize with
+            #   sf org login web --alias peofl1uatp \
+            #     --instance-url https://gsa-peo--peofl1uatp.sandbox.my.salesforce.com
+            Key                  = "UAT"
+            Alias                = "peofl1uatp"
+            SandboxName          = "PEOfL1UATp"
+            InstanceUrl          = "https://gsa-peo--peofl1uatp.sandbox.my.salesforce.com"
+            LightningUrl         = "https://gsa-peo--peofl1uatp.sandbox.lightning.force.com"
+            Label                = "UAT sandbox (user acceptance testing)"
+            Purpose              = "User acceptance testing against a copy of production, on the same rules as Full."
+            IsProduction         = $false
+            # FALSE, for the same reason as Full: this is a COPY OF PRODUCTION.
+            AllowsAccountRebuild = $false
+        }
         Full = [PSCustomObject]@{
             # NAMED 2026-08-14: PEOfL2STGp. The Full sandbox the Operations team
             # use to run these scripts and the change sets themselves, as the
@@ -121,13 +147,14 @@ function Test-LdgcrmAccountRebuildAllowed {
         production export. Rebuilding is the only way a rehearsal there is
         meaningful.
 
-        FULL AND PROD: NO, AND THE REASON IS THE SAME FOR BOTH. A Full sandbox
-        is a copy of production, so its Accounts ARE the production Accounts -
-        the exact records the migration is supposed to reconcile ONTO. Deleting
-        them would destroy the thing being tested and then replace it with a
-        stale export, which is worse than useless: the rehearsal would pass
-        against data that no longer resembles what production holds. In
-        production it is straightforwardly destructive.
+        UAT, FULL AND PROD: NO, AND THE REASON IS THE SAME FOR ALL THREE. UAT
+        and Full are both FULL sandboxes - copies of production - so their
+        Accounts ARE the production Accounts, the exact records the migration is
+        supposed to reconcile ONTO. Deleting them would destroy the thing being
+        tested and then replace it with a stale export, which is worse than
+        useless: the rehearsal would pass against data that no longer resembles
+        what production holds. In production it is straightforwardly
+        destructive.
 
         This is the rule, in one place, for all three scripts that need it:
         Invoke-SandboxFactoryReset.ps1 (drops Account from its delete list),
@@ -136,14 +163,14 @@ function Test-LdgcrmAccountRebuildAllowed {
         it as three separate "if ($Environment -eq ...)" checks is how one of
         them ends up disagreeing with the others.
 
-        Note the migration's OTHER objects are still reset in a Full sandbox -
+        Note the migration's OTHER objects are still reset in a UAT or Full sandbox -
         only Account is protected. Everything else carries
         LDGCRM_External_ID__c and was created by this migration, so deleting it
         removes only what a previous rehearsal put there.
     #>
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet("Dev", "QA", "Full", "Prod")]
+        [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
         [string]$Environment
     )
 
@@ -155,12 +182,13 @@ function Select-LdgcrmResettableObjects {
         Filters a factory-reset object list down to what may actually be deleted
         in this environment: everything, minus Account where Accounts are real.
 
-        A FUNCTION RATHER THAN THREE LINES INLINE, for one reason: the Full
-        sandbox does not exist yet, so the code path that protects it cannot be
-        exercised end to end - Resolve-LdgcrmOrgAlias throws on the missing alias
-        long before the filter would matter. Pulling it out means the rule can be
-        tested directly today (see tools/Test-BundleStructure.ps1) instead of
-        being first exercised, unobserved, against a copy of production.
+        A FUNCTION RATHER THAN THREE LINES INLINE, for one reason: neither the
+        UAT nor the Full sandbox is authorized on a dev machine, so the code
+        path that protects them cannot be exercised end to end -
+        Assert-LdgcrmOrgTarget throws on the unreachable alias long before the
+        filter would matter. Pulling it out means the rule can be tested
+        directly today (see tools/Test-BundleStructure.ps1) instead of being
+        first exercised, unobserved, against a copy of production.
 
         Returns the filtered list. The CALLER announces the exclusion - and must
         do so after its transcript is open, because a message this consequential
@@ -178,7 +206,7 @@ function Select-LdgcrmResettableObjects {
     #>
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet("Dev", "QA", "Full", "Prod")]
+        [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
         [string]$Environment,
 
         [Parameter(Mandatory = $true)]
@@ -208,7 +236,7 @@ function Get-LdgcrmEnvironment {
     #>
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet("Dev", "QA", "Full", "Prod")]
+        [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
         [string]$Environment
     )
 
@@ -235,7 +263,7 @@ function Resolve-LdgcrmOrgAlias {
     #>
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet("Dev", "QA", "Full", "Prod")]
+        [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
         [string]$Environment,
 
         [string]$OrgAlias = ""
@@ -273,7 +301,7 @@ function Assert-LdgcrmOrgTarget {
     #>
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet("Dev", "QA", "Full", "Prod")]
+        [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
         [string]$Environment,
 
         [string]$OrgAlias = "",
@@ -396,7 +424,7 @@ function Write-LdgcrmOrgBanner {
     #>
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet("Dev", "QA", "Full", "Prod")]
+        [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
         [string]$Environment,
 
         [Parameter(Mandatory = $true)]
@@ -452,7 +480,7 @@ function Assert-LdgcrmProductionConsent {
     #>
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet("Dev", "QA", "Full", "Prod")]
+        [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
         [string]$Environment,
 
         [Parameter(Mandatory = $true)]

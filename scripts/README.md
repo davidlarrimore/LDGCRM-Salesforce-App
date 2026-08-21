@@ -25,8 +25,17 @@ It runs in three stages, and they are deliberately separate:
    ────                    ─────────                      ────
    Airtable  ──────────►   Build-*.ps1        ──────────► Invoke-*.ps1
    REST API                writes a CSV to disk           writes to Salesforce
-                           (READ-ONLY)                    (the only step that writes)
+   Get-AirtableExport      (READ-ONLY)                    (the only step that writes)
+        │                       │                              │
+        ▼                       ▼                              ▼
+   data/airtable-exports/  data/salesforce-loads/         the org
+   <Table>.json            <Object>-upsert.csv
 ```
+
+**Each stage hands the next one files on disk**, and you run each stage yourself. In particular the
+transforms read `data/airtable-exports/` — they never call Airtable — so **`Get-AirtableExport.ps1`
+is a step you have to run**, not something the load does for you. See
+[Pulling from Airtable](#pulling-from-airtable).
 
 **Nothing writes to Salesforce except the load step.** You can always inspect exactly what *would* be
 written, as a plain CSV, before anything is.
@@ -51,6 +60,7 @@ working in an empty Dev or QA sandbox.
 | **Understand the project before touching it** | [`docs/OVERVIEW.md`](docs/OVERVIEW.md) |
 | **Stand the app up in an org it has never run in** | [`docs/DEPLOYMENT-GUIDE.md`](docs/DEPLOYMENT-GUIDE.md) |
 | Install the tools and get credentials | [`docs/SETUP.md`](docs/SETUP.md) |
+| **Pull fresh data out of Airtable** | [Pulling from Airtable](#pulling-from-airtable) — `.\powershell-scripts\Get-AirtableExport.ps1`. You run it yourself; no other script does |
 | **Check everything is set up correctly** | `.\powershell-scripts\Test-LdgcrmReadiness.ps1` — read-only, safe anywhere. See [`docs/RUNNING-A-LOAD.md`](docs/RUNNING-A-LOAD.md#am-i-ready--the-readiness-check) |
 | Run a load | [`docs/RUNNING-A-LOAD.md`](docs/RUNNING-A-LOAD.md) |
 | Work out why something failed | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
@@ -86,19 +96,70 @@ sf org login web --alias peodv8dvn `
 #    You need an admin account on the base first - see docs/SETUP.md.
 Copy-Item .env.example .env
 
-# 3. Confirm the machine, the Airtable pull and the org are all ready.
+# 3. Pull the data out of Airtable. NOTHING ELSE DOES THIS FOR YOU.
+#    data/ ships empty, so on a fresh copy of this folder there is no data to
+#    load until this runs. It overwrites data/airtable-exports/ each time.
+.\powershell-scripts\Get-AirtableExport.ps1
+
+# 4. Confirm the machine, the Airtable pull and the org are all ready.
 #    Read-only: writes nothing, fixes nothing, safe against any environment.
 .\powershell-scripts\Test-LdgcrmReadiness.ps1 -Environment Dev
 
-# 4. See what a load would do. Runs every transform, writes NOTHING to Salesforce.
+# 5. See what a load would do. Runs every transform, writes NOTHING to Salesforce.
 .\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment Dev -PlanOnly
 
-# 5. Apply it
+# 6. Apply it
 .\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment Dev -Confirmation "LOAD"
 ```
 
+**Step 3 is the one people miss.** The load reads Airtable data from `data/airtable-exports/` on
+disk — it never calls Airtable itself. That folder is gitignored and ships empty, so until you run
+`Get-AirtableExport.ps1` there is nothing there and a load has nothing to do. The readiness check in
+step 4 fails loudly if you skip it, and so does the load's own pre-flight, but neither one pulls the
+data for you. See [Pulling from Airtable](#pulling-from-airtable) below.
+
 Always run `-PlanOnly` first. It is a genuine dry run: it executes every transform against the real
 org, captures a restore point, and reports what each step *would* load — without writing anything.
+
+---
+
+## Pulling from Airtable
+
+One script does it, and you run it yourself:
+
+```powershell
+# All 22 tables. The pull doubles as a backup of the whole base, so this is
+# the default and it is what you want for a real load.
+.\powershell-scripts\Get-AirtableExport.ps1
+
+# Only the 10 tables the transforms actually read. Faster; use it when you
+# just want the load inputs refreshed.
+.\powershell-scripts\Get-AirtableExport.ps1 -MigrationOnly
+
+# One or two tables. SEPARATE ARGUMENTS - "Contacts,Opportunities" as a single
+# comma-joined string binds as one label and is rejected.
+.\powershell-scripts\Get-AirtableExport.ps1 -Tables "Contacts","Opportunities"
+```
+
+It writes one JSON file per table to `data/airtable-exports/<Table>.json`, and a transcript plus
+`pull-summary-<timestamp>.csv` to `logs/data-migration/`.
+
+Four things to know before you run it:
+
+- **It needs `.env`.** `AIRTABLE_API_KEY` (a Personal Access Token starting `pat`, *not* a `key…`
+  API key — Airtable removed those in Feb 2024) and `AIRTABLE_BASE_ID`. Getting a token, and the two
+  scopes it needs, is [`docs/SETUP.md` §3](docs/SETUP.md). No Salesforce access is involved: the pull
+  takes no `-Environment` and cannot touch an org.
+- **Every pull overwrites the last.** `data/airtable-exports/` is a mirror of what Airtable holds
+  *now*, not a history. That is deliberate — always load the newest pull. If you are trying to
+  reproduce a count from a previous run, do **not** re-pull; the counts will move.
+- **A stale export can change a column's *shape*, not just its values.** Airtable turned
+  Opportunities' identity-platform columns from linked records into multi-selects once, and a
+  transform written for one reads the other as garbage. `Build-OpportunityLoad.ps1` hard-fails rather
+  than silently dropping the values, and tells you to re-pull. Take it at its word.
+- **A `403` means "no permission" *or* "that table isn't there".** Airtable returns the same code for
+  both, so a renamed table looks exactly like a bad token. See
+  [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md#airtable-returns-403).
 
 ---
 
@@ -160,6 +221,7 @@ truth.
 | --- | --- | --- | --- | --- |
 | `Dev` *(default)* | PEOdV8DVn | `peodv8dvn` | `gsa-peo--peodv8dvn.sandbox.lightning.force.com` | Rebuilt from an export |
 | `QA` | PEOdV15DVn | `peodv15dvn` | `gsa-peo--peodv15dvn.sandbox.lightning.force.com` | Rebuilt from an export |
+| `UAT` | **PEOfL1UATp** | `peofl1uatp` | `gsa-peo--peofl1uatp.sandbox.lightning.force.com` | **Real — never touched** |
 | `Full` | **PEOfL2STGp** | `peofl2stgp` | `gsa-peo--peofl2stgp.sandbox.lightning.force.com` | **Real — never touched** |
 | `Prod` | — | `gsa-peo` | `gsa-peo.lightning.force.com` | **Real — never touched** |
 

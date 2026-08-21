@@ -78,7 +78,7 @@ The pipeline has four stages that run in order:
 
 ## Environments and org aliases
 
-Every script takes `-Environment Dev|QA|Full|Prod` (default **Dev**) and resolves the alias from the
+Every script takes `-Environment Dev|QA|UAT|Full|Prod` (default **Dev**) and resolves the alias from the
 registry in [`scripts/powershell-scripts/Common.Orgs.ps1`](../../scripts/powershell-scripts/Common.Orgs.ps1). No script
 hard-codes an alias any more.
 
@@ -86,6 +86,7 @@ hard-codes an alias any more.
 | --- | --- | --- | --- | --- |
 | `Dev` *(default)* | `peodv8dvn` | PEOdV8DVn | `https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com` | Day-to-day development and pipeline testing |
 | `QA` | `peodv15dvn` | PEOdV15DVn | `https://gsa-peo--peodv15dvn.sandbox.my.salesforce.com` | Full end-to-end migration rehearsal |
+| `UAT` | `peofl1uatp` | PEOfL1UATp | `https://gsa-peo--peofl1uatp.sandbox.my.salesforce.com` | User acceptance testing. A **full** sandbox — same rules as `Full`, including protected Accounts. *(Provisioned; not authorized on this machine)* |
 | `Full` | `peofl2stgp` | PEOfL2STGp | `https://gsa-peo--peofl2stgp.sandbox.my.salesforce.com` | Operations team integration testing — the scripts **and** the change sets, immediately before production. *(Provisioned; not authorized on this machine)* |
 | `Prod` | `gsa-peo` | — | *(not authorized on this machine)* | The live GSA PEO org |
 
@@ -115,9 +116,10 @@ sf data query --target-org peodv15dvn --query "SELECT Name, IsSandbox FROM Organ
 powershell -Command ". ./scripts/powershell-scripts/Common.ps1; Assert-LdgcrmOrgTarget -Environment QA"
 ```
 
-For the **Full sandbox**, whose name isn't known yet, also fill in `Alias` and `SandboxName` for the
-`Full` entry in `Common.Orgs.ps1` — until then every script targeting it stops with a pointer back
-to this section rather than falling through to a default org.
+**UAT and Full are already in the registry** (`peofl1uatp` / `peofl2stgp`) but are not authorized on
+this machine, so the login above is all either one needs. For a sandbox that is *not* yet in the
+registry, add its entry to `Common.Orgs.ps1` first — until it has an `Alias`, every script targeting
+it stops with a pointer back to this section rather than falling through to a default org.
 
 ### What the startup check actually verifies
 
@@ -165,7 +167,7 @@ powershell -File scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1 -Envi
 A factory reset has no legitimate production use, so production isn't a guarded option; it isn't an
 option. Three independent layers, any one of which stops it:
 
-1. **`-Environment` does not accept `Prod`.** The ValidateSet is `Dev|QA|Full`, so PowerShell rejects
+1. **`-Environment` does not accept `Prod`.** The ValidateSet is `Dev|QA|UAT|Full`, so PowerShell rejects
    the argument before a line of the script runs. There is deliberately no typed-confirmation path,
    unlike the load scripts which legitimately need one.
 2. **The registry is checked.** If the resolved environment is ever marked `IsProduction`, the run
@@ -456,7 +458,7 @@ Airtable pull of 2026-08-12.
 | `Invoke-NotesLoad.ps1` | Notes — load. **The one chunk with its own loader**, not `Invoke-SalesforceLoad.ps1` | Built 2026-08-13. Attaching a note is three steps against two objects (insert `ContentNote` → read back each `ContentDocumentId` → insert `ContentDocumentLink`), and `ContentNote` has no external ID, so created note Ids are written to disk before anything else is attempted. Has an access preflight for the org's unmanaged `ContentDocumentLinkTrigger`, whose kill switch is inert. |
 | `tools/Build-ProdAccountSeed.ps1` | Bootstrap — production Account **name** seeding, not a regular pipeline chunk | **Superseded 2026-08-13** by `Invoke-AccountBootstrap.ps1`, and **moved to `tools/` on 2026-08-14** — kept for provenance, not shipped to Operations. Still runs (now via the shared parser). Its name-dedupe is what left 31 rows unmappable for the hierarchy pass — see "Rebuilding an org's Account tree". |
 | `Invoke-MigrationRollback.ps1` | Rollback — undo ONE `Invoke-FullMigrationLoad.ps1` run from its restore point | Built 2026-08-13. Takes a `full-load-<ts>/` run directory, not a list of objects. Deletes only what that run *created* — external IDs tagged in the org now minus those tagged before the run, measured on both sides rather than read from the load CSVs — and **restores** the Account pre-image rather than deleting, because the migration updates Accounts it does not own. Refuses to run against a run directory with no `external-ids/` folder, and stops if the org has drifted from that run's post-load counts (`-IgnoreDrift` overrides). Typed `ROLLBACK` gate. **A best-effort tidy-up, not a safety net** — see `BACKLOG.md` §4a for what it can never undo. |
-| `Invoke-AccountBootstrap.ps1` | Bootstrap — production Account **names + parent hierarchy**, multi-pass. **Dev/QA only as of 2026-08-14** | Built 2026-08-13. `-Environment` is now `Dev\|QA` — Full and Prod are rejected at parameter-bind time, because a Full sandbox is a copy of production whose Accounts are the real records the migration reconciles onto. `-ProductionConfirmation` was removed with them. Source export moved to `scripts/data/prod-accounts/` and its **format is sniffed, not assumed** — HTML-table-`.xls`, real `.xlsx` (read via `System.IO.Compression`, no Excel needed), or `.csv`. |
+| `Invoke-AccountBootstrap.ps1` | Bootstrap — production Account **names + parent hierarchy**, multi-pass. **Dev/QA only as of 2026-08-14** | Built 2026-08-13. `-Environment` is now `Dev\|QA` — UAT, Full and Prod are rejected at parameter-bind time, because a full sandbox is a copy of production whose Accounts are the real records the migration reconciles onto. `-ProductionConfirmation` was removed with them. Source export moved to `scripts/data/prod-accounts/` and its **format is sniffed, not assumed** — HTML-table-`.xls`, real `.xlsx` (read via `System.IO.Compression`, no Excel needed), or `.csv`. |
 
 ## Load order
 

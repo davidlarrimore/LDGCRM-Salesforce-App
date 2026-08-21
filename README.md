@@ -31,13 +31,14 @@ Full index: **[docs/engineering/ARCHITECTURE.md](docs/engineering/ARCHITECTURE.m
 
 ## Environments
 
-Every script takes `-Environment Dev|QA|Full|Prod` (default **Dev**) and resolves the org alias
+Every script takes `-Environment Dev|QA|UAT|Full|Prod` (default **Dev**) and resolves the org alias
 itself. **You never pass a Salesforce username or alias by hand.**
 
 | `-Environment` | Alias | Used for |
 | --- | --- | --- |
 | `Dev` *(default)* | `peodv8dvn` | Day-to-day development and pipeline testing |
 | `QA` | `peodv15dvn` | Full end-to-end migration rehearsal |
+| `UAT` | `peofl1uatp` | User acceptance testing. A **full** sandbox. **Real Accounts — never rebuilt** |
 | `Full` | `peofl2stgp` | Operations dress rehearsal, immediately before production. **Real Accounts — never rebuilt** |
 | `Prod` | `gsa-peo` | **The live GSA PEO org. Real partner data.** |
 

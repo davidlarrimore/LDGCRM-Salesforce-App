@@ -15,17 +15,25 @@ alarming and are expected.
 
 ## The short version
 
-Two commands, in this order, and the rest of this page is the detail behind them:
+Three commands, in this order, and the rest of this page is the detail behind them:
 
 ```powershell
-# 1. Dry run. Executes every transform for real, writes NOTHING to Salesforce.
+# 1. Pull current Airtable data to disk. Nothing else does this for you, and
+#    the load reads the files it leaves behind. OVERWRITES data/airtable-exports/.
+.\powershell-scripts\Get-AirtableExport.ps1
+
+# 2. Dry run. Executes every transform for real, writes NOTHING to Salesforce.
 .\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment Dev -PlanOnly
 
-# 2. Apply it.
+# 3. Apply it.
 .\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment Dev -Confirmation "LOAD"
 ```
 
 Then read `SUMMARY.txt` in the run's folder under `logs/data-migration/`.
+
+**Step 1 is the one people miss**, because nothing in the pipeline does it on your behalf. See
+[Pulling from Airtable](#pulling-from-airtable) below for when to skip it — a pull you did not need
+moves every count you were comparing against.
 
 Everything below covers what those two commands do, how to approve them, what to do when a step
 fails, and how to check the result properly — because **a clean run is not by itself evidence of a
@@ -64,6 +72,58 @@ in the org, so a mis-ordered run produces a *smaller* migration and a clean-look
 
 That is the failure this pipeline is built to prevent, and it is why there is an orchestrator that
 knows the order rather than a list of eighteen commands in a document.
+
+---
+
+## Pulling from Airtable
+
+`Get-AirtableExport.ps1` is stage 1, and **it is a command you type**. The transforms read
+`data/airtable-exports/<Table>.json` off the disk; no part of the load calls Airtable. Neither the
+readiness check nor the load's pre-flight will pull for you — they will only tell you the export is
+missing or old and stop.
+
+```powershell
+# All 22 tables. The pull doubles as a backup of the base, so this is the
+# default, and it is what you want before a real load.
+.\powershell-scripts\Get-AirtableExport.ps1
+
+# Only the 10 tables the transforms read. Faster; refreshes the load inputs.
+.\powershell-scripts\Get-AirtableExport.ps1 -MigrationOnly
+
+# One or two tables. SEPARATE ARGUMENTS - "Contacts,Opportunities" as a single
+# comma-joined string binds as one label and is rejected.
+.\powershell-scripts\Get-AirtableExport.ps1 -Tables "Contacts","Opportunities"
+```
+
+It takes no `-Environment` and touches no org. It needs `.env` — a Personal Access Token in
+`AIRTABLE_API_KEY` (starts `pat`; the `key…` kind was removed by Airtable in Feb 2024) and
+`AIRTABLE_BASE_ID`. [SETUP.md §3](SETUP.md) covers getting one and the two scopes it needs. Output is
+one JSON file per table, plus a transcript and `pull-summary-<timestamp>.csv` in
+`logs/data-migration/`.
+
+### Pull, or don't?
+
+| Situation | Pull? |
+| --- | --- |
+| First load on this machine, or a fresh copy of this folder | **Yes** — `data/` is gitignored and ships empty, so there is nothing to load |
+| Readiness or pre-flight says the export is missing or *N* days old | **Yes** |
+| Someone fixed data in Airtable and you are re-running to pick it up | **Yes** |
+| A transform hard-fails saying a column's shape changed | **Yes** — that is the fix it is asking for |
+| You are reproducing a documented count, or resuming a run mid-way | **No** — a pull moves every number you are comparing against |
+
+**Every pull overwrites the previous one in place.** `data/airtable-exports/` is a mirror of what
+Airtable holds *now*, not a history, and that is deliberate: always load the newest pull. The
+transcript and summary CSV still land in `logs/data-migration/`, so run history is not lost — only
+the data snapshot is.
+
+**A stale export can change a column's *shape*, not just its values.** Airtable once converted
+Opportunities' identity-platform columns from linked records to multi-selects, and a transform
+written for one reads the other as garbage. `Build-OpportunityLoad.ps1` hard-fails rather than
+silently dropping the values. The readiness check verifies those shapes too.
+
+If a pull returns `403`, read [TROUBLESHOOTING.md](TROUBLESHOOTING.md#airtable-returns-403) — Airtable
+answers 403 for both "no permission" and "table doesn't exist", so a renamed table looks exactly like
+a bad token.
 
 ---
 
@@ -405,16 +465,9 @@ Step names are the ones in the table above.
 Sometimes you want a single object — re-running a transform after an Airtable fix, say.
 
 ```powershell
-# 1. Pull fresh Airtable data (OVERWRITES data/airtable-exports/)
-#    Defaults to all 22 tables - the pull backs up the whole base.
-.\powershell-scripts\Get-AirtableExport.ps1
-
-# ...or only the 10 tables the load actually reads
-.\powershell-scripts\Get-AirtableExport.ps1 -MigrationOnly
-
-# ...or just one or two tables. SEPARATE ARGUMENTS, not one comma-joined
-# string - "Contacts,Opportunities" binds as a single label and is rejected.
-.\powershell-scripts\Get-AirtableExport.ps1 -Tables "Contacts","Opportunities"
+# 1. Pull fresh Airtable data - see "Pulling from Airtable" above for the
+#    full options. OVERWRITES data/airtable-exports/.
+.\powershell-scripts\Get-AirtableExport.ps1 -Tables "Opportunities"
 
 # 2. Transform (read-only — safe to run any time)
 .\powershell-scripts\Build-OpportunityLoad.ps1 -Environment Dev
@@ -430,9 +483,9 @@ Sometimes you want a single object — re-running a transform after an Airtable 
 `OpportunityContactRole` uses `Insert`.
 
 > **A fresh Airtable pull overwrites `data/airtable-exports/` in place** and shifts every count you
-> may be comparing against. If you are reproducing documented figures, do **not** re-pull. The run
-> transcript and a summary CSV still land in `logs/data-migration/`, so run history isn't lost —
-> only the data snapshot is.
+> may be comparing against, for every table it pulls. If
+> you are reproducing documented figures, do **not** re-pull. See
+> [Pull, or don't?](#pull-or-dont) above.
 
 ### The Contact step disables another team's trigger
 

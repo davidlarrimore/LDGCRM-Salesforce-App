@@ -28,7 +28,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
     [string]$Environment = "Dev",
 
     # Empty = use the environment's registered alias (Common.Orgs.ps1).
@@ -221,7 +221,7 @@ foreach ($Pair in @(
 }
 
 # The Account bootstrap source. Only meaningful where Accounts may be rebuilt -
-# in Full and Prod its absence is correct, not a gap.
+# in UAT, Full and Prod its absence is correct, not a gap.
 if (Test-LdgcrmAccountRebuildAllowed -Environment $Environment) {
     try {
         $ProdExport = Resolve-ProdAccountExportPath

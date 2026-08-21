@@ -6,6 +6,9 @@ files can contain PII from Login.gov applicants and partner contacts.
 
 - `airtable-exports/` — one JSON file per Airtable table (`<Table>.json`), written by
   `powershell-scripts/Get-AirtableExport.ps1`, which pulls straight from the Airtable REST API.
+  **You run that script yourself** — `.\powershell-scripts\Get-AirtableExport.ps1` from the bundle
+  root — and nothing else ever populates this folder. The transforms read these files off disk; no
+  part of a load contacts Airtable, so a migration is only as current as your last pull.
   **All 22 tables in the base, not just the 10 the load reads** — the pull doubles as a backup of
   the base. Each run overwrites these in place: they reflect current Airtable state, not a history
   of past pulls, so copy the folder elsewhere if you need to keep a particular snapshot. Requires

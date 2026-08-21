@@ -20,7 +20,7 @@
         powershell tools/metadata/Sync-Metadata.ps1 -SkipDiscovery   # retrieve the manifest as-is, skip the scan
 #>
 param(
-    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
     [string]$Environment = "Dev",
 
     # Empty = use the environment's registered alias (scripts/powershell-scripts/Common.Orgs.ps1).

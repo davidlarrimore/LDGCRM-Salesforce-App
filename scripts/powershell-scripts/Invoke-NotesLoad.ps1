@@ -66,7 +66,7 @@
 #>
 
 param(
-    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
     [string]$Environment = "Dev",
 
     [string]$OrgAlias = "",

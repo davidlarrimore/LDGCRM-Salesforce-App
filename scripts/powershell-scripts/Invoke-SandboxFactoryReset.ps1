@@ -21,7 +21,7 @@
     guarded option here - it is not an option at all. Three independent layers,
     each of which alone would stop it:
 
-      1. -Environment does not accept "Prod". The ValidateSet is Dev|QA|Full,
+      1. -Environment does not accept "Prod". The ValidateSet is Dev|QA|UAT|Full,
          so PowerShell rejects the argument before a single line of this script
          runs. There is no typed-confirmation path to production, unlike the
          load scripts, which legitimately need one.
@@ -86,9 +86,9 @@
     (Account.ParentId is a self-lookup that can only be filled in once the
     parent row exists) - see that script's header.
 
-    ⚠️ DEV AND QA ONLY. In a FULL sandbox, Account is filtered out of the delete
-    list above and the bootstrap is never offered: a Full sandbox is a copy of
-    production, so its Accounts are the real records the migration reconciles
+    ⚠️ DEV AND QA ONLY. In a UAT or FULL sandbox, Account is filtered out of the
+    delete list above and the bootstrap is never offered: both are copies of
+    production, so their Accounts are the real records the migration reconciles
     onto. See Test-LdgcrmAccountRebuildAllowed in Common.Orgs.ps1.
 
     The offer is a prompt, not a default. -BootstrapAccounts answers yes up
@@ -107,7 +107,7 @@ param(
     # LAYER 1 OF THE PRODUCTION BLOCK: "Prod" is absent on purpose. PowerShell
     # rejects it at bind time, so there is no code path to production at all.
     # Do not add it back - a factory reset has no production use.
-    [ValidateSet("Dev", "QA", "Full")]
+    [ValidateSet("Dev", "QA", "UAT", "Full")]
     [string]$Environment = "Dev",
 
     # Escape hatch for a sandbox that isn't in the registry. Skips the
@@ -184,9 +184,9 @@ if ($BootstrapAccounts -and $SkipBootstrap) {
 }
 
 # ============================================================
-# ACCOUNT IS PROTECTED IN A FULL SANDBOX
+# ACCOUNT IS PROTECTED IN A FULL SANDBOX (UAT AND FULL)
 # ============================================================
-# A Full sandbox is a COPY OF PRODUCTION, so its Accounts are the real records
+# A full sandbox is a COPY OF PRODUCTION, so its Accounts are the real records
 # the migration reconciles onto - not something a previous rehearsal created.
 # Everything else in the object list carries LDGCRM_External_ID__c because THIS
 # MIGRATION made it, so resetting those is exactly right; Account is the one
@@ -640,7 +640,7 @@ if ($TotalRecords -eq 0) {
         -ForegroundColor Green
 
     # Deliberately NOT an early exit any more. An org with nothing to delete is
-    # the normal state of a freshly-refreshed QA/Full sandbox, and that is
+    # the normal state of a freshly-refreshed QA or full sandbox, and that is
     # precisely when the Account bootstrap is most needed - exiting here would
     # have made the combined "reset this org" workflow impossible to run in one
     # go.

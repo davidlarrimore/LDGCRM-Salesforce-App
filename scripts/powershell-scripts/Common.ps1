@@ -7,7 +7,7 @@
 # with the classic two-argument form only, so path handling stays portable if this
 # ever does run under pwsh 7+ on another machine.
 
-# The Salesforce environment registry (Dev/QA/Full/Prod -> org alias) lives in
+# The Salesforce environment registry (Dev/QA/UAT/Full/Prod -> org alias) lives in
 # its own file but is dot-sourced from here so that every script already
 # dot-sourcing Common.ps1 gets Resolve-LdgcrmOrgAlias/Assert-LdgcrmOrgTarget
 # without a second line. Scripts must never hard-code an org alias again - see

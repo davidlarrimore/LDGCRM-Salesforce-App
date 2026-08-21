@@ -108,13 +108,14 @@ Already set in this clone's local config; you need it again in a fresh clone.
 
 ### Understand the environments first — this is the part people get wrong
 
-Every script takes `-Environment Dev|QA|Full|Prod` and looks the actual org alias up itself from
+Every script takes `-Environment Dev|QA|UAT|Full|Prod` and looks the actual org alias up itself from
 `powershell-scripts/Common.Orgs.ps1`. **You never pass a Salesforce username or org alias by hand.**
 
 | `-Environment` | Alias | What it is |
 | --- | --- | --- |
 | `Dev` *(default)* | `peodv8dvn` | Day-to-day development and pipeline testing |
 | `QA` | `peodv15dvn` | Full end-to-end migration rehearsal |
+| `UAT` | `peofl1uatp` | User acceptance testing. A **full** sandbox, so it follows the `Full` rules. **Real Accounts — never rebuilt** |
 | `Full` | `peofl2stgp` | Operations dress rehearsal, immediately before production. **Real Accounts — never rebuilt** |
 | `Prod` | `gsa-peo` | **PRODUCTION. Real Login.gov partner data.** |
 
@@ -176,9 +177,11 @@ deliberately bypasses those checks and should be a last resort.
 
 ---
 
-## 3. Get Airtable access
+## 3. Get Airtable access, and pull the data
 
-Three steps, and the first one needs someone else, so start it early.
+Four steps, and the first one needs someone else, so start it early. The last one — the pull — is the
+step people miss: **the load reads Airtable data from disk and never calls Airtable itself**, so
+until you have pulled, there is nothing to migrate.
 
 ### Step 1 — Get admin access to the base
 
@@ -246,6 +249,26 @@ Never commit it.
 A single small table. If it writes `data/airtable-exports/Impediments.json` you are connected. If
 you get a `403`, read [TROUBLESHOOTING.md](TROUBLESHOOTING.md#airtable-returns-403) — Airtable
 returns 403 for both "no permission" and "table doesn't exist", so the two look identical.
+
+### Step 4 — Pull the whole base
+
+That one table proved the connection. **A load needs the rest**, so pull everything now — with no
+`-Tables`, and no `-Environment`, because the pull touches no Salesforce org at all:
+
+```powershell
+.\powershell-scripts\Get-AirtableExport.ps1
+```
+
+All 22 tables, one JSON file each in `data/airtable-exports/`; ten of them feed the transforms and
+the rest are carried so the pull is a faithful backup of the base. `-MigrationOnly` narrows it to
+those ten when you only want the load inputs refreshed.
+
+> **This is a step you run, every time you want current data.** Nothing in the pipeline pulls on
+> your behalf. The transforms read the JSON files off disk, so a load is only ever as fresh as your
+> last pull — the readiness check and the load's pre-flight will tell you the export is missing or
+> old, and then stop. Each pull **overwrites** the previous one; that is deliberate, the folder is a
+> mirror of Airtable now, not a history. [RUNNING-A-LOAD.md](RUNNING-A-LOAD.md#pulling-from-airtable)
+> has the full options and the cases where you should *not* re-pull.
 
 ---
 

@@ -51,7 +51,7 @@ param(
 
     # The org that BUILT the change set. See the header - this is deliberately
     # not the org you are verifying.
-    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
     [string]$Environment = "Dev",
 
     # Empty = use the environment's registered alias (Common.Orgs.ps1).

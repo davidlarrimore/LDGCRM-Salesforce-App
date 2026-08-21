@@ -3,7 +3,7 @@ name: sfdx-sandbox-ops
 description: Safety checklist for running or modifying any script that deletes, hard-deletes, or bulk-modifies records in a GSA PEO org (Dev sandbox by default) (e.g. scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1, future data-migration loads).
 ---
 
-# Destructive org operations (Dev/QA/Full/Prod)
+# Destructive org operations (Dev/QA/UAT/Full/Prod)
 
 The Dev and QA sandboxes are not production — but they hold real (or real-shaped) Login.gov applicant data
 during the migration, and mistakes here still cost real rework. Treat destructive operations against
@@ -11,7 +11,7 @@ it with real caution, not sandbox-so-it-doesn't-matter carelessness.
 
 ## Pick the environment explicitly
 
-Scripts take `-Environment Dev|QA|Full|Prod` (default `Dev`) and resolve the alias from
+Scripts take `-Environment Dev|QA|UAT|Full|Prod` (default `Dev`) and resolve the alias from
 `scripts/powershell-scripts/Common.Orgs.ps1`. Never pass a bare `--target-org`/`-OrgAlias` to reach a registered
 environment — that skips the registry's identity checks.
 

@@ -7,20 +7,20 @@
     Get-ProdAccountExportFormat).
 
     ------------------------------------------------------------------
-    DEV AND QA ONLY. NOT FULL, NOT PRODUCTION.
+    DEV AND QA ONLY. NOT UAT, NOT FULL, NOT PRODUCTION.
     ------------------------------------------------------------------
     -Environment accepts Dev and QA and nothing else, so PowerShell rejects a
-    Full or Prod target at bind time - the same structural block
+    UAT, Full or Prod target at bind time - the same structural block
     Invoke-SandboxFactoryReset.ps1 uses against production, for the same
     reason: there is no legitimate use, so it is not offered as a guarded
     option. Test-LdgcrmAccountRebuildAllowed in Common.Orgs.ps1 carries the
     reasoning and is the single definition of the rule.
 
     In short: Dev and QA are empty developer sandboxes that need an Account
-    universe invented for them. A Full sandbox is a COPY OF PRODUCTION whose
-    Accounts are the real records this migration reconciles onto, and
-    overwriting them with a stale export would invalidate the very rehearsal it
-    was meant to support.
+    universe invented for them. UAT and Full are FULL sandboxes - COPIES OF
+    PRODUCTION - whose Accounts are the real records this migration reconciles
+    onto, and overwriting them with a stale export would invalidate the very
+    rehearsal it was meant to support.
 
     WHY THIS EXISTS
       Every other object in this migration hangs off Account, and Account is
@@ -29,8 +29,8 @@
       pipeline reconciles onto existing records rather than inserting new
       ones). That works in production, where the Accounts are already there.
       It does not work in a freshly-cleaned sandbox, where there is nothing to
-      reconcile onto - and a QA/Full-sandbox rehearsal of the migration is only
-      meaningful if it starts from a realistic Account universe.
+      reconcile onto - and a QA or full-sandbox rehearsal of the migration is
+      only meaningful if it starts from a realistic Account universe.
 
       This script builds that universe. It supersedes Build-ProdAccountSeed.ps1,
       which seeded Name only and left every Account parentless.
@@ -91,7 +91,7 @@
 #>
 
 param(
-    # "Full" and "Prod" are absent on purpose - see the block in the header.
+    # "UAT", "Full" and "Prod" are absent on purpose - see the block in the header.
     # Do not add them back.
     [ValidateSet("Dev", "QA")]
     [string]$Environment = "Dev",
@@ -128,10 +128,11 @@ param(
     [string]$Confirmation = "",
 
     # NO -ProductionConfirmation HERE, deliberately. It was removed on
-    # 2026-08-14 along with Prod/Full from the ValidateSet above. A parameter
-    # whose only purpose is to approve something this script can no longer do
-    # is worse than useless: it reads as though a production path exists and
-    # invites someone to go looking for it.
+    # 2026-08-14 along with Prod/Full from the ValidateSet above (UAT joined them
+    # on 2026-08-21, on the same full-sandbox rule). A parameter whose only
+    # purpose is to approve something this script can no longer do is worse than
+    # useless: it reads as though a production path exists and invites someone
+    # to go looking for it.
 
     # Runaway guard. The export is 4 levels deep; this should never bind.
     [int]$MaxPasses = 12,
@@ -397,7 +398,7 @@ Write-Host "============================================================" -Foreg
 
 $OrgInfo = Assert-LdgcrmOrgTarget -Environment $Environment -OrgAlias $OrgAlias
 
-# The ValidateSet already refuses Full and Prod at bind time. These two checks
+# The ValidateSet already refuses UAT, Full and Prod at bind time. These two checks
 # close the -OrgAlias escape hatch, which deliberately bypasses the registry's
 # identity checks and would otherwise be a way to aim a Dev-labelled run at any
 # org at all. Same three-layer pattern as Invoke-SandboxFactoryReset.ps1.

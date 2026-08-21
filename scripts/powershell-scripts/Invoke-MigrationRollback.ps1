@@ -71,7 +71,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$RunDirectory,
 
-    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
     [string]$Environment = "Dev",
 
     # Empty = use the environment's registered alias (powershell-scripts/Common.Orgs.ps1).

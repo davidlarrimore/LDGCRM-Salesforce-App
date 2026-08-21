@@ -5,7 +5,7 @@ description: Use when pulling Salesforce metadata from a GSA PEO org (Dev sandbo
 
 # Salesforce metadata sync
 
-This project has one SFDX project (`sfdx/`) and four registered environments (Dev/QA/Full/Prod — see `scripts/powershell-scripts/Common.Orgs.ps1`; the Dev sandbox alias is `peodv8dvn`). Metadata flows
+This project has one SFDX project (`sfdx/`) and five registered environments (Dev/QA/UAT/Full/Prod — see `scripts/powershell-scripts/Common.Orgs.ps1`; the Dev sandbox alias is `peodv8dvn`). Metadata flows
 both directions through the Salesforce CLI (`sf`) — retrieve from the sandbox into `sfdx/force-app`,
 or deploy local changes back out.
 

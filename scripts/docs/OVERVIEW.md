@@ -115,7 +115,7 @@ Terms you will meet constantly, in the sense this project uses them.
 
 | Term | What it means here |
 | --- | --- |
-| **Org** | One Salesforce environment. Dev, QA, Full and Prod are four separate orgs. |
+| **Org** | One Salesforce environment. Dev, QA, UAT, Full and Prod are five separate orgs. |
 | **Sandbox** | A non-production org used for testing. Dev, QA and Full are sandboxes. |
 | **Object** | A *type* of record — Salesforce's word for a table. `Account`, `Contact`, `Opportunity`. |
 | **Standard object** | An object Salesforce ships with. `Account`, `Contact`, `Opportunity`. |
@@ -171,7 +171,11 @@ Terms you will meet constantly, in the sense this project uses them.
 
 **Stage 1 — Pull.** `Get-AirtableExport.ps1` downloads the Airtable base into one JSON file per
 table. Each pull overwrites the last: this folder is a mirror of what Airtable holds *now*, not a
-history.
+history. **You run this yourself** — it is a separate command, not part of the load. Everything
+downstream reads those files off disk and never contacts Airtable, so a migration is only ever as
+current as your last pull, and on a fresh copy of this folder (where `data/` is empty) nothing will
+load at all until you have run it. [RUNNING-A-LOAD.md](RUNNING-A-LOAD.md#pulling-from-airtable) has
+the command and its options.
 
 **Stage 2 — Transform.** A `Build-*.ps1` script reads that JSON, applies this object's mapping rules,
 and writes a CSV to `data/salesforce-loads/`. It also *queries* Salesforce, read-only, to find out
@@ -381,7 +385,7 @@ produce.
 | Script | Holds |
 | --- | --- |
 | `Common.ps1` | Logging, paths, the confirmation gate. Every script loads this |
-| `Common.Orgs.ps1` | The environment registry — which org each of Dev/QA/Full/Prod means, and the identity checks |
+| `Common.Orgs.ps1` | The environment registry — which org each of Dev/QA/UAT/Full/Prod means, and the identity checks |
 | `Common.DataMigration.ps1` | Helpers shared by the transforms — CSV writing, contact grouping, value cleaning |
 | `Common.AccountMatching.ps1` | The rules for "is this Airtable row the same agency as this Salesforce Account?", in one place so every script answers it identically |
 | `Common.LoadReport.ps1` | Builds `SUMMARY.txt` — the one report that says how a run went |
@@ -395,7 +399,7 @@ they are there makes them much less annoying.
 
 ### You name an environment, never an org
 
-No script takes a Salesforce username or org alias by hand. They take `-Environment Dev|QA|Full|Prod`
+No script takes a Salesforce username or org alias by hand. They take `-Environment Dev|QA|UAT|Full|Prod`
 and look the real org up themselves from a registry in `Common.Orgs.ps1`.
 
 Then, before doing anything, every script **asks the org who it is** and refuses to continue if the
@@ -523,6 +527,7 @@ groups and counts all of them for you, so start there and open the individual fi
 | Deploy the app into an org for the first time | [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) |
 | Get your machine ready | [SETUP.md](SETUP.md) |
 | Check whether you are ready, without running a load | `Test-LdgcrmReadiness.ps1` — read-only, safe anywhere |
+| Get current data out of Airtable | [RUNNING-A-LOAD.md](RUNNING-A-LOAD.md#pulling-from-airtable) — `Get-AirtableExport.ps1`, a step you run yourself |
 | Run a load | [RUNNING-A-LOAD.md](RUNNING-A-LOAD.md) |
 | Work out why something failed | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | Undo a load | [ROLLBACK.md](ROLLBACK.md) |

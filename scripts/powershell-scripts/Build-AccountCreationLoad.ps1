@@ -40,7 +40,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("Dev", "QA", "Full", "Prod")]
+    [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
     [string]$Environment = "Dev",
 
     # Set this only to reach an org that isn't in the registry; doing so skips
