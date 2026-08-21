@@ -13,6 +13,7 @@ user, or at the data when the problem is a file's encoding. That is what this pa
 | A run finished and you want to know how it went | [Reading the logs](#reading-the-logs) |
 | A step said `LOAD FAILED` or `PARTIAL` | [PARTIAL](#a-step-reports-partial-expected-failures) · [LOAD FAILED](#a-step-reports-load-failed-and-you-think-the-counts-look-right) |
 | Salesforce rejected rows with an error code | Find the code below — they are listed verbatim |
+| Rows rejected for access, or a step that thinks the org is empty | [`INSUFFICIENT_ACCESS_OR_READONLY`](#insufficient_access_or_readonly--or-a-step-that-sees-an-empty-org) |
 | It reported success but the numbers look wrong | [A count looks wrong and nothing errored](#a-count-looks-wrong-and-nothing-errored) |
 | It reported success but a field is empty everywhere | [Market Segment is blank on everything](#market-segment-is-blank-on-everything-and-the-load-reported-success) |
 | Airtable will not talk to you | [403](#airtable-returns-403) · [429](#airtable-returns-429) |
@@ -207,6 +208,48 @@ sf data query -q "SELECT Id, Name, UserType, IsActive, Profile.Name FROM User WH
 some path is promoting a User Id into an `OwnerId` without that check. Note it has to be checked
 **everywhere a User Id becomes an owner**, not just in the shared resolver — a User *lookup* field
 may legitimately point at a Chatter user, but ownership is stricter.
+
+---
+
+## `INSUFFICIENT_ACCESS_OR_READONLY` — or a step that sees an empty org
+
+**Meaning:** your own user has not been given access to the app in the org you are loading. Two
+separate grants are needed and they fail in completely different ways.
+
+| Missing | Symptom |
+| --- | --- |
+| `LDGCRM_G_Production_Support_CRED` permission set group | Loud. Rows fail with `INSUFFICIENT_ACCESS_OR_READONLY`, or a whole object fails on a field you can see in Setup. `-Readiness` reports the columns as not writable |
+| Membership of the `LDGCRM_Team_Members` public group | **Silent.** Nothing fails. Steps that query the org first read a partial answer and act on it |
+
+**Why the second one is the dangerous one:** these objects are org-wide-default restricted, so
+sharing — not object permission — decides which records your SOQL returns. A record you cannot see
+is indistinguishable from one that does not exist, so the pipeline concludes it is absent: parent
+Partner Accounts "missing" and their Applications withheld, `OpportunityContactRole` re-inserting
+rows its read-then-diff could not see, Account reconciliation matching against a fraction of the
+Accounts. The run reports success either way.
+
+**Diagnose** — what the running user actually holds:
+
+```powershell
+# Permission set groups assigned to you
+sf data query --target-org peodv8dvn --result-format csv -q "SELECT PermissionSetGroup.DeveloperName FROM PermissionSetAssignment WHERE Assignee.Username = '<your username>' AND PermissionSetGroupId != null"
+
+# Public groups you are a member of (direct membership only)
+sf data query --target-org peodv8dvn --result-format csv -q "SELECT Group.DeveloperName FROM GroupMember WHERE UserOrGroupId = '<your 18-char user id>'"
+```
+
+`sf org display user --target-org peodv8dvn` gives you the username and Id.
+
+**Fix:** in the target org, assign yourself `LDGCRM_G_Production_Support_CRED` and add yourself to
+`LDGCRM_Team_Members`, then re-run. Full detail in
+[SETUP.md](SETUP.md#give-your-own-user-access-to-the-app-in-every-org-you-load).
+
+**If a load already ran without them, re-run it rather than patching up.** The rows it withheld were
+never submitted, and the duplicates a read-then-diff step created are real records — check the run's
+`SUMMARY.txt` withheld counts against a later run that had the access.
+
+> A profile with *View All Data* / *Modify All Data* masks all of this, which is why it can pass in a
+> sandbox under an admin login and then bite under a production integration user.
 
 ---
 
@@ -515,6 +558,10 @@ Specific things that have produced plausible-but-wrong numbers:
   orchestrator now refuses to count or load a file its transform didn't just write.
 - **Counting against zero instead of a baseline.** Some things (junk Accounts, pre-existing test
   records) never return to zero. Measure deltas.
+- **The loading user could not see half the org.** Sharing filters SOQL, so a step that queries before
+  it writes reads a record it has no access to as a record that is not there — rows withheld for a
+  "missing" parent, or re-inserted because a read-then-diff came back empty. See
+  [`INSUFFICIENT_ACCESS_OR_READONLY`](#insufficient_access_or_readonly--or-a-step-that-sees-an-empty-org).
 - **The org's Flows were switched off.** Counts are *right* and field contents are empty — see the
   next section, which is the worst version of this because every count agrees.
 - **The bootstrap lost rows to an unreadable Bulk result** — see the next-but-one section.

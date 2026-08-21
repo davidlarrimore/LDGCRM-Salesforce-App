@@ -77,6 +77,7 @@ working in an empty Dev or QA sandbox.
 | **Understand the project before touching it** | [`docs/OVERVIEW.md`](docs/OVERVIEW.md) |
 | **Stand the app up in an org it has never run in** | [`docs/DEPLOYMENT-GUIDE.md`](docs/DEPLOYMENT-GUIDE.md) |
 | Install the tools and get credentials | [`docs/SETUP.md`](docs/SETUP.md) |
+| **Get yourself access to the app in an org** | [`docs/SETUP.md`](docs/SETUP.md#give-your-own-user-access-to-the-app-in-every-org-you-load) — a permission set group and a public group, neither of which the pipeline can grant |
 | **Pull fresh data out of Airtable** | [Pulling from Airtable](#pulling-from-airtable) — `.\powershell-scripts\Get-AirtableExport.ps1`. You run it yourself; no other script does |
 | **Check everything is set up correctly** | `.\powershell-scripts\Test-LdgcrmReadiness.ps1` — read-only, safe anywhere. See [`docs/RUNNING-A-LOAD.md`](docs/RUNNING-A-LOAD.md#am-i-ready--the-readiness-check) |
 | Run a load | [`docs/RUNNING-A-LOAD.md`](docs/RUNNING-A-LOAD.md) |
@@ -108,6 +109,14 @@ Get-ChildItem -Recurse -Filter *.ps1 | Unblock-File
 # 1. Authenticate to the sandbox, at its own My Domain URL (not test.salesforce.com)
 sf org login web --alias peodv8dvn `
   --instance-url https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com
+
+# 1b. ONE TIME PER ORG, done IN SALESFORCE rather than here: give the account
+#     you are loading under the LDGCRM_G_Production_Support_CRED permission set
+#     group AND membership of the LDGCRM_Team_Members public group. Without the
+#     first, steps fail on INSUFFICIENT_ACCESS_OR_READONLY. Without the second,
+#     records you do not own are invisible to your own queries and steps that
+#     read the org before writing quietly act on a partial answer.
+#     See docs/SETUP.md. The readiness check in step 4 does NOT cover this.
 
 # 2. Airtable credentials. Copy the template and fill in your token.
 #    You need an admin account on the base first - see docs/SETUP.md.

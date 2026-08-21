@@ -168,6 +168,31 @@ have edit access to every parent record. Running a production load under a perso
 individual engineer the owner of records they have no relationship to. See
 [RUNNING-A-LOAD.md](RUNNING-A-LOAD.md#who-ends-up-owning-the-records).
 
+### Give your own user access to the app, in every org you load
+
+Being able to log in is not the same as being able to see the app's records. Before you load, in the
+target org, on the account you will run under:
+
+1. **Assign yourself the `LDGCRM_G_Production_Support_CRED` permission set group.** That is what
+   gives you the objects, the fields and the record types. `CRED` rather than `CRE` because the
+   pipeline deletes — the factory reset and the rollback both do.
+2. **Add yourself to the `LDGCRM_Team_Members` public group.** These objects are org-wide-default
+   restricted, so object access on its own shows you only the records you personally own. Sharing
+   decides the rest, and the sharing rules point at that group.
+
+Both, not either: one grants *object and field* access, the other decides *which records*.
+
+**The second is the one that goes unnoticed.** A record you cannot see does not raise an error — it
+reads as absent, so the transforms that query the org before deciding what to send draw the wrong
+conclusion quietly and the run still reports success. The Notes step is the loud version of the same
+thing: attaching a note needs *your* user to have edit access to every parent record.
+
+A System Administrator profile carrying *View All Data* may get through without either grant. Do not
+rely on that — it is precisely how this reaches production unnoticed. The full version is in
+[DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md#2f-the-person-running-the-load-needs-both-of-the-above-on-their-own-account).
+
+Take both off again afterwards if the account is not meant to keep standing access.
+
 ### Authorizing a new environment
 
 If you are standing up an org the registry doesn't know about yet, add it to
@@ -354,6 +379,9 @@ It checks your `.env` and token shape, that every Airtable table was pulled and 
 you can actually reach, who you are in the target org, and that every field the load writes exists
 and is writable there. It writes nothing and fixes nothing — each finding names the command that
 would. Ends in `READY.` or `NOT READY.`
+
+**It does not check your permission set group or public group membership**, so a `READY.` is not a
+statement that you have access to the app. That pair is yours to grant, above.
 
 `-AllEnvironments` probes all four orgs; Full and Prod reporting "not authorized here" is expected on
 most machines, and is INFO rather than a failure.

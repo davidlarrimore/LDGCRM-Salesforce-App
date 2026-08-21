@@ -57,6 +57,13 @@ verifying.
 
 ## Running it
 
+> **Before the first command, in the org you are reloading:** assign your own user the
+> `LDGCRM_G_Production_Support_CRED` permission set group and add it to the `LDGCRM_Team_Members`
+> public group. The factory reset needs the `D`; every count in this checklist is a SOQL query run as
+> you, and these objects are org-wide-default restricted, so without the public group the
+> verification below measures what you can *see* rather than what is *there* — and reads low without
+> saying so. [SETUP.md](SETUP.md#give-your-own-user-access-to-the-app-in-every-org-you-load).
+
 ```powershell
 # Pull first. The reconciliation in section 1 measures the Airtable side from
 # whatever is in data/airtable-exports/, so the reload and the counts you check

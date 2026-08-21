@@ -200,7 +200,7 @@ it, and every path resolves off the bundle root. `tools/Export-OpsBundle.ps1` bu
 verifies it by reading the archive back; `tools/Test-BundleStructure.ps1` guards against the folder
 quietly regaining an outward dependency.
 
-Two consequences that matter for this gate:
+Three consequences that matter for this gate:
 
 - **Accounts are never deleted or rebuilt in a Full sandbox.** It is a copy of production, so its
   Accounts *are* the records the migration reconciles onto. Enforced in code, in one place, across all
@@ -208,6 +208,12 @@ Two consequences that matter for this gate:
 - **Two things must be handed over out-of-band**, because neither is in the repo: the production
   Account export (gitignored, and only needed if Operations also rehearse in a *developer* sandbox),
   and Airtable Personal Access Token access, which requires an admin account on the base.
+- **Whoever runs it needs the app granted to their own user in the target org** — the
+  `LDGCRM_G_Production_Support_CRED` permission set group and membership of the `LDGCRM_Team_Members`
+  public group. Nothing in the pipeline can grant these, and the readiness check does not test for
+  them. The public-group half fails silently: these objects are org-wide-default restricted, so a
+  record the loader cannot see reads as absent to the transforms that query before they write. It is
+  step 1 of phase 3 in the deployment guide.
 
 Authorize the alias per the runbook in
 [engineering/ARCHITECTURE.md](engineering/ARCHITECTURE.md) ("Environments and org aliases"):

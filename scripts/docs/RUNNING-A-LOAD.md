@@ -31,6 +31,14 @@ Three commands, in this order, and the rest of this page is the detail behind th
 
 Then read `SUMMARY.txt` in the run's folder under `logs/data-migration/`.
 
+> **The zeroth step is a one-off, in the org rather than on your machine: give the account you are
+> loading under the `LDGCRM_G_Production_Support_CRED` permission set group and membership of the
+> `LDGCRM_Team_Members` public group.** Without the first, steps fail on
+> `INSUFFICIENT_ACCESS_OR_READONLY`. Without the second, records you do not own are invisible to your
+> own queries and several steps read the org before deciding what to send — a green run with wrong
+> contents. [SETUP.md](SETUP.md#give-your-own-user-access-to-the-app-in-every-org-you-load) has the
+> detail; the readiness check does not cover it.
+
 **Step 1 is the one people miss**, because nothing in the pipeline does it on your behalf. See
 [Pulling from Airtable](#pulling-from-airtable) below for when to skip it — a pull you did not need
 moves every count you were comparing against.
@@ -165,6 +173,11 @@ Two of those deserve a sentence, because they catch things nothing else does:
 - **The Airtable check verifies SHAPE, not just presence.** A stale export can change a column's type
   rather than its values — Opportunities' identity-platform columns went from linked records to
   multi-selects, and a transform written for one reads the other as garbage.
+
+**What Access does not cover: your permission set group and your public group membership.** It reads
+who you are, not what you can reach. `READY.` is not a statement that you can see the app — grant
+yourself `LDGCRM_G_Production_Support_CRED` and `LDGCRM_Team_Members` first, per
+[SETUP.md](SETUP.md#give-your-own-user-access-to-the-app-in-every-org-you-load).
 
 ### Wired into the load as `-Readiness`
 

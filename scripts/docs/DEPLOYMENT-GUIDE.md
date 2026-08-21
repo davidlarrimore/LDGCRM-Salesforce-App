@@ -19,7 +19,7 @@ follow the same sequence. Everywhere production differs is marked **🔴 Product
 
 ## Metadata, then people, then data
 
-The order is not a preference, and two of the three ways of getting it wrong fail *quietly*:
+The order is not a preference, and three of the four ways of getting it wrong fail *quietly*:
 
 - **Load before the metadata lands** and the fields do not exist. This one is loud — the pipeline
   names the missing component and stops.
@@ -30,6 +30,10 @@ The order is not a preference, and two of the three ways of getting it wrong fai
   from the people who are *meant* to land there. Provisioning them afterwards does not move the
   records — a re-load does, and re-loading after go-live overwrites whatever anyone has edited by
   hand.
+- **Load without granting yourself access to the app** and the org answers your queries with the
+  subset you can see rather than what is actually there. Nothing errors — a record you cannot see is
+  indistinguishable from one that does not exist. See
+  [2f](#2f-the-person-running-the-load-needs-both-of-the-above-on-their-own-account).
 
 ---
 
@@ -140,6 +144,10 @@ Assign people to the group, not to the bare permission set.
 `Contact.GSA`, `LDGCRM_application__c.LDGCRM_Application` and `Opportunity.Login_gov` visible, which
 is why those record types are marked *not* visible on the profiles themselves.
 
+**`LDGCRM_G_Production_Support_CRED` is also what the person running the migration assigns to
+themselves** — the load needs the D as well as the CRE. See
+[2f](#2f-the-person-running-the-load-needs-both-of-the-above-on-their-own-account).
+
 ### 2c. Page layouts — assign them on the profile, by hand
 
 **A permission set cannot assign a page layout. Only a profile can.** The permission set groups above
@@ -190,6 +198,10 @@ people. Nothing errors; the app simply looks empty to everyone who is not an adm
 
 **Populate both groups in the target org, then have a non-admin confirm they can see records.**
 
+**Put whoever is running the migration in `LDGCRM_Team_Members` while they run it**, for the same
+reason and with a worse failure mode — see
+[2f](#2f-the-person-running-the-load-needs-both-of-the-above-on-their-own-account).
+
 A permission set group is not a substitute: one grants *object and field* access, the other decides
 *which records* you can see. People need both.
 
@@ -228,11 +240,50 @@ roster, not Airtable, and never by adding an alias map to the pipeline.
 Expect that report to be non-empty on a first production pre-flight. Run it early enough that
 provisioning can happen before the load.
 
-### 2f. 🔴 Production: load as a dedicated integration user
+### 2f. The person running the load needs both of the above, on their own account
+
+**Before the load, the admin running it must assign themselves the
+`LDGCRM_G_Production_Support_CRED` permission set group and add themselves to the
+`LDGCRM_Team_Members` public group, in the target org.** This is a step they do to their own user,
+not one the pipeline can do for them, and neither half of the pair substitutes for the other:
+
+| Without | What the load hits |
+| --- | --- |
+| The **permission set group** | No object or field access to the `LDGCRM_` objects. Steps fail row by row with `INSUFFICIENT_ACCESS_OR_READONLY`, or the readiness check reports fields it cannot write |
+| The **public group** | Object access exists, but the sharing rules never reach you. Records you do not own are invisible to *your* SOQL, and several transforms read the org before deciding what to send |
+
+`CRED` and not `CRE` because the pipeline deletes: the factory reset hard-deletes migrated records,
+and [ROLLBACK.md](ROLLBACK.md) removes what a run created. `LDGCRM_Team_Members` and not
+`LDGCRM_Viewers` because every step writes.
+
+**The public-group half is the one that fails quietly.** These objects are org-wide-default
+restricted (2d), so a record you cannot see does not error — it reads as absent. The transforms that
+query the target org before building their CSV would then draw the wrong conclusion from a partial
+answer: rows withheld because a parent Partner Account "does not exist", an insert-and-diff step
+re-inserting rows it could not see, a reconciliation matching against a fraction of the Accounts.
+Each of those is a green run with wrong contents, which is the failure mode this project keeps
+finding.
+
+The Notes step is the concrete case that has already been documented: attaching a note requires
+*your* user to have edit access to every parent record it lands on, not merely to the note.
+
+> **Being a System Administrator is not a substitute, and do not plan around it being one.** A
+> profile carrying *View All Data* / *Modify All Data* will get through without either grant, which
+> is exactly why this goes unnoticed in a sandbox and then bites in production — the account that
+> should run the production load is the dedicated integration user in 2g, which has no business
+> holding *Modify All Data*.
+
+**Remove both again afterwards** where the account is not meant to keep standing access to the app.
+
+### 2g. 🔴 Production: load as a dedicated integration user
 
 Run the production load under a service account, not a personal login. Otherwise the fallback owner
 is whoever was on shift, and thousands of records land on someone with no relationship to them. There
 is precedent in this org: a service account owns 651 production Accounts for this reason.
+
+That account needs the two grants in 2f like anyone else, and it is the case where they should
+**not** be removed afterwards: the load is re-runnable, and stripping its access turns the next run
+into a fresh diagnosis of a solved problem.
 
 ---
 
@@ -240,22 +291,28 @@ is precedent in this org: a service account owns 651 production Accounts for thi
 
 By this point the metadata is in and the people exist.
 
-1. **Authorize the org alias.** Every script takes `-Environment`, never a bare alias, and resolves it
+1. **Grant your own user access to the app.** `LDGCRM_G_Production_Support_CRED` plus membership of
+   the `LDGCRM_Team_Members` public group, in the target org, on the account you will run the load
+   under — [2f](#2f-the-person-running-the-load-needs-both-of-the-above-on-their-own-account). Do it
+   before the readiness check in step 5, which reports what *your* user can write and will otherwise
+   report a problem that is yours rather than the org's.
+
+2. **Authorize the org alias.** Every script takes `-Environment`, never a bare alias, and resolves it
    through the registry — then asks the org who it is and refuses to continue if the answer disagrees.
    One-time per machine: [SETUP.md](SETUP.md#authorizing-a-new-environment).
-2. **Set up the bundle and the Airtable token** — [SETUP.md](SETUP.md). Airtable access needs an admin
+3. **Set up the bundle and the Airtable token** — [SETUP.md](SETUP.md). Airtable access needs an admin
    on the base, so start it early.
-3. **Pull fresh Airtable data** — `.\powershell-scripts\Get-AirtableExport.ps1`. A step you run
+4. **Pull fresh Airtable data** — `.\powershell-scripts\Get-AirtableExport.ps1`. A step you run
    yourself: the transforms read the JSON files off disk and no part of a load contacts Airtable, so
    until this has run there is nothing to migrate. The export folder is a current-state mirror,
    overwritten each pull; an old pull is never the right input. Expect counts to move when you
    re-pull, and re-baseline rather than treating older figures as pass/fail targets.
    [RUNNING-A-LOAD.md](RUNNING-A-LOAD.md#pulling-from-airtable) has the options.
-4. **Run the readiness check** — `Test-LdgcrmReadiness.ps1`. Read-only, safe against any environment
+5. **Run the readiness check** — `Test-LdgcrmReadiness.ps1`. Read-only, safe against any environment
    including production. It checks the machine, the token, every Airtable table, which orgs you can
    reach, who you are in the target org, and that every field the load writes exists and is writable
    there.
-5. **Coordinate.** More than one person can write to these orgs — at least one colleague uses the
+6. **Coordinate.** More than one person can write to these orgs — at least one colleague uses the
    Data Loader GUI against the same sandbox, and other teams share the org outright. Loads are
    re-runnable; a load nobody expected is still an incident.
 

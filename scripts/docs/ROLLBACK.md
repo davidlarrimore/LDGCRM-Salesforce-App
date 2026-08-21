@@ -12,6 +12,12 @@
 
 **This is a best-effort tidy-up, not a safety net.**
 
+**Run it as the account that ran the load**, holding `LDGCRM_G_Production_Support_CRED` and
+membership of `LDGCRM_Team_Members`. The rollback deletes and it restores pre-images onto records it
+does not own, so it needs the `D` and it needs sharing to reach those records — and a record it
+cannot see is one it silently leaves behind, in a partial state, reported as nothing to do. See
+[SETUP.md](SETUP.md#give-your-own-user-access-to-the-app-in-every-org-you-load).
+
 The real safety net for a production migration is a **backup taken immediately before the run and a
 rehearsed restore path**, plus loading in stages small enough that "stop and fix forward" beats
 "undo". Do not let the existence of this script justify skipping the backup.

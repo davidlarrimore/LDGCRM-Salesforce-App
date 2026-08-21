@@ -201,6 +201,14 @@ Nothing turns red. You just get less data.
 That is the failure this pipeline is built to prevent, and it is why there is one orchestrator that
 knows the order rather than a list of thirteen commands in a document.
 
+**The same failure has a second cause the orchestrator cannot fix: a parent you cannot *see*.** These
+objects are restricted by Salesforce sharing, so if the account running the load is not in the
+`LDGCRM_Team_Members` public group, records it does not own simply do not come back from its queries
+— and a parent that does not come back is indistinguishable from a parent that was never loaded. The
+run skips the children and reports success. Granting yourself that group, and the
+`LDGCRM_G_Production_Support_CRED` permission set group, is a one-off in the org before your first
+load: [SETUP.md](SETUP.md#give-your-own-user-access-to-the-app-in-every-org-you-load).
+
 ### The 13 steps
 
 `Invoke-FullMigrationLoad.ps1` runs these in exactly this order:
