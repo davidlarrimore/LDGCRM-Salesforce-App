@@ -10,6 +10,23 @@ It assumes no knowledge of this project, Salesforce, Airtable or PowerShell, and
 migration is, what every folder and script does, what happens during a load, and how to tell whether
 it worked. Twenty minutes there will save you a day. **Everything below is the short version.**
 
+### The four commands
+
+Run them from this folder, in this order. Everything else in this README explains these.
+
+```powershell
+.\powershell-scripts\Get-AirtableExport.ps1                                    # 1. PULL from Airtable
+.\powershell-scripts\Test-LdgcrmReadiness.ps1     -Environment Dev             # 2. CHECK (read-only)
+.\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment Dev -PlanOnly   # 3. DRY RUN (writes nothing)
+.\powershell-scripts\Invoke-FullMigrationLoad.ps1 -Environment Dev -Confirmation "LOAD"   # 4. LOAD
+```
+
+**Command 1 is the one people miss.** Nothing else pulls from Airtable — not the readiness check, not
+the dry run, not the load. See [Pulling from Airtable](#pulling-from-airtable).
+
+First time on this machine, do the one-off setup in [Quick start](#quick-start) first — execution
+policy, `sf` login, and the `.env` the pull needs.
+
 ---
 
 ## What this does
@@ -125,31 +142,41 @@ org, captures a restore point, and reports what each step *would* load — witho
 
 ## Pulling from Airtable
 
-One script does it, and you run it yourself:
+**This is the command:**
 
 ```powershell
-# All 22 tables. The pull doubles as a backup of the whole base, so this is
-# the default and it is what you want for a real load.
 .\powershell-scripts\Get-AirtableExport.ps1
-
-# Only the 10 tables the transforms actually read. Faster; use it when you
-# just want the load inputs refreshed.
-.\powershell-scripts\Get-AirtableExport.ps1 -MigrationOnly
-
-# One or two tables. SEPARATE ARGUMENTS - "Contacts,Opportunities" as a single
-# comma-joined string binds as one label and is rejected.
-.\powershell-scripts\Get-AirtableExport.ps1 -Tables "Contacts","Opportunities"
 ```
+
+That is the whole thing for a normal run. It pulls **all 22 tables** in the base, because the pull
+doubles as a backup of the whole base, and it is what you want before a real load.
+
+It takes no `-Environment` and cannot touch a Salesforce org — it only reads Airtable and writes
+files. Running it is always safe.
+
+The flags, for when you need them:
+
+| Flag | Use it when |
+| --- | --- |
+| *(none)* | **The normal case.** All 22 tables |
+| `-MigrationOnly` | You only want the 10 tables the transforms actually read. Faster |
+| `-Tables "Contacts","Opportunities"` | One or two tables. **Separate arguments** — `"Contacts,Opportunities"` as a single comma-joined string binds as one label and is rejected |
+| `-SkipCoverageCheck` | Your token lacks the `schema.bases:read` scope and the post-pull warning is noise. The pull itself still works |
+| `-BaseId "app…"` | You need to point at a different Airtable base than the `AIRTABLE_BASE_ID` in `.env`. Rare |
 
 It writes one JSON file per table to `data/airtable-exports/<Table>.json`, and a transcript plus
 `pull-summary-<timestamp>.csv` to `logs/data-migration/`.
+
+**When to re-run it:** before any load you intend to keep, after anyone edits the base, and whenever
+a transform tells you an export looks stale. It is cheap and idempotent — re-pulling is never the
+wrong move, except when you are deliberately trying to reproduce an older run's counts.
 
 Four things to know before you run it:
 
 - **It needs `.env`.** `AIRTABLE_API_KEY` (a Personal Access Token starting `pat`, *not* a `key…`
   API key — Airtable removed those in Feb 2024) and `AIRTABLE_BASE_ID`. Getting a token, and the two
-  scopes it needs, is [`docs/SETUP.md` §3](docs/SETUP.md). No Salesforce access is involved: the pull
-  takes no `-Environment` and cannot touch an org.
+  scopes it needs, is [`docs/SETUP.md` §3](docs/SETUP.md). Without `.env` the pull is the *first*
+  thing that fails, which is why it is the first command you run.
 - **Every pull overwrites the last.** `data/airtable-exports/` is a mirror of what Airtable holds
   *now*, not a history. That is deliberate — always load the newest pull. If you are trying to
   reproduce a count from a previous run, do **not** re-pull; the counts will move.
