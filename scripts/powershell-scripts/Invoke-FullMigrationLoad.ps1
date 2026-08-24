@@ -1038,7 +1038,13 @@ function Invoke-PreflightChecks {
                     # an absence - the load falls back either way - but the
                     # licence is named, because "no active user" sent someone
                     # hunting for an account that was there all along.
-                    if ($Actual -eq $M.Email) {
+                    # Compared against the OVERRIDDEN address, not the roster one.
+                    # Where an override is in force the two addresses are known
+                    # to be the same person, so "different address" is no longer
+                    # the finding - and reporting it as one would name a defect
+                    # that has already been handled while hiding the licence
+                    # problem actually blocking them.
+                    if ($Actual -eq (Convert-LdgcrmOwnerEmail -Email $M.Email)) {
                         $M | Add-Member -NotePropertyName LicenceType -NotePropertyValue ([string]$Candidates[0].UserType) -Force
                         $StillMissing.Add($M)
                         continue
@@ -1061,9 +1067,11 @@ function Invoke-PreflightChecks {
                 $Findings.Blocking += ("Owner '$($W.Email)' has an ACTIVE Salesforce User in $Env - '$($W.Name)' - but " +
                                        "under a DIFFERENT address: '$($W.ActualEmail)'. The ownership join is on email, " +
                                        "so their $($W.Records) record(s) would load onto the fallback owner as though " +
-                                       "they had no account at all. The roster address is the correct one; correct the " +
-                                       "Salesforce User's Email to '$($W.Email)' and re-run. Do NOT add an alias map to " +
-                                       "the pipeline - see docs/engineering/BACKLOG.md section 8.")
+                                       "they had no account at all. Correct the Salesforce User's Email to " +
+                                       "'$($W.Email)' and re-run. If BOTH addresses are legitimate - the " +
+                                       "same person held under two work identities, which no Setup edit can resolve - " +
+                                       "add an entry to LdgcrmOwnerEmailOverrides in Common.DataMigration.ps1 instead. " +
+                                       "reference/README.md says which of the two this is.")
                 Write-Host ("                         WRONG EMAIL: {0} is '{1}' in {2} ({3} records)" -f `
                             $W.Email, $W.ActualEmail, $Env, $W.Records) -ForegroundColor Red
             }
@@ -1079,8 +1087,17 @@ function Invoke-PreflightChecks {
 
             foreach ($M in ($MissingButExpected | Sort-Object Records -Descending)) {
                 if ($M.PSObject.Properties.Name -contains "LicenceType") {
-                    $Findings.Blocking += ("Owner '$($M.Email)' HAS an active Salesforce User in $Env at that exact " +
-                                           "address, but on a '$($M.LicenceType)' licence, which cannot own standard " +
+                    # Name the address the account is ACTUALLY under. With an
+                    # override in force that is not the roster address, and
+                    # sending an admin to search for the roster one would have
+                    # them conclude the account does not exist - the precise
+                    # confusion this branch was added to remove.
+                    $FoundAt = Convert-LdgcrmOwnerEmail -Email $M.Email
+                    $AtAddress = "at that exact address"
+                    if ($FoundAt -ne $M.Email) { $AtAddress = "at '$FoundAt' (the overridden address)" }
+
+                    $Findings.Blocking += ("Owner '$($M.Email)' HAS an active Salesforce User in $Env $AtAddress" +
+                                           ", but on a '$($M.LicenceType)' licence, which cannot own standard " +
                                            "or custom records. Their $($M.Records) record(s) would load onto the " +
                                            "fallback owner as though the person did not exist. The account is not " +
                                            "missing and does not need creating - give it a Standard licence and " +

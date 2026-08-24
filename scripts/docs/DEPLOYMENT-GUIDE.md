@@ -235,7 +235,13 @@ business states which is which**, and pre-flight tests every assertion in it aga
 
 The two blocking cases block because the person **already exists** and something small and fixable —
 a spelling, a licence — is stopping their records reaching them. **Fix the Salesforce user**, not the
-roster, not Airtable, and never by adding an alias map to the pipeline.
+roster and not Airtable.
+
+**One exception, and it is not yours to apply.** Occasionally both addresses are genuinely correct —
+the same person holding an Airtable login and a Salesforce account under different addresses, which
+no Setup edit can reconcile. Those are recorded as named, dated overrides in the pipeline itself, and
+pre-flight then stops reporting them. If you hit a mismatch that is not already overridden, treat it
+as a blocker and raise it; do not assume it is one of these.
 
 Expect that report to be non-empty on a first production pre-flight. Run it early enough that
 provisioning can happen before the load.

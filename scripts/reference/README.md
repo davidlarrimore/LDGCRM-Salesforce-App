@@ -55,7 +55,7 @@ Pre-flight reads this **only for `-Environment Full` and `Prod`**. Almost everyt
 | What pre-flight finds | Result |
 | --- | --- |
 | Marked `yes`, **no** Salesforce User at that address or under that name | ⚠️ Warning — a provisioning gap someone can still fix |
-| Marked `yes`, User exists **under a different email address** | 🛑 **BLOCKS** |
+| Marked `yes`, User exists **under a different email address** | 🛑 **BLOCKS** — unless an override records that both are the same person |
 | Marked `yes`, User exists at that address on a licence that **cannot own records** (Chatter Free / portal) | 🛑 **BLOCKS** |
 | Marked `no`, absent | ✅ Confirmed quietly — the fallback owner is the intended outcome |
 
@@ -66,13 +66,41 @@ whom the pipeline cannot assign to is different: their records should reach them
 small and fixable is in the way — a spelling, or a licence. Left as warnings, both sit in the report
 looking exactly like the legitimate absence printed directly above them.
 
-Decided 2026-08-15, after `tony.parrilla@gsa.gov` (correct, per the business) turned out to be
-`antonio.parrilla@gsa.gov` in Salesforce, on a Chatter Free licence — one person hitting both cases
-at once.
+Decided 2026-08-15, after `tony.parrilla@gsa.gov` turned out to be `antonio.parrilla@gsa.gov` in
+Salesforce, on a Chatter Free licence — one person hitting both cases at once.
 
-**The Salesforce User is what gets corrected** — its address, or its licence — not the roster and
-not Airtable, and never an alias map inside the pipeline, which would hide the mismatch instead of
-resolving it. See `docs/engineering/BACKLOG.md` §8.
+**Usually the Salesforce User is what gets corrected** — its address, or its licence — not the
+roster and not Airtable. That holds whenever Salesforce is the one in error: a misspelling, or a
+licence that cannot own records. An alias there would hide the fault instead of resolving it.
+
+### The one case where neither system is wrong
+
+**Sometimes both addresses are correct.** Airtable identifies an owner by their **collaborator
+account** — the stored value is `{id, email, name}`, not a text cell — so the address is that
+person's Airtable *login*. Where their Salesforce User was provisioned under a different address,
+that is one person holding two legitimate work identities, and no Setup edit resolves it. Nor can
+anyone edit the Airtable side: a collaborator email changes only if they change it on their Airtable
+account, which follows them into every base they belong to.
+
+Those go in **`LdgcrmOwnerEmailOverrides`** (`powershell-scripts/Common.DataMigration.ps1`), a small
+hard-coded table that translates the Airtable address to the Salesforce one before the ownership
+query runs. It currently holds **one entry** — Tony Parrilla, added by the project owner 2026-08-24,
+reversing the 2026-08-15 reading that Salesforce was the thing to change.
+
+Three properties are what keep it a list of named exceptions rather than a mechanism:
+
+- **It self-retires.** If Airtable ever sends the Salesforce address, the key stops matching and the
+  entry becomes dead weight rather than a wrong answer. Delete it then — no re-run, no code change.
+- **It never invents a match.** The translated address still has to resolve to exactly one active
+  Standard User, or the owner falls back precisely as before.
+- **It is not general.** No CSV, no roster column, no pattern matching. Every entry is one named
+  person, dated, carrying the reason both addresses are legitimate. Anything that cannot be written
+  that way is a data-quality problem and belongs in
+  `docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md` instead.
+
+**A mismatch still blocks by default.** Pre-flight stops reporting one only once an override exists,
+so the judgement that two addresses are the same person is always made by a human and recorded in
+code — never inferred from a name match.
 
 ⚠️ **This is Full and Prod only. Dev and QA are unaffected** — they discard such owners as missing
 and assign the fallback owner, exactly as before. See the next section for why.

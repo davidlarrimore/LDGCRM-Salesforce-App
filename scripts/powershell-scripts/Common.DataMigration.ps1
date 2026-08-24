@@ -1156,6 +1156,65 @@ function Get-SalesforceFieldMetadata {
     return $ByName
 }
 
+$Script:LdgcrmOwnerEmailOverrides = @{
+    # Tony Parrilla. Airtable identifies him by his Airtable LOGIN,
+    # tony.parrilla@gsa.gov (collaborator usrYgfP7REyCVdImv); his Salesforce
+    # User is antonio.parrilla@gsa.gov. Both addresses are correct for the
+    # system that holds them - this is one person with two work identities, not
+    # a typo anyone can fix in a cell. The Airtable value is a collaborator
+    # object, so there is no text field to edit: it changes only if he changes
+    # the email on his Airtable account, which would follow him into every base
+    # he belongs to.
+    #
+    # Confirmed by the project owner 2026-08-24, REVERSING the 2026-08-15
+    # decision recorded in reference/salesforce-user-roster.csv, which had
+    # tony.parrilla@gsa.gov as correct and Salesforce as the thing to change.
+    "tony.parrilla@gsa.gov" = "antonio.parrilla@gsa.gov"
+}
+
+function Convert-LdgcrmOwnerEmail {
+    <#
+        Translates an Airtable owner address to the address that identifies the
+        same person in Salesforce, for the small fixed set above.
+
+        WHY THIS EXISTS AND WHY IT IS NOT THE ALIAS MAP THE DOCS FORBID.
+        reference/README.md used to say a mismatch is always fixed on the
+        Salesforce User and "never an alias map inside the pipeline". That rule
+        was written on the premise that Salesforce held the error - true of a
+        misspelling or a wrong licence, where the fix is a Setup edit and an
+        alias would hide it. It does not hold when BOTH addresses are correct:
+        there is nothing to fix, so blocking every Full/Prod load forever
+        resolves nothing. The two cases that rule does target still block, and
+        must keep blocking - see the pre-flight owner-roster check.
+
+        SELF-RETIRING. Should Airtable ever send the Salesforce address, the
+        key stops matching and the entry becomes dead weight rather than a
+        wrong answer - no re-run, no code change, no silent behaviour change.
+        Delete it when that happens.
+
+        DELIBERATELY NOT A GENERAL MECHANISM. No CSV, no roster column, no
+        pattern matching. Every entry is one named person, dated, with the
+        reason both addresses are legitimate. Anything that cannot be written
+        that way is a data-quality problem and belongs in
+        docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md instead.
+
+        Returns the address to use, lower-cased. An unmapped address is
+        returned unchanged, so this is a no-op for everyone else.
+    #>
+    param([string]$Email)
+
+    if (-not $Email) { return "" }
+
+    $Key = "$Email".Trim().ToLower()
+    if (-not $Key) { return "" }
+
+    if ($Script:LdgcrmOwnerEmailOverrides.ContainsKey($Key)) {
+        return $Script:LdgcrmOwnerEmailOverrides[$Key]
+    }
+
+    return $Key
+}
+
 function Resolve-SalesforceOwnerIds {
     <#
         Resolves a set of Airtable owner email addresses to Salesforce User
@@ -1204,7 +1263,10 @@ function Resolve-SalesforceOwnerIds {
         works unchanged against production, where the suffix isn't present.
 
         Returns a PSCustomObject:
-          IdByEmail - hashtable, lower-cased plain email -> User Id. Contains
+          IdByEmail - hashtable, lower-cased plain email -> User Id, keyed by
+                      the address the CALLER PASSED even where an override
+                      (Convert-LdgcrmOwnerEmail) made the pipeline query a
+                      different one. Contains
                       ONLY confidently-resolved active users; an email absent
                       from it is the caller's signal to apply the fallback.
           Ambiguous - emails matching more than one ACTIVE User, for a review
@@ -1235,6 +1297,32 @@ function Resolve-SalesforceOwnerIds {
 
     # An empty IN () list is a SOQL syntax error, not an empty result set.
     if ($Distinct.Count -eq 0) { return $Result }
+
+    # OWNER EMAIL OVERRIDES. A caller passes the address AIRTABLE holds and
+    # expects its answer back under that same key, so the translation happens
+    # here and is reversed before returning - Convert-LdgcrmOwnerEmail decides
+    # what to ASK Salesforce, never what the caller sees.
+    #
+    # Kept as query-address -> the original addresses that produced it, plural
+    # because two Airtable addresses can legitimately collapse onto one
+    # Salesforce User (they would, briefly, if Airtable were fixed while an
+    # override was still in place). Both then resolve to the same Id, which is
+    # correct - and is why this cannot be a simple one-to-one hashtable.
+    $OriginalsByQueryEmail = @{}
+
+    foreach ($Original in $Distinct) {
+        $Query = Convert-LdgcrmOwnerEmail -Email $Original
+
+        if (-not $OriginalsByQueryEmail.ContainsKey($Query)) {
+            $OriginalsByQueryEmail[$Query] = [System.Collections.Generic.List[string]]::new()
+        }
+
+        if (-not $OriginalsByQueryEmail[$Query].Contains($Original)) {
+            $OriginalsByQueryEmail[$Query].Add($Original)
+        }
+    }
+
+    $Distinct = @($OriginalsByQueryEmail.Keys | Sort-Object)
 
     # Collect active matches per email first, so ambiguity can be detected
     # across the whole result rather than overwritten as rows stream past.
@@ -1285,14 +1373,23 @@ function Resolve-SalesforceOwnerIds {
     foreach ($Email in $ActiveIdsByEmail.Keys) {
         $Ids = $ActiveIdsByEmail[$Email]
 
+        # Back to the address the CALLER passed. Unmapped addresses are their
+        # own original, so this is an identity step for everyone but the
+        # overridden few - and reporting an override under the Salesforce
+        # address would leave the caller unable to find it at all.
+        $Originals = @($Email)
+        if ($OriginalsByQueryEmail.ContainsKey($Email)) {
+            $Originals = @($OriginalsByQueryEmail[$Email])
+        }
+
         if ($Ids.Count -eq 1) {
-            $Result.IdByEmail[$Email] = $Ids[0]
+            foreach ($Original in $Originals) { $Result.IdByEmail[$Original] = $Ids[0] }
         }
         else {
             # Two or more ACTIVE users share this address. Picking one would
             # assign real records to a possibly-wrong person, so it falls back
             # and gets surfaced for a human instead.
-            $AmbiguousEmails.Add($Email)
+            foreach ($Original in $Originals) { $AmbiguousEmails.Add($Original) }
         }
     }
 
