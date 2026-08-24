@@ -385,18 +385,68 @@ foreach ($File in $BundleScripts) {
                  -Detail ("Use Get-SalesforceRecordCount -Scope Owned. Found: " + (@($Unfiltered | ForEach-Object { $_.Value }) -join "; "))
 }
 
-# Every read of a shared standard object must carry a WHERE. This is a coarse
-# check on purpose - it cannot tell a record-type filter from any other
-# predicate - but the failure it catches is the one that actually happened: a
-# query written with no WHERE at all.
+# Every read of a shared standard object must be BOUNDED - and "has a WHERE" is
+# not the same thing as bounded.
+#
+# The first version of this check only rejected a query with no WHERE at all,
+# and it passed `SELECT FirstName, LastName, Email FROM Contact WHERE Email !=
+# null` in Build-ContactLoad.ps1, which selects most of a 1.5M-row Contact table
+# in a copy of production. It was caught on 2026-08-24 by reading the Salesforce
+# CLI's own debug log after a QA run, not by this file. Hence the three
+# accepted forms below rather than "any predicate will do".
+#
+#   1. a record-type filter               - the normal case
+#   2. an LDGCRM_External_ID__c predicate - the ownership marker, equally strong
+#   3. bound to an explicit Id list       - `... IN ($IdList)`
+#
+# FORM 3 MUST NOT BE "FIXED" INTO FORM 1. Invoke-AccountBootstrap.ps1 asks
+# whether ANYTHING references an Account before treating it as unused, and the
+# answer has to include another app's Contacts and Opportunities. Record-type
+# scoping those would make the check miss real references and report an
+# in-use Account as free - the filter causing the damage it exists to prevent.
+# Most queries here are assembled from a variable, so the clause is not visible
+# in the string. The repo convention that makes this checkable: a variable
+# holding a record-type clause is named $...Scope, and the check below verifies
+# every such variable really is assigned from Get-LdgcrmOwnedRecordTypeClause -
+# so the name cannot be borrowed to wave a query through.
+$AcceptableBound = @(
+    "RecordType\.DeveloperName",   # form 1, written literally
+    "LDGCRM_External_ID__c",       # form 2, the ownership marker
+    "IN\s*\(\s*[`$']",             # form 3, bounded by an Id list
+    "`\$\w*Scope\b",               # form 1 via the $...Scope convention
+    "\{\d\}"                       # form 1 via a format placeholder
+) -join "|"
+
 foreach ($File in $BundleScripts) {
     $Text = Get-Content -LiteralPath $File.FullName -Raw -Encoding UTF8
     $Relative = $File.FullName.Substring($Repo.Length + 1)
 
     foreach ($Shared in @("Account", "Contact", "Opportunity", "OpportunityContactRole")) {
-        Assert-Check -Condition ($Text -notmatch ("FROM $Shared\s*""")) `
-                     -What "no unfiltered read of $Shared in $Relative" `
-                     -Detail "A read of a record-typed object shared with FCIC/TTS must carry a WHERE. See Get-LdgcrmOwnedRecordTypeClause."
+        # Pull each complete quoted SOQL string that reads this object, so the
+        # predicate is judged per query rather than per file. The (?!\w) guard
+        # stops "FROM Opportunity" matching "FROM OpportunityContactRole".
+        $Reads = @([regex]::Matches($Text, '"[^"]*\bFROM\s+' + $Shared + '(?!\w)[^"]*"') |
+            Where-Object { $_.Value -notmatch $AcceptableBound })
+
+        Assert-Check -Condition ($Reads.Count -eq 0) `
+                     -What "every read of $Shared is bounded in $Relative" `
+                     -Detail ("A read of an object shared with FCIC/TTS needs a record-type filter, an " +
+                              "external-ID predicate, or an explicit Id list. Found: " +
+                              (@($Reads | ForEach-Object { $_.Value }) -join "; "))
+    }
+
+    # The convention has to be earned, not just spelled. Any $...Scope variable
+    # ASSIGNED in a bundle script must take its value from
+    # Get-LdgcrmOwnedRecordTypeClause; otherwise the naming above would let any
+    # variable at all stand in for a record-type filter.
+    foreach ($Assignment in @([regex]::Matches($Text, '\$(\w*Scope)\s*=\s*([^\r\n]+)'))) {
+        $Name = $Assignment.Groups[1].Value
+        $Value = $Assignment.Groups[2].Value
+
+        Assert-Check -Condition ($Value -match "Get-LdgcrmOwnedRecordTypeClause") `
+                     -What "`$$Name is a real record-type clause in $Relative" `
+                     -Detail ("A `$...Scope variable is treated as a record-type filter by the bound check " +
+                              "above, so it must come from Get-LdgcrmOwnedRecordTypeClause. Assigned: " + $Value.Trim())
     }
 }
 # ----------------------------------------------------------------- verdict

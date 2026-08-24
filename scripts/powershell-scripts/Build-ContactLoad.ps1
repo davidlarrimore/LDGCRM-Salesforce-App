@@ -213,8 +213,22 @@ Write-Host "Federal: $FederalRecordTypeId   GSA: $GsaRecordTypeId"
 
 # --- Existing Salesforce Contacts, for the name waterfall ------------------
 Write-Host "Querying $OrgAlias for existing Contacts (to recover real names by email)..." -ForegroundColor Cyan
+#
+# SCOPED TO OUR RECORD TYPES. `WHERE Email != null` reads as a filter but bounds
+# nothing: in a copy of production it selects most of ~1.5M Contacts, which
+# stops the run on the 50,000-row truncation guard. Found on 2026-08-24 by
+# reading back the Salesforce CLI's own debug log after a QA run - it survived
+# the first sweep precisely because it HAS a WHERE, so a check for "reads with
+# no filter at all" waved it through.
+#
+# Scoping is also the correct answer on the merits, not just the volume. This
+# builds an email -> name index that is then written onto OUR Contacts. An
+# unscoped read lets an FCIC or TTS person sharing an email supply the name for
+# a migrated Contact - another app's data silently becoming ours, which is the
+# same class of mistake as matching agency names against FCIC junk Accounts.
+$ContactScope = Get-LdgcrmOwnedRecordTypeClause -SObject "Contact"
 $ExistingContacts = @(Invoke-SalesforceQuery `
-    -Soql "SELECT FirstName, LastName, Email FROM Contact WHERE Email != null" `
+    -Soql "SELECT FirstName, LastName, Email FROM Contact WHERE Email != null AND $ContactScope" `
     -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
 $ExistingByEmail = @{}
 $PlaceholderNameCount = 0
