@@ -1651,6 +1651,23 @@ function Invoke-ChildScript {
         [string[]]$Arguments = @()
     )
 
+    # A REPEATED PARAMETER NAME IS ALWAYS A BUG HERE, so catch it before a
+    # process is launched rather than reading it out of a child's stderr.
+    # `-File` gives no way to pass an array: repeating the name is a bind error,
+    # and every workaround that looks like it works throws values away in
+    # silence. If a child needs more than one value, hand it a file - see how
+    # ExpectedFailures is passed below.
+    $Repeated = @(
+        $Arguments |
+            Where-Object { "$_" -match '^-[A-Za-z]' } |
+            Group-Object |
+            Where-Object { $_.Count -gt 1 } |
+            ForEach-Object { $_.Name }
+    )
+    if ($Repeated.Count -gt 0) {
+        throw "$(Split-Path -Leaf $ScriptPath) would be called with $($Repeated -join ', ') more than once. powershell.exe -File cannot bind an array; pass the values in a file instead."
+    }
+
     Write-Host ""
     Write-Host ("  > {0} {1}" -f (Split-Path -Leaf $ScriptPath), ($Arguments -join " ")) -ForegroundColor DarkGray
 
@@ -1935,16 +1952,39 @@ foreach ($Step in $Selected) {
             "-ObjectApiName", $Step.Object,
             "-CsvFile", $CsvPath,
             "-Operation", (Get-StepProperty -Step $Step -Key "Operation" -Default "Upsert"),
-            "-StepResultPath", $StepResultFile
+            "-StepResultPath", $StepResultFile,
+            # So three Account steps do not write one another's transcript and
+            # job result - see -StepName in Invoke-SalesforceLoad.ps1.
+            "-StepName", $Step.Name
         )
         $TriggerOff = Get-StepProperty -Step $Step -Key "TriggerOff"
         if ($TriggerOff) { $LoadArgs += @("-DisableTriggerControl", $TriggerOff) }
         if ($Confirmation) { $LoadArgs += @("-Confirmation", $Confirmation) }
         if ($ProductionConfirmation) { $LoadArgs += @("-ProductionConfirmation", $ProductionConfirmation) }
 
+        # THROUGH A FILE, NOT REPEATED ARGUMENTS. `powershell.exe -File` cannot
+        # carry an array: repeating the parameter name is a hard bind error
+        # ("specified more than once"), and both of the obvious ways round it
+        # lose data without a word - "a,b" arrives as one literal string, and a
+        # second bare value after the parameter name is dropped. Account is the
+        # first step to configure two patterns, and the repeated form stopped
+        # the UAT run of 2026-08-24 there. See -ExpectedFailurePatternsFile in
+        # Invoke-SalesforceLoad.ps1.
+        #
+        # The file lands in the run directory on purpose: what a run was willing
+        # to forgive is part of what it did, and belongs beside the result.
         $ExpectedFailures = @(Get-StepProperty -Step $Step -Key "ExpectedFailures" -Default @())
-        foreach ($Pattern in $ExpectedFailures) {
-            $LoadArgs += @("-ExpectedFailurePatterns", $Pattern)
+        if ($ExpectedFailures.Count -gt 0) {
+            $PatternFile = Join-Path $RunDirectory "expected-failures-$($Step.Name).json"
+            # -InputObject @(...), not the pipeline form: piping a one-element
+            # array to ConvertTo-Json serialises it as a bare string, and the
+            # reader would then see one pattern where the step declared one
+            # array. Set-Content -Encoding UTF8 writes a BOM here, which is
+            # fine - the reader's Get-Content -Encoding UTF8 strips it. No
+            # Salesforce API ever sees this file.
+            ConvertTo-Json -InputObject @($ExpectedFailures) -Compress |
+                Set-Content -LiteralPath $PatternFile -Encoding UTF8
+            $LoadArgs += @("-ExpectedFailurePatternsFile", $PatternFile)
         }
 
         $LoadCode = Invoke-ChildScript -ScriptPath (Join-Path $PSScriptRoot "Invoke-SalesforceLoad.ps1") -Arguments $LoadArgs
@@ -1963,6 +2003,41 @@ foreach ($Step in $Selected) {
     }
 
     if ($LoadCode -ne 0) {
+        # A LOAD THAT DIED BEFORE IT COULD REPORT MUST STILL SAY SOMETHING.
+        # Invoke-SalesforceLoad writes its step result in a `finally`, so it
+        # covers every failure INSIDE the script - but nothing it does can cover
+        # a failure at parameter binding, where the script never starts. The
+        # report then showed "LOAD FAILED (exit 1)" and nothing else: section 2
+        # read "(none)" and errors.csv was empty, which is what an entirely
+        # clean run looks like. The reason existed only in this transcript,
+        # thousands of lines up. That happened on 2026-08-24.
+        #
+        # The absence of the child's own transcript is the diagnosis, so say so
+        # rather than leaving the reader to notice a missing file.
+        if (-not (Test-Path -LiteralPath $StepResultFile)) {
+            $ChildLog = Join-Path $RunDirectory "Invoke-SalesforceLoad-$($Step.Name).log"
+            $Reason = if (Test-Path -LiteralPath $ChildLog) {
+                "The load exited $LoadCode without reporting a result. It started, so the cause is in Invoke-SalesforceLoad-$($Step.Name).log."
+            } else {
+                "The load exited $LoadCode before it started - no transcript was written, so it failed at parameter binding. The message is in Invoke-FullMigrationLoad.log, just above this step's summary."
+            }
+
+            Write-Host ""
+            Write-Host "  $Reason" -ForegroundColor Red
+
+            ([ordered]@{
+                Object = $Step.Object; Operation = (Get-StepProperty -Step $Step -Key "Operation" -Default "Upsert")
+                Org = $OrgAlias; Outcome = "error"
+                # The rows the transform built. Writing 0 here would drop a
+                # figure the report used to show when there was no step result
+                # at all - and "23 rows were ready and none went" is the point.
+                Submitted = $RowCount; Succeeded = 0; Failed = 0
+                ExpectedFailed = 0; UnexpectedFailed = 0; Allowance = 0
+                JobId = ""; FailureDirectory = ""; Errors = @()
+                ErrorMessage = $Reason
+            } | ConvertTo-Json -Depth 4) | Set-Content -LiteralPath $StepResultFile -Encoding UTF8
+        }
+
         $Results.Add((New-StepRecord -Step $Step -Rows $RowCount -Since $TransformStart `
             -Result "LOAD FAILED (exit $LoadCode)" -StepResultFile $StepResultFile))
         $Failed = $true

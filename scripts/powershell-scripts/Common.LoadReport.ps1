@@ -298,6 +298,39 @@ function Format-LoadReportText {
     return $Clean.Substring(0, [Math]::Max(1, $Width - 3)) + "..."
 }
 
+function Format-LoadReportWrapped {
+    <#
+        Word-wraps text to $Width, returning one string per line.
+
+        WRAPS RATHER THAN TRUNCATES, unlike Format-LoadReportText above, and the
+        distinction is about what the text is FOR. Everywhere else the report
+        prints an error message as a LABEL - the first 58 characters identify
+        which error it is, and the full text is in the failed-records CSV
+        anyway. A "why it stopped" reason is not a label: it is the whole
+        explanation, and it is the half past 74 characters that says where to
+        look next. Truncating that leaves a reader with the diagnosis and none
+        of the instruction.
+    #>
+    param([string]$Text, [int]$Width)
+
+    $Clean = ("$Text" -replace '\s+', ' ').Trim()
+    if (-not $Clean) { return @() }
+
+    $Lines = [System.Collections.Generic.List[string]]::new()
+    $Current = ""
+    foreach ($Word in ($Clean -split ' ')) {
+        # A single word longer than the width goes on its own line rather than
+        # being broken - it is almost always a path, and a split path cannot be
+        # copied.
+        if (-not $Current) { $Current = $Word; continue }
+        if (($Current.Length + 1 + $Word.Length) -le $Width) { $Current = "$Current $Word" }
+        else { $Lines.Add($Current); $Current = $Word }
+    }
+    if ($Current) { $Lines.Add($Current) }
+
+    return $Lines.ToArray()
+}
+
 function Write-LoadRunReport {
     <#
         Writes the run report: SUMMARY.txt plus the three machine-readable
@@ -411,6 +444,12 @@ function Write-LoadRunReport {
             UnexpectedFailed = $Unexpected
             Withheld         = $Withheld
             Result           = $Step.Result
+            # Why a step stopped, as opposed to which rows Salesforce rejected.
+            # Section 2 only ever covers the latter, so a step that failed
+            # WITHOUT submitting anything - a bad argument, an unreachable org,
+            # a transform that produced no file - had nowhere to be explained
+            # and was reported as an empty failure.
+            Reason           = if ($Result) { "$($Result.ErrorMessage)" } else { "" }
         })
     }
 
@@ -485,6 +524,26 @@ function Write-LoadRunReport {
         (($SummaryRows | Measure-Object Withheld -Sum).Sum))
     Add-Line ""
     Add-Line "  NOT SUBMITTED = the transform did not send the row. No load error refers to these."
+
+    # WHY A STEP STOPPED - printed here, against the table it explains, rather
+    # than in section 2, which is only ever about rows Salesforce rejected. A
+    # step can fail having submitted nothing at all, and that used to produce a
+    # report whose every other section was indistinguishable from a clean run.
+    $Stopped = @($SummaryRows | Where-Object { $_.Result -like "*FAILED*" })
+    if ($Stopped.Count -gt 0) {
+        Add-Line ""
+        Add-Line "  WHY IT STOPPED"
+        foreach ($Row in $Stopped) {
+            $Why = if ("$($Row.Reason)".Trim()) { $Row.Reason }
+                   else { "No reason was recorded. See $($Row.Step)'s transcript in this folder." }
+            $First = $true
+            foreach ($WhyLine in @(Format-LoadReportWrapped -Text $Why -Width 74)) {
+                Add-Line ("    {0,-23}  {1}" -f $(if ($First) { $Row.Step } else { "" }), $WhyLine)
+                $First = $false
+            }
+        }
+    }
+
     Add-Line ""
 
     # 2. LOAD FAILURES
@@ -625,13 +684,14 @@ function Write-LoadRunReport {
     # the 2026-08-13 consolidation.
     Add-Line ("    {0}" -f $RunDirectory)
     Add-Line ""
-    Add-Line ("    SUMMARY.txt                    this report")
-    Add-Line ("    load-summary.csv               one row per step")
-    Add-Line ("    errors.csv                     one row per distinct error")
-    Add-Line ("    findings.csv                   one row per review CSV")
-    Add-Line ("    <Script>.log                   per-step transcript")
-    Add-Line ("    <object>-*-failed-records.csv  rejected rows, with payloads")
-    Add-Line ("    external-ids-*.csv             pre-run external IDs, required by a rollback")
+    Add-Line ("    SUMMARY.txt                       this report")
+    Add-Line ("    load-summary.csv                  one row per step, with why a failed one stopped")
+    Add-Line ("    errors.csv                        one row per distinct error")
+    Add-Line ("    findings.csv                      one row per review CSV")
+    Add-Line ("    Invoke-SalesforceLoad-<step>.log   that step's transcript")
+    Add-Line ("    Load-<step>-*.json                that step's Bulk job result")
+    Add-Line ("    <object>-*-failed-records.csv      rejected rows, with payloads")
+    Add-Line ("    external-ids-*.csv                pre-run external IDs, required by a rollback")
     Add-Line ""
     Add-Line "  Verification steps: docs/RELOAD-QA-CHECKLIST.md"
     Add-Line ""

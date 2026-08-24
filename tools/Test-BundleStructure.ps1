@@ -283,6 +283,57 @@ foreach ($File in @($BundleScripts) + @(Get-ChildItem -LiteralPath $PSScriptRoot
                  -Detail "New-Object wraps the list in a PSObject and @(...) cannot bind that. Use [System.Collections.Generic.List[object]]::new()."
 }
 
+<#
+    `powershell.exe -File` CANNOT PASS AN ARRAY, AND TWO OF THE THREE WAYS OF
+    TRYING FAIL IN SILENCE.
+
+    The orchestrator runs every step as a child process, so every value it hands
+    a load or a transform crosses a -File boundary. For a [string[]] parameter:
+
+        -P "a" -P "b"   ->  "parameter 'P' is specified more than once" (throws)
+        -P "a,b"        ->  ONE element, the literal string "a,b"
+        -P "a" "b"      ->  ONE element; the second value is discarded
+
+    Only the first says anything. The other two produce a load that runs to
+    completion having quietly lost values - and for ExpectedFailurePatterns,
+    which decides whether a rejected row is an accepted outcome or a real
+    failure, losing one silently either fails a correct load or widens what the
+    run is prepared to forgive without telling anyone.
+
+    It stopped the UAT run of 2026-08-24 on Account, the first step to configure
+    two patterns. Values that are plural now cross the boundary in a JSON file.
+    The probe asserts the platform still behaves as described, so that a future
+    fix reads as unnecessary rather than as wrong.
+#>
+$ArrayProbe = Join-Path ([System.IO.Path]::GetTempPath()) "ldgcrm-arrayprobe-$PID.ps1"
+try {
+    Set-Content -LiteralPath $ArrayProbe -Encoding UTF8 -Value 'param([string[]]$P = @()) Write-Output $P.Count'
+    $Joined = & powershell -NoProfile -ExecutionPolicy Bypass -File $ArrayProbe -P "a,b"
+    $Spaced = & powershell -NoProfile -ExecutionPolicy Bypass -File $ArrayProbe -P "a" "b"
+
+    Write-Host $(if ("$Joined" -eq "1" -and "$Spaced" -eq "1") {
+        "  note  -File still collapses a multi-value argument to 1 element, in silence"
+    } else {
+        "  note  -File now carries multiple values (joined=$Joined, spaced=$Spaced) - the file channel is still the safe form"
+    }) -ForegroundColor DarkGray
+}
+finally {
+    if (Test-Path -LiteralPath $ArrayProbe) { Remove-Item -LiteralPath $ArrayProbe -Force }
+}
+
+$Orchestrator = Join-Path $Bundle "powershell-scripts\Invoke-FullMigrationLoad.ps1"
+if (Test-Path -LiteralPath $Orchestrator) {
+    $Text = Get-Content -LiteralPath $Orchestrator -Raw -Encoding UTF8
+
+    Assert-Check -Condition ($Text -notmatch '\+=\s*@\(\s*"-ExpectedFailurePatterns"') `
+                 -What "passes expected-failure patterns in a file, not as repeated arguments" `
+                 -Detail "powershell.exe -File cannot bind an array. Write the patterns to JSON and pass -ExpectedFailurePatternsFile."
+
+    Assert-Check -Condition ($Text -match 'more than once\. powershell\.exe -File cannot bind an array') `
+                 -What "Invoke-ChildScript still refuses a repeated parameter name" `
+                 -Detail "That guard is what turns the next occurrence of this into a named error instead of a child-process stack trace."
+}
+
 
 # ------------------------------------------------- owned record type scoping
 Write-Host ""

@@ -59,11 +59,13 @@ data-migration/
 
     Invoke-FullMigrationLoad.log            the orchestrator's transcript
     Build-<Object>Load.log                  one per transform
-    Invoke-SalesforceLoad-<Object>.log      one per load
+    Invoke-SalesforceLoad-<Step>.log        one per load
 
     <Object>-skipped-<ts>.csv               review CSVs, from every transform
     <Object>-<jobid>-failed-records.csv     the rows Salesforce rejected, with payloads
-    Load-<Object>-<ts>.json                 Bulk job result, written ON SUCCESS ONLY
+    Load-<Step>-<ts>.json                   Bulk job result. Absent = the load never
+                                            reached the API; step-result says why
+    expected-failures-<Step>.json           the row failures that step was told to accept
 
     baseline-counts.csv                     per-object counts BEFORE the run
     external-ids-<Object>.csv               which records existed before  ← rollback needs these

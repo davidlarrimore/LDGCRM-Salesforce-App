@@ -80,6 +80,29 @@ param(
     #>
     [string[]]$ExpectedFailurePatterns = @(),
 
+    <#
+        A JSON file holding an array of the same substrings, merged into
+        -ExpectedFailurePatterns above.
+
+        THIS EXISTS BECAUSE `powershell.exe -File` CANNOT PASS AN ARRAY, and
+        every way of trying either errors or loses data silently:
+          -P "a" -P "b"   -> "parameter 'P' is specified more than once" (this
+                             killed the UAT run of 2026-08-24, on Account, the
+                             first step to configure two patterns)
+          -P "a,b"        -> ONE element, the literal string "a,b" - matches
+                             nothing, and says nothing
+          -P "a" "b"      -> ONE element; the second value is dropped in silence
+        The last two are the dangerous ones: the load runs, the patterns never
+        match, and every expected failure is reported as a real one - or, worse
+        on a different object, the allowance silently narrows. A file has no
+        quoting, splitting or arity to get wrong, and it lands in the run
+        directory, so the run says on disk exactly what it was willing to
+        forgive. Orchestrated loads use this; a hand-run load can still pass
+        -ExpectedFailurePatterns directly, which binds correctly because there
+        is no child-process boundary in the way.
+    #>
+    [string]$ExpectedFailurePatternsFile = "",
+
     # Ceiling on expected failures, as a fraction of the submitted rows. Even a
     # known cause at unusual volume means something changed upstream.
     [double]$ExpectedFailureMaxFraction = 0.05,
@@ -108,7 +131,32 @@ param(
         Empty (the default) means "nobody is collecting", and nothing is
         written: running this script by hand stays exactly as it was.
     #>
-    [string]$StepResultPath = ""
+    [string]$StepResultPath = "",
+
+    <#
+        What this invocation is called in the run - "AccountParentRepair", not
+        "Account". Used to name this script's transcript and its job-result
+        JSON. Defaults to the object, which is right for a hand-run load.
+
+        WHY IT IS NOT ENOUGH TO NAME THOSE FILES AFTER THE OBJECT. Three steps
+        load Account in one run (AccountParentRepair, AccountCreate, Account)
+        and two load LDGCRM_application__c (Application, PopulateBrokerParent).
+        Named after the object, all three write one Invoke-SalesforceLoad-Account.log
+        and one Load-Account-<runstamp>.json, so each step SILENTLY DESTROYS the
+        previous one's transcript and job result. The surviving file looks
+        complete and is indistinguishable from the only load that ran - which is
+        how the 2026-08-24 UAT run appeared to hold the reconciliation's job
+        result when what was actually on disk was the parent repair's.
+
+        That matters most for exactly the step it was losing: AccountParentRepair
+        is the only thing in this pipeline that writes ParentId on records the
+        migration did not create, and its job id is the audit trail for it.
+
+        Get-BulkFailureDetail already had this problem and solved it by putting
+        the job id in the failed-records file name; this is the same fix for the
+        two files it did not cover.
+    #>
+    [string]$StepName = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -118,7 +166,39 @@ $ErrorActionPreference = "Stop"
 
 $OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
-$Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Invoke-SalesforceLoad-$ObjectApiName"
+# Merge the file-borne patterns in before anything else runs. THROWS if the file
+# was named but cannot be read or does not hold an array of strings: the caller
+# asked for those failures to be forgiven, and quietly forgiving none of them
+# would turn a correct partial load into a hard failure with a misleading cause.
+if ($ExpectedFailurePatternsFile) {
+    if (-not (Test-Path -LiteralPath $ExpectedFailurePatternsFile)) {
+        throw "-ExpectedFailurePatternsFile was given but does not exist: $ExpectedFailurePatternsFile"
+    }
+
+    # -Encoding UTF8 is not optional - PS 5.1 decodes a BOM-less UTF-8 file as
+    # Windows-1252 without it, which would corrupt any non-ASCII in a pattern.
+    # Assign before counting: ConvertFrom-Json emits an array as ONE pipeline
+    # object, so @(ConvertFrom-Json ...).Count is 1 whatever the file holds.
+    $FromFile = Get-Content -LiteralPath $ExpectedFailurePatternsFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    $FromFile = @($FromFile)
+
+    if ($FromFile.Count -eq 0) {
+        throw "-ExpectedFailurePatternsFile holds no patterns: $ExpectedFailurePatternsFile"
+    }
+
+    $Blank = @($FromFile | Where-Object { -not "$_".Trim() })
+    if ($Blank.Count -gt 0) {
+        throw "-ExpectedFailurePatternsFile holds $($Blank.Count) blank pattern(s): $ExpectedFailurePatternsFile. A blank substring matches EVERY error message."
+    }
+
+    $ExpectedFailurePatterns = @($ExpectedFailurePatterns) + @($FromFile | ForEach-Object { "$_" })
+}
+
+# Everything this script writes is named off this, so that two steps loading the
+# same object in one run cannot overwrite each other. See -StepName above.
+$RunLabel = if ($StepName) { $StepName } else { $ObjectApiName }
+
+$Timestamp = Start-ScriptLog -Category "data-migration" -ScriptName "Invoke-SalesforceLoad-$RunLabel"
 
 # =============================================================================
 # TRIGGER BYPASS (-DisableTriggerControl) - READ THIS BEFORE USING IT
@@ -348,6 +428,17 @@ Write-Host ""
 Write-Host "Target org alias: $OrgAlias"
 Write-Host "Operation:        $Operation"
 Write-Host "CSV file:         $CsvFile"
+
+# Printed BEFORE the load, not just used after it. The classification below is
+# only as good as this list, and the previous silent-truncation failure modes
+# (see -ExpectedFailurePatternsFile) were invisible precisely because nothing
+# ever said out loud how many patterns had actually arrived.
+if (@($ExpectedFailurePatterns).Count -gt 0) {
+    Write-Host "Accepted failures:"
+    foreach ($Pattern in $ExpectedFailurePatterns) {
+        Write-Host "  - $Pattern" -ForegroundColor DarkGray
+    }
+}
 Write-Host ""
 
 if (-not (Test-Path -LiteralPath $CsvFile)) {
@@ -431,7 +522,7 @@ if (-not (Assert-LdgcrmTypedConfirmation `
 # ============================================================
 
 $LogDir = Get-LogDirectory -Category "data-migration"
-$ResultFile = Join-Path $LogDir "Load-$ObjectApiName-$Timestamp.json"
+$ResultFile = Join-Path $LogDir "Load-$RunLabel-$Timestamp.json"
 
 # Capture the pre-load state BEFORE touching anything, so the restore below
 # puts back what was actually there rather than assuming it was "on".

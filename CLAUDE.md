@@ -704,6 +704,17 @@ wrong thing:
   2026-08-21 in `Invoke-FullMigrationLoad.ps1`'s owner-roster name join — code Dev and QA never
   reach, because it sits behind the Full/Prod gate. `tools/Test-BundleStructure.ps1` now bans the
   `New-Object` form and probes the platform, so the ban explains itself.
+- **`powershell.exe -File` CANNOT PASS AN ARRAY, and two of the three ways of trying lose data
+  silently.** `-P "a" -P "b"` throws *"parameter 'P' is specified more than once"*; `-P "a,b"` binds
+  ONE element, the literal string `"a,b"`; `-P "a" "b"` binds ONE element and **discards the second
+  in silence**. Only the first says anything. This matters because
+  `Invoke-FullMigrationLoad.ps1` runs every step as a child process, so **every** value it hands a
+  load or transform crosses that boundary. It stopped the UAT run of 2026-08-24 on `Account`, the
+  first step to configure two `ExpectedFailures` patterns — and the two "fixes" that look like they
+  work would have quietly changed which row failures the run was willing to forgive. **Plural values
+  cross the boundary in a JSON file** (`-ExpectedFailurePatternsFile`), never as repeated arguments;
+  `Invoke-ChildScript` now throws on a repeated parameter name before launching anything, and
+  `tools/Test-BundleStructure.ps1` probes the platform and bans the repeated form.
 - **A here-string (`@'…'@`) does not reliably bind as a single argument to a native command.**
   `git commit -m @'…'@` split on the apostrophe in "Airtable's" and turned the message body into
   pathspecs. For multi-line commit messages write the message to a file and use `git commit -F`.
@@ -853,7 +864,7 @@ inherit it. **Never reintroduce a per-script subfolder**; write into `Get-LogDir
 `Get-LogCategoryDirectory` only for things genuinely about the *set* of runs.
 
 **That directory holds one report: `SUMMARY.txt`** (built by `Common.LoadReport.ps1`), also printed
-at the end of the transcript. Read it before opening anything else. Two things about it are
+at the end of the transcript. Read it before opening anything else. Three things about it are
 load-bearing:
 
 - **"Withheld" is not a load error, and it is usually the bigger number.** Transforms skip rows whose
@@ -861,6 +872,16 @@ load-bearing:
   rows are never *submitted*, so the Bulk API says nothing, the step reports success, and the records
   are simply absent. The 2026-08-13 reload failed 31 rows and withheld several hundred. Any new
   "how much migrated?" question must account for both.
+- **Section 2 only ever covers rows Salesforce REJECTED; "WHY IT STOPPED" under section 1 covers a
+  step that failed without submitting anything.** They are different failures and used to be reported
+  as one: a step that died before it reached the Bulk API left section 2 reading "(none)" and
+  `errors.csv` empty, which is exactly what a clean run looks like. The reason now reaches the report
+  because `Invoke-FullMigrationLoad.ps1` writes a step result itself when the child could not — and
+  **the absence of the child's own transcript is the diagnosis**, since a load that never started
+  failed at parameter binding.
+- **Every file a load writes is named after the STEP, not the object** (`-StepName`). Three steps load
+  `Account` and two load `LDGCRM_application__c`, so object-named files had each step silently
+  destroying the previous one's transcript and job result — and the survivor looks complete.
 - **Expected-vs-unexpected is decided two different ways.** A *row failure* is expected if it matches
   that object's `ExpectedFailurePatterns` in `Invoke-FullMigrationLoad.ps1`'s `$Steps` table. A
   *count* is expected by comparison with the previous run — each run writes `findings.csv`/`errors.csv`
