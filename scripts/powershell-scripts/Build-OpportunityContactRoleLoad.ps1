@@ -120,7 +120,17 @@ Write-Host "$($ContactIdByExternalId.Count) Contacts, $($OpportunityIdByExternal
 # --- What already exists, so this can be re-run safely ---------------------
 $ExistingKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $ExistingPrimaryByOpportunity = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-foreach ($Row in @(Invoke-SalesforceQuery -Soql "SELECT Id, OpportunityId, ContactId, Role, IsPrimary FROM OpportunityContactRole" -OrgAlias $OrgAlias -ApiVersion $ApiVersion)) {
+# Scoped through the parent Opportunity - OpportunityContactRole has no record
+# type of its own, so a role row is ours exactly when its Opportunity is.
+#
+# SAFE FOR BOTH USES THIS INDEX HAS. Every row this script inserts hangs off a
+# Login_gov Opportunity, so a role on a TTS_OTCRM_Opportunity can never share
+# the (OpportunityId, ContactId, Role) key with one of ours - it could only ever
+# have been a row that failed to match. The one-primary-per-Opportunity set is
+# keyed on OpportunityId for the same reason: an Opportunity we are not touching
+# cannot be given a second primary by this run.
+$OcrScope = Get-LdgcrmOwnedRecordTypeClause -SObject "OpportunityContactRole"
+foreach ($Row in @(Invoke-SalesforceQuery -Soql "SELECT Id, OpportunityId, ContactId, Role, IsPrimary FROM OpportunityContactRole WHERE $OcrScope" -OrgAlias $OrgAlias -ApiVersion $ApiVersion)) {
     $ExistingKeys.Add("$($Row.OpportunityId)|$($Row.ContactId)|$($Row.Role)") | Out-Null
     if ($Row.IsPrimary -eq $true -or "$($Row.IsPrimary)" -eq "True") {
         $ExistingPrimaryByOpportunity.Add($Row.OpportunityId) | Out-Null

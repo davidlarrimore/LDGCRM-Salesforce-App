@@ -252,8 +252,13 @@ if ((Test-Path -LiteralPath $PostLoadCountsFile) -and -not $PlanOnly) {
     $Drift = [System.Collections.Generic.List[string]]::new()
 
     foreach ($Row in @(Import-Csv -LiteralPath $PostLoadCountsFile)) {
-        $Current = @(Invoke-SalesforceQuery -Soql "SELECT Id FROM $($Row.Object)" `
-            -OrgAlias $OrgAlias -ApiVersion $ApiVersion).Count
+        # SAME SCOPE AS THE RUN THAT WROTE post-load-counts.csv (Owned, via
+        # COUNT()). This compares today's org against a number recorded by
+        # Invoke-FullMigrationLoad.ps1, so if the two scopes ever diverge every
+        # object reports drift and the rollback refuses to run - or worse, the
+        # numbers coincidentally agree and it proceeds on a false match.
+        $Current = Get-SalesforceRecordCount -SObject $Row.Object -Scope Owned `
+            -OrgAlias $OrgAlias -ApiVersion $ApiVersion
 
         if ($Current -ne [int]$Row.After) {
             $Drift.Add(("{0}: {1} at end of run, {2} now" -f $Row.Object, $Row.After, $Current))
@@ -369,10 +374,18 @@ if (-not $SkipAccountRestore) {
 
     $PreImage = @(Import-Csv -LiteralPath $AccountPreImageFile)
 
+    # SAME SCOPE AS THE PRE-IMAGE IT IS COMPARED AGAINST. Save-RestorePoint
+    # captures owned record types only, so reading wider here would not find
+    # anything extra to restore - the pre-image has no row to restore it to - it
+    # would only cost the fetch. Reading NARROWER would be the dangerous
+    # direction: a pre-image row whose Account is missing from this map is
+    # counted as "deleted since the pre-image" and skipped, so an over-tight
+    # filter here would silently decline to restore records it could have.
+    $AccountScope = Get-LdgcrmOwnedRecordTypeClause -SObject "Account"
     $CurrentById = @{}
     foreach ($Account in @(Invoke-SalesforceQuery `
             -Soql ("SELECT Id, LDGCRM_External_ID__c, Type, OwnerId, " +
-                   "LDGCRM_Market_Segment__c FROM Account") `
+                   "LDGCRM_Market_Segment__c FROM Account WHERE $AccountScope") `
             -OrgAlias $OrgAlias -ApiVersion $ApiVersion)) {
         $CurrentById[$Account.Id] = $Account
     }

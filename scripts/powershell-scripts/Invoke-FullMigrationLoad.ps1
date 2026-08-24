@@ -1262,15 +1262,24 @@ function Save-RestorePoint {
 
     # Pre-image of the one object the migration UPDATES rather than creates.
     # Everything else it creates outright, and creations are undone by deleting.
+    #
+    # SCOPED TO THE RECORD TYPES WE OWN. Unscoped, this read the whole Account
+    # table, which is fine in a developer sandbox and impossible in a copy of
+    # production: UAT answered 1,533,704 records on 2026-08-24 and the run
+    # stopped on Invoke-SalesforceQuery's truncation guard. Scoping is not a
+    # workaround for that limit - a pre-image exists to restore values this
+    # migration overwrites, and it cannot overwrite a record it never writes.
+    # FCIC and TTS records were only ever noise in this file.
+    $AccountScope = Get-LdgcrmOwnedRecordTypeClause -SObject "Account"
     $Accounts = @(Invoke-SalesforceQuery `
         -Soql ("SELECT Id, Name, LDGCRM_External_ID__c, Type, OwnerId, " +
-               "LDGCRM_Market_Segment__c FROM Account") `
+               "LDGCRM_Market_Segment__c FROM Account WHERE $AccountScope") `
         -OrgAlias $Org -ApiVersion $Version)
 
     $AccountFile = Join-Path $Directory "restore-point-Account.csv"
     $Accounts | Select-Object Id, Name, LDGCRM_External_ID__c, Type, OwnerId, LDGCRM_Market_Segment__c |
         Export-Csv -LiteralPath $AccountFile -NoTypeInformation -Encoding UTF8
-    Write-Host ("  Account pre-image      {0} record(s) -> {1}" -f $Accounts.Count, (Split-Path -Leaf $AccountFile))
+    Write-Host ("  Account pre-image      {0} owned record(s) -> {1}" -f $Accounts.Count, (Split-Path -Leaf $AccountFile))
 
     # Baseline counts for every object the sequence touches, so the post-load
     # check compares against measured reality rather than a number in a doc.
@@ -1295,9 +1304,25 @@ function Save-RestorePoint {
     # these rows and discarding everything but the row count.
     $Baseline = [System.Collections.Generic.List[object]]::new()
     foreach ($Object in $Objects) {
-        $Total = @(Invoke-SalesforceQuery -Soql "SELECT Id FROM $Object" -OrgAlias $Org -ApiVersion $Version).Count
+        # COUNTED AS AN AGGREGATE, AND SCOPED TO OUR RECORD TYPES. Both halves
+        # matter. COUNT() is exact at any volume, where fetching Ids to measure
+        # .Count could not get past 50,000 rows. Scoping makes the number mean
+        # something: an org-wide Account total moves whenever FCIC does anything
+        # during the load window, so the before/after delta it feeds was never
+        # attributable to this migration in a shared org.
+        $Total = Get-SalesforceRecordCount -SObject $Object -Scope Owned `
+            -OrgAlias $Org -ApiVersion $Version
+
         $Tagged = 0
         try {
+            # DELIBERATELY NOT RECORD-TYPE SCOPED. LDGCRM_External_ID__c is
+            # itself an ownership marker - nothing but this migration writes it -
+            # and it is the more conservative of the two. If a tagged record ever
+            # sat outside our record types, scoping this read would leave it out
+            # of the "already present before the run" set, and the rollback would
+            # then read it as something this run created and DELETE it. The
+            # asymmetry is deliberate: over-collecting here is harmless, under-
+            # collecting destroys a record.
             $Existing = @(Invoke-SalesforceQuery `
                 -Soql "SELECT Id, LDGCRM_External_ID__c FROM $Object WHERE LDGCRM_External_ID__c != null" `
                 -OrgAlias $Org -ApiVersion $Version)
@@ -1338,9 +1363,16 @@ function Save-RestorePoint {
     # What actually indicates a bypass failure is the DELTA, so record the
     # starting figure here. Kept as a file rather than added to $Baseline
     # because the post-load loop treats every row there as a queryable object.
-    $JunkBefore = @(Invoke-SalesforceQuery `
-        -Soql "SELECT Id FROM Account WHERE RecordType.DeveloperName = 'FCIC_Individual'" `
-        -OrgAlias $Org -ApiVersion $Version).Count
+    #
+    # ONE OF THE TWO PLACES `-Scope All` IS CORRECT, and it is not an exception
+    # to "we do not care about record types that are not ours". It is not asking
+    # about FCIC's data; it is asking whether OUR load leaked records into their
+    # record type, which is a fact about this pipeline that happens to be
+    # measured over there. COUNT() rather than row-counting because a copy of
+    # production holds ~1.5M of these and the old form could not see past 50,000.
+    $JunkBefore = Get-SalesforceRecordCount -SObject "Account" -Scope All `
+        -Where "RecordType.DeveloperName = 'FCIC_Individual'" `
+        -OrgAlias $Org -ApiVersion $Version
 
     Set-Content -LiteralPath (Join-Path $Directory "fcic-junk-baseline.txt") -Value $JunkBefore -Encoding ASCII
     Write-Host ("  FCIC junk Accounts     {0} already present (pre-existing, not deleted by a reset)" -f $JunkBefore)
@@ -1373,7 +1405,13 @@ function Invoke-PostLoadValidation {
     $After = [System.Collections.Generic.List[object]]::new()
 
     foreach ($Row in $Baseline) {
-        $Total = @(Invoke-SalesforceQuery -Soql "SELECT Id FROM $($Row.Object)" -OrgAlias $Org -ApiVersion $Version).Count
+        # MUST match Save-RestorePoint's scope exactly - same aggregate, same
+        # Owned filter. A before taken one way and an after taken another
+        # produces a delta that is pure artefact, and it would look like a real
+        # load result rather than like a bug.
+        $Total = Get-SalesforceRecordCount -SObject $Row.Object -Scope Owned `
+            -OrgAlias $Org -ApiVersion $Version
+
         $Delta = $Total - $Row.Total
         Write-Host ("  {0,-34} {1,8:N0} {2,8:N0} {3,8}" -f $Row.Object, $Row.Total, $Total, ("{0:+#;-#;0}" -f $Delta))
         $After.Add([PSCustomObject]@{ Object = $Row.Object; Before = $Row.Total; After = $Total; Delta = $Delta })
@@ -1383,14 +1421,21 @@ function Invoke-PostLoadValidation {
 
     # 2. Junk FCIC Accounts. The Contact trigger creates one Account per Contact
     #    inserted with a blank AccountId; the bypass is supposed to stop that.
-    #    An Account delta far above what the reconciliation explains is the tell.
     #    Measured as a DELTA against the pre-run figure, not against zero - an
     #    org where the trigger has fired before keeps those Accounts for ever
     #    (they carry no external ID, so no reset removes them). See the note in
-    #    Save-RestorePoint.
-    $Junk = @(Invoke-SalesforceQuery `
-        -Soql "SELECT Id FROM Account WHERE RecordType.DeveloperName = 'FCIC_Individual'" `
-        -OrgAlias $Org -ApiVersion $Version).Count
+    #    Save-RestorePoint, including why this is a legitimate -Scope All.
+    #
+    #    THIS IS NOW THE ONLY PLACE THAT SEES A BYPASS FAILURE. It used to be
+    #    corroborated by "an Account delta far above what the reconciliation
+    #    explains", which stopped being true when the Account count above became
+    #    record-type scoped: junk Accounts are FCIC_Individual, so they no longer
+    #    move the Account delta at all. That is the intended outcome - the delta
+    #    now measures only our own records - but it means this check is load-
+    #    bearing on its own rather than one of two independent signals.
+    $Junk = Get-SalesforceRecordCount -SObject "Account" -Scope All `
+        -Where "RecordType.DeveloperName = 'FCIC_Individual'" `
+        -OrgAlias $Org -ApiVersion $Version
 
     $JunkBaselineFile = Join-Path $Directory "fcic-junk-baseline.txt"
     $JunkBefore = if (Test-Path -LiteralPath $JunkBaselineFile) {

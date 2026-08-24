@@ -283,6 +283,122 @@ foreach ($File in @($BundleScripts) + @(Get-ChildItem -LiteralPath $PSScriptRoot
                  -Detail "New-Object wraps the list in a PSObject and @(...) cannot bind that. Use [System.Collections.Generic.List[object]]::new()."
 }
 
+
+# ------------------------------------------------- owned record type scoping
+Write-Host ""
+Write-Host "Record-type scoping" -ForegroundColor Cyan
+
+# WHY THIS IS TESTED HERE. Same reason as the reset filter above: the failure
+# these checks guard against cannot be reproduced on a dev machine. Dev and QA
+# hold ~1,300 Accounts, all of them ours, so an unscoped read behaves
+# identically to a scoped one and every test passes either way. The difference
+# only appears in a full sandbox - a copy of production - where the same query
+# returned 1,533,704 records on 2026-08-24 and stopped the run. Neither UAT nor
+# Full is authorized on a dev machine, so without these the scoping rule would
+# first be exercised, unobserved, against a copy of production.
+
+$OwnedTable = Get-LdgcrmOwnedRecordTypes
+
+foreach ($Case in @(
+    @{ SObject = "Account";                Expect = @("Federal") },
+    @{ SObject = "Contact";                Expect = @("Federal", "GSA") },
+    @{ SObject = "Opportunity";            Expect = @("Login_gov") },
+    @{ SObject = "OpportunityContactRole"; Expect = @("Login_gov") }
+)) {
+    $Entry = $OwnedTable[$Case.SObject]
+    $Names = @($Entry.Names | Sort-Object)
+    $Want = @($Case.Expect | Sort-Object)
+
+    Assert-Check -Condition (($Names -join ",") -eq ($Want -join ",")) `
+                 -What "$($Case.SObject) owns exactly $($Want -join ' + ')" `
+                 -Detail ("table says: " + ($Names -join ", "))
+}
+
+# The other apps' record types must never appear in the owned set. Named
+# explicitly rather than inferred, so that adding one to the table is a visible
+# test failure rather than a silently wider filter.
+foreach ($Foreign in @("FCIC_Individual", "FCIC_Duplicate", "TTS_Individual", "TTS_OTCRM_Opportunity")) {
+    $Found = @($OwnedTable.Keys | Where-Object { @($OwnedTable[$_].Names) -contains $Foreign })
+
+    Assert-Check -Condition ($Found.Count -eq 0) `
+                 -What "'$Foreign' is not claimed as ours" `
+                 -Detail ("claimed by: " + ($Found -join ", "))
+}
+
+# OpportunityContactRole has no record type of its own and must be scoped
+# through its parent. A plain RecordType.DeveloperName here would be a SOQL
+# error at runtime, in the middle of a load, against production.
+Assert-Check -Condition ($OwnedTable["OpportunityContactRole"].Path -eq "Opportunity.RecordType.DeveloperName") `
+             -What "OpportunityContactRole is scoped through its parent Opportunity" `
+             -Detail $OwnedTable["OpportunityContactRole"].Path
+
+# Objects that are wholly ours must return an EMPTY clause, not a filter on a
+# field they do not have. LDGCRM_Market_Segment__c has no RecordType at all, so
+# a non-empty clause here is an invalid query rather than a narrow one.
+foreach ($Ours in @("LDGCRM_application__c", "LDGCRM_Market_Segment__c",
+                    "LDGCRM_Partner_Account__c", "LDGCRM_Impediment__c",
+                    "LDGCRM_Application_Contact__c", "LDGCRM_Opportunity_Impediment__c")) {
+    Assert-Check -Condition ((Get-LdgcrmOwnedRecordTypeClause -SObject $Ours) -eq "") `
+                 -What "$Ours needs no record-type filter (wholly ours)"
+}
+
+# Clause shape. Checked as a string because it is spliced into SOQL by hand at
+# every call site - an unquoted value or a stray comma is a runtime failure in
+# the middle of a load, and there is no org here to catch it.
+Assert-Check -Condition ((Get-LdgcrmOwnedRecordTypeClause -SObject "Account") -eq "RecordType.DeveloperName IN ('Federal')") `
+             -What "Account clause is well-formed SOQL" `
+             -Detail (Get-LdgcrmOwnedRecordTypeClause -SObject "Account")
+
+Assert-Check -Condition ((Get-LdgcrmOwnedRecordTypeClause -SObject "Contact") -eq "RecordType.DeveloperName IN ('Federal', 'GSA')") `
+             -What "Contact clause quotes and separates both values" `
+             -Detail (Get-LdgcrmOwnedRecordTypeClause -SObject "Contact")
+
+# -Scope is mandatory on Get-SalesforceRecordCount. That is the whole design:
+# an unscoped count has to be typed as one. If a refactor ever gives it a
+# default, every existing call keeps working and new ones silently go org-wide -
+# which is precisely the state this change was made to end.
+$ScopeParam = (Get-Command Get-SalesforceRecordCount).Parameters["Scope"]
+$ScopeMandatory = @($ScopeParam.Attributes |
+    Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] } |
+    Where-Object { $_.Mandatory })
+
+Assert-Check -Condition ($ScopeMandatory.Count -gt 0) `
+             -What "Get-SalesforceRecordCount requires -Scope to be stated"
+
+# No bundle script may count by fetching every Id of an object. That form
+# cannot see past the CLI's 50,000-row ceiling, and the ceiling is not reachable
+# in any org a developer can authorize here.
+#
+# Matched as "SELECT Id FROM <variable>" carrying no WHERE, which is the shape
+# that was actually wrong. A SELECT Id that IS filtered stays legal - the
+# factory reset legitimately fetches tagged Ids to walk ContentDocumentLink from
+# them, and wants the Ids themselves rather than a number.
+foreach ($File in $BundleScripts) {
+    $Text = Get-Content -LiteralPath $File.FullName -Raw -Encoding UTF8
+    $Relative = $File.FullName.Substring($Repo.Length + 1)
+
+    $Unfiltered = @([regex]::Matches($Text, '"SELECT Id FROM \$[^"]*"') |
+        Where-Object { $_.Value -notmatch 'WHERE' })
+
+    Assert-Check -Condition ($Unfiltered.Count -eq 0) `
+                 -What "counts with COUNT(), not by fetching Ids: $Relative" `
+                 -Detail ("Use Get-SalesforceRecordCount -Scope Owned. Found: " + (@($Unfiltered | ForEach-Object { $_.Value }) -join "; "))
+}
+
+# Every read of a shared standard object must carry a WHERE. This is a coarse
+# check on purpose - it cannot tell a record-type filter from any other
+# predicate - but the failure it catches is the one that actually happened: a
+# query written with no WHERE at all.
+foreach ($File in $BundleScripts) {
+    $Text = Get-Content -LiteralPath $File.FullName -Raw -Encoding UTF8
+    $Relative = $File.FullName.Substring($Repo.Length + 1)
+
+    foreach ($Shared in @("Account", "Contact", "Opportunity", "OpportunityContactRole")) {
+        Assert-Check -Condition ($Text -notmatch ("FROM $Shared\s*""")) `
+                     -What "no unfiltered read of $Shared in $Relative" `
+                     -Detail "A read of a record-typed object shared with FCIC/TTS must carry a WHERE. See Get-LdgcrmOwnedRecordTypeClause."
+    }
+}
 # ----------------------------------------------------------------- verdict
 Write-Host ""
 

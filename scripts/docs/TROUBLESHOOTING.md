@@ -541,6 +541,41 @@ For non-git deletion of such paths, use `robocopy <empty-dir> <target> /MIR` rat
 
 ---
 
+## `Query returned 50000 of <a much bigger number> records`
+
+The full message ends `- the result set was truncated, so any count derived from it would be wrong.
+Narrow the query or page it explicitly.`
+
+**Nothing was written and nothing was damaged.** The Salesforce CLI returns at most 50,000 rows from
+one query. The pipeline checks the rows it got against the total the org reported and stops rather
+than carrying on with a partial answer — a truncated result looks exactly like a small one, and every
+count downstream would have been quietly wrong.
+
+**What it means:** a query ran without being narrowed to this migration's records. You are almost
+certainly pointed at a **full sandbox or production**, where the org holds well over a million
+Accounts and Contacts belonging to other apps that share it (FCIC, TTS OTCRM). Dev and QA hold about
+1,350 Accounts, so the same query is fine there — which is why this appears only when you move to a
+bigger org.
+
+**What to do:**
+
+1. Note which script and line the error names, and **report it** — this is a defect in the pipeline,
+   not something you did wrong and not something to work around. Every read is supposed to be
+   restricted to the record types this migration owns (`Federal` on Account, `Federal`/`GSA` on
+   Contact, `Login_gov` on Opportunity).
+2. **Do not** re-run hoping for a different result. It is not intermittent, and it is not a timeout.
+3. **Do not** try to raise a limit or split the run to get past it. The guard is the thing working.
+
+If you want to confirm the org really is that large before reporting it, this is read-only and safe:
+
+```
+sf data query -q "SELECT COUNT() FROM Account" --target-org <alias>
+sf data query -q "SELECT COUNT() FROM Account WHERE RecordType.DeveloperName = 'Federal'" --target-org <alias>
+```
+
+The second number is the one this migration cares about. A large gap between them is normal in a full
+sandbox and is not itself a problem.
+
 ## A count looks wrong and nothing errored
 
 Take it seriously — this is how most real defects in this pipeline were found.

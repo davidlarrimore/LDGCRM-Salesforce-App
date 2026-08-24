@@ -640,6 +640,95 @@ Conversely `Write-LoadRunReport` is called inside a `try`, and a failure there d
 report and a warning. Reporting must never be able to change the outcome of a load, and post-load
 validation — not this — remains the thing that decides whether a run passed.
 
+## ⚠️ Every read is scoped to the record types we own (added 2026-08-24)
+
+**The org is shared, and in a full sandbox other apps' records outnumber ours by about a thousand to
+one.** Account, Contact and Opportunity each carry record types belonging to FCIC and TTS OTCRM
+alongside this migration's. A UAT run on 2026-08-24 stopped in `Save-RestorePoint` with
+
+```
+Query returned 50000 of 1533704 records - the result set was truncated
+```
+
+`sf data query` stops at 50,000 rows. The truncation guard in `Invoke-SalesforceQuery` turned that
+into a hard error instead of a short answer, which is the only reason the run stopped rather than
+writing a restore-point CSV missing 97% of the org and looking complete.
+
+**The record types this migration owns are defined once**, in `Get-LdgcrmOwnedRecordTypes`
+(`Common.DataMigration.ps1`). Nothing else may hard-code them:
+
+| Object | Ours | Belongs to another app |
+| --- | --- | --- |
+| Account | `Federal` | `FCIC_Individual`, `TTS_Individual` |
+| Contact | `Federal`, `GSA` | `FCIC_Duplicate`, `FCIC_Individual`, `TTS_Individual` |
+| Opportunity | `Login_gov` | `TTS_OTCRM_Opportunity` |
+| `OpportunityContactRole` | scoped through its parent — `Opportunity.RecordType.DeveloperName` | — |
+| every `LDGCRM_` object | wholly ours; no filter, the object *is* the scope | — |
+
+`Get-LdgcrmOwnedRecordTypeClause -SObject <name>` returns the SOQL fragment, or an **empty string**
+for an object that needs no filter — empty means "no restriction needed", never "restriction
+unknown". Callers AND it into their own query explicitly; there is deliberately no query-rewriting
+helper, because splicing a `WHERE` into arbitrary SOQL breaks on the first `ORDER BY` or subquery.
+
+**The writes were always correct** — `Build-AccountCreationLoad.ps1`, `Build-ContactLoad.ps1` and
+`Build-OpportunityLoad.ps1` each resolve their record type and throw if it will not. This was
+entirely a gap in the **reads**.
+
+### It is a correctness rule, not a performance one
+
+The row cap is the smaller half and would not matter if the CLI paged further.
+`Build-AccountReconciliation.ps1` and `Build-AccountCreationLoad.ps1` build a **name index** out of
+whatever comes back, and `GSA_FCIC_ContactTrigger` names its junk Accounts **after the person**. In a
+copy of production an unscoped pool is ~1.5M person-named Accounts, so matching Airtable *agency*
+names into it is not a slow way of getting the right answer — it is a different question. In
+`Build-AccountCreationLoad.ps1` the consequence is worse than a bad match: a name collision makes it
+conclude the Account already exists and **not create it**, and a record silently not created is
+invisible in every count the run produces.
+
+Counts are affected the same way. An org-wide Account total moves whenever FCIC does anything during
+the load window, so the before/after delta it fed was never attributable to this migration.
+
+### Counting
+
+**Never count by fetching rows.** `@(Invoke-SalesforceQuery -Soql "SELECT Id FROM X").Count` cannot
+see past 50,000. Use **`Get-SalesforceRecordCount`**, which issues `SELECT COUNT()` and reads
+`totalSize` — exact at any volume, one call.
+
+**`-Scope` is mandatory on it, and that is the design.** Org-wide was previously the default by
+nobody choosing it. Requiring the word means `All` has to be typed, and therefore justified, at the
+two call sites that genuinely want it. `tools/Test-BundleStructure.ps1` asserts the parameter stays
+mandatory, bans the fetch-Ids-to-count form, and fails any bundle script that reads a shared standard
+object with no `WHERE` at all.
+
+### Two deliberate exceptions
+
+**The external-ID capture in `Save-RestorePoint` is NOT record-type scoped.**
+`LDGCRM_External_ID__c` is itself an ownership marker — nothing else writes it — and it is the more
+conservative of the two filters. If a tagged record ever sat outside our record types, scoping that
+read would leave it out of the "already present before the run" set, and the rollback would then read
+it as something this run created and **delete it**. Over-collecting there is harmless;
+under-collecting destroys a record.
+
+**The FCIC junk-Account check uses `-Scope All`, and is not an exception to the rule.** It is not
+asking about FCIC's data; it is asking whether *our* load leaked records into their record type,
+which is a fact about this pipeline that happens to be measured over there.
+
+Note what that check lost: it used to be corroborated by "an Account delta far above what the
+reconciliation explains". That stopped being true when the Account count became scoped — junk
+Accounts are `FCIC_Individual`, so they no longer move the Account delta at all. That is the intended
+outcome, but **the junk check is now load-bearing on its own** rather than one of two independent
+signals.
+
+### The one way this can drop a record
+
+A record with **no record type at all** is excluded by every clause built here, because
+`RecordType.DeveloperName IN (...)` is false when `RecordTypeId` is null. Under the standing policy —
+"we should not care about data in record types that are not ours" (project owner, 2026-08-24) — an
+untyped record is not in a record type we own, so this is correct. It is recorded because it is a
+**decision rather than an accident**, and it is the only way the filter can exclude something someone
+expected to keep. If a PEO org is ever found with untyped Accounts, that is the assumption to revisit
+first.
+
 ## ⚠️ What the load turns on and off
 
 **The complete list of org configuration the pipeline changes.** Written for whoever owns Salesforce

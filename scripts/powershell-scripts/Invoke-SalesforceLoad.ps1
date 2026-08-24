@@ -378,17 +378,16 @@ if ($Operation -ne "Insert") {
 Write-Host "Checking the target org..." -ForegroundColor Cyan
 Invoke-SalesforceCliJson -Arguments @("org", "display", "--target-org", $OrgAlias) | Out-Null
 
-$CurrentCountResult = Invoke-SalesforceCliJson -Arguments @(
-    "data", "query",
-    "--target-org", $OrgAlias,
-    "--api-version", $ApiVersion,
-    "--query", "SELECT COUNT() FROM $ObjectApiName"
-)
-$CurrentCount = [int]$CurrentCountResult.Result.result.totalSize
+# Scoped to the record types this migration owns, so the operator is shown a
+# number they can reason about against the row count below it. Unscoped, this
+# line read "1,533,704 existing Account records" next to "Rows in CSV 584",
+# which tells an operator nothing about whether the load looks sane.
+$CurrentCount = Get-SalesforceRecordCount -SObject $ObjectApiName -Scope Owned `
+    -OrgAlias $OrgAlias -ApiVersion $ApiVersion
 
 Write-Host ""
 Write-Host ("{0,-35} {1,10:N0}" -f "Rows in CSV", $Rows.Count)
-Write-Host ("{0,-35} {1,10:N0}" -f "Existing $ObjectApiName records in $OrgAlias", $CurrentCount)
+Write-Host ("{0,-35} {1,10:N0}" -f "Existing $ObjectApiName (ours) in $OrgAlias", $CurrentCount)
 Write-Host ""
 
 # ============================================================

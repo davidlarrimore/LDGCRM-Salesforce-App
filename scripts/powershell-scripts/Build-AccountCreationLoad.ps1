@@ -106,10 +106,19 @@ $FederalRecordTypeId = $RecordTypeRows[0].Id
 Write-Host "Federal record type: $FederalRecordTypeId"
 
 Write-Host "Querying existing Salesforce Accounts..." -ForegroundColor Cyan
+#
+# SCOPED TO THE RECORD TYPES THIS MIGRATION OWNS. This index decides whether an
+# Airtable Account already exists, so an unscoped pool is worse here than in the
+# reconciliation: GSA_FCIC_ContactTrigger names its junk Accounts after people,
+# and a person's name colliding with an agency name would make this script
+# conclude the Account is already present and NOT CREATE IT. A record silently
+# not created is invisible in every count this run produces.
+$AccountScope = Get-LdgcrmOwnedRecordTypeClause -SObject "Account"
 $SfRaw = @(Invoke-SalesforceQuery `
-    -Soql ("SELECT Id, Name, ParentId, Parent.Name, Account_Level__c, LDGCRM_External_ID__c FROM Account") `
+    -Soql ("SELECT Id, Name, ParentId, Parent.Name, Account_Level__c, " +
+           "LDGCRM_External_ID__c FROM Account WHERE $AccountScope") `
     -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
-Write-Host "$($SfRaw.Count) Salesforce Account records found."
+Write-Host "$($SfRaw.Count) Salesforce Account records found (owned record types only)."
 
 # Flatten Parent.Name to ParentName so the same index code serves both a
 # Salesforce query and the production export.

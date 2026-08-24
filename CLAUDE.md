@@ -889,6 +889,66 @@ Run from inside `sfdx/`:
 - Husky's `pre-commit` hook runs `lint-staged` (Prettier on all matched files, ESLint on `aura`/`lwc`
   JS, `sfdx-lwc-jest --bail --findRelatedTests --passWithNoTests` on `lwc` changes).
 
+## ⚠️ EVERY read is scoped to the record types we own — and never counts by fetching rows
+
+Standing rule, user-stated 2026-08-24: **"we should not care about data in record types that are not
+ours, PERIOD."** This org is shared with FCIC and TTS OTCRM, and in a full sandbox their records
+outnumber ours by roughly a thousand to one. A UAT run stopped in `Save-RestorePoint` with
+`Query returned 50000 of 1533704 records` — `sf data query` caps at 50,000 rows, and
+`Invoke-SalesforceQuery`'s truncation guard refused to write a restore-point CSV missing 97% of the
+org while looking complete.
+
+**The owned set is defined once**, in `Get-LdgcrmOwnedRecordTypes` (`Common.DataMigration.ps1`).
+Never hard-code it anywhere else:
+
+| Object | Ours | Another app's |
+| --- | --- | --- |
+| Account | `Federal` | `FCIC_Individual`, `TTS_Individual` |
+| Contact | `Federal`, `GSA` | `FCIC_Duplicate`, `FCIC_Individual`, `TTS_Individual` |
+| Opportunity | `Login_gov` | `TTS_OTCRM_Opportunity` |
+| `OpportunityContactRole` | via its parent — `Opportunity.RecordType.DeveloperName` (it has no record type of its own) | — |
+| every `LDGCRM_` object | wholly ours — **no filter**, the object *is* the scope | — |
+
+`Get-LdgcrmOwnedRecordTypeClause -SObject <name>` returns the SOQL fragment (empty string = no filter
+needed, which means "no restriction required", never "restriction unknown"). Callers AND it into
+their own SOQL explicitly — there is deliberately **no query-rewriting helper**, because splicing a
+`WHERE` into arbitrary SOQL breaks on the first `ORDER BY` or subquery.
+
+**Counting: use `Get-SalesforceRecordCount`, never `@(Invoke-SalesforceQuery -Soql "SELECT Id FROM
+X").Count`** — the latter cannot see past 50,000 rows. It issues `SELECT COUNT()` and reads
+`totalSize`. **`-Scope Owned|All` is mandatory**, because org-wide was previously the default by
+nobody choosing it; `All` now has to be typed, and therefore justified.
+
+**This is a correctness rule, not a performance one**, and the row cap is the smaller half.
+`Build-AccountReconciliation.ps1` and `Build-AccountCreationLoad.ps1` build a **name index** from
+their Account query, and `GSA_FCIC_ContactTrigger` names its junk Accounts **after the person** — so
+an unscoped pool means matching Airtable *agency* names against ~1.5M person names. In
+`Build-AccountCreationLoad.ps1` a collision makes it conclude the Account already exists and **not
+create it**, which is invisible in every count the run produces. Same for counts: an org-wide Account
+total moves whenever FCIC does anything mid-load, so the before/after delta was never attributable to
+this migration.
+
+**Two deliberate exceptions**, both load-bearing:
+- **`Save-RestorePoint`'s external-ID capture is NOT scoped.** `LDGCRM_External_ID__c` is itself an
+  ownership marker and the more conservative filter. A tagged record outside our record types would,
+  if scoped out, be missing from the "already present before the run" set — and the rollback would
+  then read it as something this run created and **delete it**. Over-collecting is harmless;
+  under-collecting destroys a record.
+- **The FCIC junk-Account check uses `-Scope All`.** It is not asking about FCIC's data, it is asking
+  whether *our* load leaked records into their record type. Note it **lost its corroborating signal**:
+  junk Accounts no longer move the (now scoped) Account delta, so that check is load-bearing alone.
+
+**A record with NO record type is excluded** by every clause, since `RecordType.DeveloperName IN (...)`
+is false for a null `RecordTypeId`. Correct under the policy above, but it is a *decision* and the one
+way this filter can drop something someone expected — revisit it first if untyped PEO records appear.
+
+`tools/Test-BundleStructure.ps1` enforces all of this without touching an org: the owned set, the
+clause shape, `-Scope` staying mandatory, the ban on counting by fetching Ids, and a fail on any
+bundle script reading a shared standard object with no `WHERE`. **That matters because none of it is
+reproducible on a dev machine** — Dev and QA hold ~1,350 Accounts, all ours, so scoped and unscoped
+behave identically there and the rule would otherwise first be exercised, unobserved, against a copy
+of production.
+
 ## Operational gotchas
 
 - **The repo's metadata is NOT a complete picture of what fires in this org — always check the live

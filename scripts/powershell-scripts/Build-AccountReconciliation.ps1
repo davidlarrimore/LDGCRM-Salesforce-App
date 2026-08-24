@@ -92,9 +92,19 @@ Write-Host ""
 Write-Host "Querying existing Salesforce Accounts..." -ForegroundColor Cyan
 # Parent.Name is read so a Name shared by several agencies can be told apart by
 # the agency it sits under - see "DISAMBIGUATING BY PARENT" below.
-$Soql = "SELECT Id, Name, Type, ParentId, Parent.Name, LDGCRM_External_ID__c, LDGCRM_Market_Segment__r.LDGCRM_External_ID__c FROM Account"
+#
+# SCOPED TO THE RECORD TYPES THIS MIGRATION OWNS - a correctness requirement,
+# not a performance one. Everything below builds a NAME INDEX out of this result
+# and matches Airtable agency names against it. GSA_FCIC_ContactTrigger creates
+# a junk Account per Contact NAMED AFTER THE PERSON, so in a copy of production
+# an unscoped pool is ~1.5M person-named Accounts belonging to another app.
+# Matching agency names into that pool is not a slower way of getting the right
+# answer, it is a different question: a name collision either claims an FCIC
+# record or floods the review CSVs with candidates nobody can adjudicate.
+$AccountScope = Get-LdgcrmOwnedRecordTypeClause -SObject "Account"
+$Soql = "SELECT Id, Name, Type, ParentId, Parent.Name, LDGCRM_External_ID__c, LDGCRM_Market_Segment__r.LDGCRM_External_ID__c FROM Account WHERE $AccountScope"
 $SalesforceAccounts = @(Invoke-SalesforceQuery -Soql $Soql -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
-Write-Host "$($SalesforceAccounts.Count) Salesforce Account records found."
+Write-Host "$($SalesforceAccounts.Count) Salesforce Account records found (owned record types only)."
 
 # ============================================================
 # INDEX SALESFORCE ACCOUNTS

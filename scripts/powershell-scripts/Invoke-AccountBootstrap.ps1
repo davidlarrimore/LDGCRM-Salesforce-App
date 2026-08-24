@@ -178,7 +178,16 @@ function Get-OrgAccountIndex {
     #>
     param([string]$Org, [string]$Version)
 
-    $Records = @(Invoke-SalesforceQuery -Soql "SELECT Id, Name, ParentId FROM Account" -OrgAlias $Org -ApiVersion $Version)
+    # Scoped to owned record types like every other Account read in the bundle.
+    # This script is Dev/QA-only, so it never meets a production-sized Account
+    # table - but Dev already carries FCIC junk Accounts named after people (4,
+    # from a Contact test batch), and this index is keyed on NAME. Consistency
+    # is the point: one rule for what an Account read means, not one rule per
+    # script depending on how big the org was expected to be.
+    $AccountScope = Get-LdgcrmOwnedRecordTypeClause -SObject "Account"
+    $Records = @(Invoke-SalesforceQuery `
+        -Soql "SELECT Id, Name, ParentId FROM Account WHERE $AccountScope" `
+        -OrgAlias $Org -ApiVersion $Version)
 
     $Index = @{}
 
@@ -1191,7 +1200,12 @@ for ($Pass = 1; $Pass -le $MaxPasses; $Pass++) {
             Write-Host ("  !! Could not read the job result. {0:N0} row(s) submitted, landed count UNKNOWN." -f $InsertRows.Count) -ForegroundColor Red
             Write-Host "     Do not re-run this pass directly: bootstrapped Accounts have no external ID," -ForegroundColor Red
             Write-Host "     so a second insert creates duplicates. Re-run the whole script instead." -ForegroundColor Red
-            Write-Host ("     Check with: sf data query -q ""SELECT COUNT() FROM Account"" --target-org {0}" -f $OrgAlias) -ForegroundColor DarkGray
+            # Record-type filtered like every other Account read here, so the
+            # operator is told to check a number comparable with the row count
+            # printed above it rather than an org-wide total that also counts
+            # another app's records.
+            Write-Host ("     Check with: sf data query -q ""SELECT COUNT() FROM Account WHERE {0}"" --target-org {1}" -f `
+                (Get-LdgcrmOwnedRecordTypeClause -SObject "Account"), $OrgAlias) -ForegroundColor DarkGray
             $UnparseablePasses++
         }
         else {
@@ -1319,8 +1333,12 @@ if (-not $PlanOnly) {
     Write-Host ""
     Write-Host "Backfilling Account_Level__c from the finished hierarchy..." -ForegroundColor Cyan
 
+    # Owned record types only - Account_Level__c is this migration's field and
+    # walking another app's records to compute a depth would write to records we
+    # do not own.
+    $LevelScope = Get-LdgcrmOwnedRecordTypeClause -SObject "Account"
     $LevelRows = @(Invoke-SalesforceQuery `
-        -Soql "SELECT Id, ParentId, Account_Level__c FROM Account" `
+        -Soql "SELECT Id, ParentId, Account_Level__c FROM Account WHERE $LevelScope" `
         -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
 
     $LevelById = @{}

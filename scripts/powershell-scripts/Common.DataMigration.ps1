@@ -1026,6 +1026,210 @@ function Export-DataLoaderCsv {
     [System.IO.File]::WriteAllLines($Path, $CsvLines, $Utf8NoBom)
 }
 
+function Get-LdgcrmOwnedRecordTypes {
+    <#
+        THE SINGLE DEFINITION OF WHICH RECORDS THIS MIGRATION OWNS.
+
+        This org is shared. Account, Contact and Opportunity each carry record
+        types belonging to unrelated apps (FCIC, TTS OTCRM) alongside ours, and
+        in a full sandbox - a copy of production - theirs outnumber ours by
+        roughly a thousand to one: an unscoped Account query against UAT on
+        2026-08-24 reported 1,533,704 records, against the ~1,500 that are
+        actually this migration's concern.
+
+        Every WRITE path already resolved and stamped the right record type
+        (Build-AccountCreationLoad.ps1, Build-ContactLoad.ps1 and
+        Build-OpportunityLoad.ps1 each throw if theirs will not resolve). The
+        READS did not, and that is what this table fixes. It matters twice:
+
+        VOLUME. `sf data query` stops at 50,000 rows. Invoke-SalesforceQuery's
+        truncation guard turns that into a hard error rather than a short
+        answer, so an unscoped Account read does not lie - it stops the run,
+        which is exactly what happened above.
+
+        CORRECTNESS, which is the bigger half and would survive even if the row
+        cap were lifted. Build-AccountReconciliation.ps1 and
+        Build-AccountCreationLoad.ps1 build a NAME INDEX out of whatever comes
+        back, and GSA_FCIC_ContactTrigger creates its junk Accounts NAMED AFTER
+        THE PERSON. Matching Airtable agency names against a pool of a million
+        person-named Accounts is not a slow version of the right answer, it is a
+        different question. Counts are affected the same way: a before/after
+        Account delta spanning every record type is not attributable to this
+        migration, because anything FCIC does during the load window lands
+        inside it.
+
+        POLICY (project owner, 2026-08-24): "we should not care about data in
+        record types that are not ours, PERIOD." So this filters and says
+        nothing further - there is deliberately NO census of unrecognised record
+        types, and an unknown one is neither reported nor blocking.
+
+        Objects absent from this table are WHOLLY OURS - every LDGCRM_ custom
+        object - and are scoped by being that object at all.
+        Get-LdgcrmOwnedRecordTypeClause returns an empty clause for them, so
+        callers need no special case.
+
+        OpportunityContactRole has no record types of its own; it is scoped
+        through its parent Opportunity instead, which is the same question asked
+        one hop away.
+
+        A RECORD WITH NO RECORD TYPE AT ALL IS EXCLUDED by every clause built
+        here, because `RecordType.DeveloperName IN (...)` is false when
+        RecordTypeId is null. That is the correct reading of the policy above -
+        an untyped record is not in a record type we own - but it is worth
+        knowing it is a decision rather than an accident, because it is the one
+        way this filter could drop a record someone expected to keep.
+
+        Returns a hashtable keyed by SObject API name. Each value has:
+          Path  - the SOQL field path to filter on, relative to the object
+          Names - the DeveloperNames this migration owns
+    #>
+
+    $Owned = @{}
+
+    # Account: Federal only. The State/Federal distinction this migration cares
+    # about lives in the Type FIELD, not in the record type - every PEO Account,
+    # State or Federal Type, sits on the Federal record type. FCIC_Individual
+    # and TTS_Individual belong to the other apps sharing this org.
+    $Owned["Account"] = @{
+        Path  = "RecordType.DeveloperName"
+        Names = @("Federal")
+    }
+
+    # Contact: Federal for partner-agency people, GSA for anyone @gsa.gov. This
+    # migration creates only those two, never the FCIC/TTS ones.
+    $Owned["Contact"] = @{
+        Path  = "RecordType.DeveloperName"
+        Names = @("Federal", "GSA")
+    }
+
+    # Opportunity: Login_gov. TTS_OTCRM_Opportunity belongs to TTS OTCRM.
+    $Owned["Opportunity"] = @{
+        Path  = "RecordType.DeveloperName"
+        Names = @("Login_gov")
+    }
+
+    # OpportunityContactRole has no record type of its own. A role row is ours
+    # exactly when the Opportunity it hangs off is ours, so ask the parent.
+    $Owned["OpportunityContactRole"] = @{
+        Path  = "Opportunity.RecordType.DeveloperName"
+        Names = @("Login_gov")
+    }
+
+    return $Owned
+}
+
+function Get-LdgcrmOwnedRecordTypeClause {
+    <#
+        Builds the SOQL boolean fragment restricting an object to the record
+        types this migration owns, or an EMPTY STRING for an object that is
+        wholly ours and needs no filter.
+
+        Returns a fragment rather than a whole WHERE so a caller can AND it into
+        an existing predicate without this function having to parse SOQL.
+        Callers compose explicitly - there is deliberately no query-rewriting
+        helper, because splicing a WHERE into an arbitrary query is the kind of
+        string surgery that works until the first ORDER BY or subquery.
+
+        An empty string is a legitimate answer meaning "no restriction needed",
+        never "restriction unknown" - an object is either in the table from
+        Get-LdgcrmOwnedRecordTypes or is one of ours outright.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SObject
+    )
+
+    $Owned = Get-LdgcrmOwnedRecordTypes
+
+    if (-not $Owned.ContainsKey($SObject)) {
+        return ""
+    }
+
+    $Entry = $Owned[$SObject]
+    $Quoted = @($Entry.Names | ForEach-Object { "'" + $_ + "'" }) -join ", "
+
+    return ("{0} IN ({1})" -f $Entry.Path, $Quoted)
+}
+
+function Get-SalesforceRecordCount {
+    <#
+        Returns how many records an object holds, as an aggregate rather than by
+        counting rows.
+
+        WHY THIS EXISTS SEPARATELY FROM Invoke-SalesforceQuery: the pipeline used
+        to count with `@(Invoke-SalesforceQuery -Soql "SELECT Id FROM X").Count`,
+        fetching every row to learn one number. `sf data query` stops at 50,000
+        rows, so on any object larger than that the count could not be taken at
+        all. `SELECT COUNT()` returns no records and puts the answer in
+        totalSize, so it is exact at any volume and costs one call. The same
+        pattern is already used in Invoke-SalesforceLoad.ps1's preflight.
+
+        -Scope IS MANDATORY, and that is the point. This is the decision that was
+        previously made by not making it: every count in the pipeline was
+        silently org-wide. Requiring the word means "All" has to be typed, and so
+        has to be justified, at the one or two call sites that genuinely want
+        every record type.
+
+          Owned - restricted to this migration's record types (see
+                  Get-LdgcrmOwnedRecordTypes). What almost every caller wants.
+          All   - every record on the object, other apps' included.
+
+        -Where adds a further predicate, ANDed with the scope.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SObject,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("Owned", "All")]
+        [string]$Scope,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OrgAlias,
+
+        [string]$ApiVersion = "67.0",
+
+        [string]$Where = ""
+    )
+
+    $Predicates = [System.Collections.Generic.List[string]]::new()
+
+    if ($Scope -eq "Owned") {
+        $Clause = Get-LdgcrmOwnedRecordTypeClause -SObject $SObject
+        if (-not [string]::IsNullOrWhiteSpace($Clause)) { $Predicates.Add($Clause) }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Where)) { $Predicates.Add("($Where)") }
+
+    $Soql = "SELECT COUNT() FROM $SObject"
+    if ($Predicates.Count -gt 0) {
+        $Soql += " WHERE " + ($Predicates -join " AND ")
+    }
+
+    $RawResult = & sf data query `
+        --target-org $OrgAlias `
+        --api-version $ApiVersion `
+        --query $Soql `
+        --json
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Salesforce CLI count failed (exit $LASTEXITCODE): $Soql"
+    }
+
+    $JsonResult = $RawResult | ConvertFrom-Json
+
+    if ($JsonResult.status -ne 0) {
+        $ErrorMessage = $JsonResult.message
+        if ([string]::IsNullOrWhiteSpace($ErrorMessage)) { $ErrorMessage = "Unknown Salesforce CLI error." }
+        throw "$ErrorMessage (SOQL: $Soql)"
+    }
+
+    # COUNT() returns totalSize with an EMPTY records array - the opposite shape
+    # to every other query here, and the reason this cannot reuse
+    # Invoke-SalesforceQuery, which would correctly report 0 records.
+    return [int]$JsonResult.result.totalSize
+}
+
 function Invoke-SalesforceQuery {
     <#
         Runs a SOQL query via `sf data query --json` and returns the
