@@ -373,6 +373,63 @@ function Get-LdgcrmAccountDescendants {
 # THE CASCADE
 # ------------------------------------------------------------
 
+function Get-LdgcrmAccountLevelRank {
+    <#
+        Orders Account_Level__c so "nearer the top of the hierarchy" sorts first.
+
+        Account_Level__c is NOT ours - it is un-prefixed and belongs to the
+        OTCRM app - so this only ever READS it, to choose between records the
+        org already holds. Nothing here writes it.
+
+        "Level 3 or below" is a LEGACY value that coexists with "Level 3" (40
+        records against 297 in the 2026-07-16 production export). It ranks below
+        every concrete level deliberately: the three self-parented Accounts in
+        production all carry it, so where a duplicate offers a concrete level
+        and its twin offers this one, the concrete record is the sound one.
+
+        A blank level ranks last rather than throwing. Callers that never
+        populate Level get 99 for every candidate, which makes this a no-op and
+        leaves the older top-level/lowest-Id behaviour exactly as it was.
+    #>
+    param([string]$Level)
+
+    switch ("$Level".Trim()) {
+        "Level 1"          { return 1 }
+        "Level 2"          { return 2 }
+        "Level 3"          { return 3 }
+        "Level 4+"         { return 4 }
+        "Level 3 or below" { return 5 }
+        default            { return 99 }
+    }
+}
+
+function Test-LdgcrmAccountSelfParented {
+    <#
+        True when an Account is its own parent - a corruption, not a hierarchy.
+
+        Three production Accounts are in this state (Department of Defense,
+        District of Columbia, Office of the Director of National Intelligence),
+        every one of them also carrying the legacy "Level 3 or below". Matched
+        on Id where both are known, falling back to name for callers shaped from
+        the production export, which has no Ids for parents.
+    #>
+    param([object]$Account)
+
+    $Id = "$($Account.Id)"
+    $ParentId = "$($Account.ParentId)"
+    if ($Id -and $ParentId -and $Id -eq $ParentId) { return $true }
+
+    # The export names parents rather than keying them, so compare names when
+    # there is no parent Id to compare.
+    if (-not $ParentId) {
+        $Name = "$($Account.Name)"
+        $ParentName = "$($Account.ParentName)"
+        if ($Name -and $ParentName -and $Name -eq $ParentName) { return $true }
+    }
+
+    return $false
+}
+
 function Select-LdgcrmDuplicateAccount {
     <#
         Picks one Account from a set that all bear the same name.
@@ -384,10 +441,17 @@ function Select-LdgcrmDuplicateAccount {
         better than loading nothing (project owner, 2026-08-17).
 
         The pick is DETERMINISTIC so re-runs choose the same record:
-          1. Top level (no parent) wins. Where the duplicate is an independent
+          1. A self-parented record loses to any twin that is not. It is
+             corrupt, and in production it is always the wrong one.
+          2. Top level (no parent) wins. Where the duplicate is an independent
              agency filed under a department by mistake, the top-level record is
              the correct one - verified for AmeriCorps and MCC.
-          2. Otherwise the lowest Id, which is stable and usually the oldest.
+          3. The best Account_Level__c wins. ADDED 2026-08-24: rules 1-2 leave
+             District of Columbia tied on two top-level records, and lowest-Id
+             then picked the "Level 3 or below" one over the "Level 1" one.
+             This step only decides ties the earlier ones could not, so the
+             AmeriCorps/MCC and Army Futures Command outcomes are unchanged.
+          4. Otherwise the lowest Id, which is stable and usually the oldest.
 
         Callers must still report the pick: the losing record is a duplicate
         someone has to merge.
@@ -398,13 +462,166 @@ function Select-LdgcrmDuplicateAccount {
     if ($All.Count -eq 0) { return $null }
     if ($All.Count -eq 1) { return $All[0] }
 
+    $Sound = @($All | Where-Object { -not (Test-LdgcrmAccountSelfParented -Account $_) })
+    if ($Sound.Count -gt 0) { $All = $Sound }
+    if ($All.Count -eq 1) { return $All[0] }
+
     $TopLevel = @($All | Where-Object {
         [string]::IsNullOrWhiteSpace("$($_.ParentId)") -and [string]::IsNullOrWhiteSpace("$($_.ParentName)")
     })
 
     $Pool = if ($TopLevel.Count -gt 0) { $TopLevel } else { $All }
 
-    return @($Pool | Sort-Object @{ Expression = { "$($_.Id)" } })[0]
+    return @($Pool | Sort-Object `
+        @{ Expression = { Get-LdgcrmAccountLevelRank -Level "$($_.Level)" } }, `
+        @{ Expression = { "$($_.Id)" } })[0]
+}
+
+function Get-LdgcrmParentRepairPlan {
+    <#
+        Decides which Accounts are parented onto a DUPLICATE of their real
+        parent, and which sound twin each should point at instead.
+
+        Lives here rather than inside Build-AccountParentRepair.ps1 because it
+        is the only rule in this pipeline that writes ParentId on a record the
+        migration did not create. Keeping it a pure function of its input makes
+        it testable without an org, which is the only way this rule can be
+        checked at all: Dev and QA have a bootstrapped hierarchy with a blank
+        Account_Level__c, so neither validation rule can fire there and the
+        whole path is dead code until it reaches a production copy.
+
+        -Accounts expects objects carrying Id, Name, ParentId, ParentName,
+        ParentLevel and Level.
+
+        Returns an object with four collections:
+          Repairs      Id / ParentId pairs, ready for an UPDATE load
+          Review       every decision, repointed and not, with its reason
+          SelfParented Accounts that are their own parent - reported, never edited
+          AlreadySound how many children already satisfy the level rule
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Accounts
+    )
+
+    # The parent level each child level REQUIRES, straight off
+    # OTCRM_Federal_Parent_Account_Level_Check. A level absent from this table
+    # cannot trip that rule, so those children are not this function's business.
+    $RequiredParentLevel = @{
+        "Level 2"  = "Level 1"
+        "Level 3"  = "Level 2"
+        "Level 4+" = "Level 3"
+    }
+
+    # Exact name -> every Account bearing it. The duplicates this repairs are
+    # exact duplicates; a loose match here would repoint a child onto a
+    # DIFFERENT office whose name merely resembles its parent's, which is the
+    # failure mode the reconciliation's agency veto exists to prevent.
+    $ByExactName = @{}
+    foreach ($Account in $Accounts) {
+        $Key = "$($Account.Name)".Trim()
+        if (-not $Key) { continue }
+        if (-not $ByExactName.ContainsKey($Key)) {
+            $ByExactName[$Key] = [System.Collections.Generic.List[object]]::new()
+        }
+        $ByExactName[$Key].Add($Account)
+    }
+
+    $Repairs = [System.Collections.Generic.List[object]]::new()
+    $Review = [System.Collections.Generic.List[object]]::new()
+    $SelfParented = [System.Collections.Generic.List[object]]::new()
+    $AlreadySound = 0
+
+    foreach ($Account in $Accounts) {
+
+        $Level = "$($Account.Level)".Trim()
+        $ParentId = "$($Account.ParentId)"
+        $ParentName = "$($Account.ParentName)".Trim()
+        $ParentLevel = "$($Account.ParentLevel)".Trim()
+
+        # An Account that is its own parent is corrupt whether or not a rule
+        # fires on it today. Reported so the duplicate can be merged, but never
+        # edited here: nothing this function knows says what its parent SHOULD
+        # be, and clearing it is a different decision from repointing a child.
+        if (Test-LdgcrmAccountSelfParented -Account $Account) {
+            $SelfParented.Add([PSCustomObject]@{
+                SalesforceId = $Account.Id
+                Name         = $Account.Name
+                Level        = $Level
+                Reason       = "This Account is its own parent. Corrupt hierarchy - merge it into the sound record of the same name. Not edited by this script."
+            })
+        }
+
+        # ---- Parent_Account_Required_for_Level_3_Acct --------------------
+        # No parent to repoint, so repointing cannot fix it.
+        if ($Level -eq "Level 3 or below" -and -not $ParentId) {
+            $Review.Add([PSCustomObject]@{
+                SalesforceId  = $Account.Id
+                Name          = $Account.Name
+                Level         = $Level
+                CurrentParent = ""
+                Rule          = "Parent_Account_Required_for_Level_3_Acct"
+                Reason        = "Marked 'Level 3 or below' with no parent at all. Needs a parent choosing, or relabelling to Level 1 - this script will not guess which."
+            })
+            continue
+        }
+
+        # ---- OTCRM_Federal_Parent_Account_Level_Check --------------------
+        if (-not $RequiredParentLevel.ContainsKey($Level)) { continue }
+        if (-not $ParentId) { continue }
+
+        $Required = $RequiredParentLevel[$Level]
+        if ($ParentLevel -eq $Required) { $AlreadySound++; continue }
+
+        # The rule fires. Is there another Account of the parent's name
+        # carrying exactly the level the rule wants?
+        $Alternatives = @()
+        if ($ParentName -and $ByExactName.ContainsKey($ParentName)) {
+            $Alternatives = @($ByExactName[$ParentName] | Where-Object {
+                "$($_.Id)" -ne $ParentId -and "$($_.Level)".Trim() -eq $Required
+            })
+        }
+
+        $ParentLevelShown = if ($ParentLevel) { $ParentLevel } else { "blank" }
+
+        if ($Alternatives.Count -eq 0) {
+            $Review.Add([PSCustomObject]@{
+                SalesforceId  = $Account.Id
+                Name          = $Account.Name
+                Level         = $Level
+                CurrentParent = "$ParentName ($ParentId) is '$ParentLevelShown'"
+                Rule          = "OTCRM_Federal_Parent_Account_Level_Check"
+                Reason        = "Parent must be '$Required'. No other Account named '$ParentName' carries that level, so this is a mis-filing rather than a duplicate. Not repointed - a human must decide."
+            })
+            continue
+        }
+
+        # More than one sound alternative is possible; pick deterministically
+        # the same way every other duplicate in this pipeline is picked.
+        $Best = Select-LdgcrmDuplicateAccount -Candidates $Alternatives
+
+        $Repairs.Add([PSCustomObject]@{
+            Id       = $Account.Id
+            ParentId = $Best.Id
+        })
+
+        $Review.Add([PSCustomObject]@{
+            SalesforceId  = $Account.Id
+            Name          = $Account.Name
+            Level         = $Level
+            CurrentParent = "$ParentName ($ParentId) is '$ParentLevelShown'"
+            Rule          = "REPOINTED"
+            Reason        = "Repointed to $($Best.Id), the '$Required' Account of the same name. The old parent is a duplicate that still needs merging."
+        })
+    }
+
+    return [PSCustomObject]@{
+        Repairs      = $Repairs
+        Review       = $Review
+        SelfParented = $SelfParented
+        AlreadySound = $AlreadySound
+    }
 }
 
 function Resolve-LdgcrmAccount {

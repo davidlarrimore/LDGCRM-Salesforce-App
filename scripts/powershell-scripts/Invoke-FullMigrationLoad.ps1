@@ -153,6 +153,26 @@ $Steps = @(
         Why = "Independent parent - no lookups, so it can go first."
     }
     [ordered]@{
+        # BEFORE both Account steps, because it decides whether they can save at
+        # all. Two live validation rules reject any edit to an Account whose
+        # EXISTING parent carries the wrong Account_Level__c - a field this
+        # pipeline never writes - so the UAT run of 2026-08-24 lost 20 of 690
+        # reconciliation updates on ParentId without ever sending ParentId.
+        #
+        # Running it first means the creation pass then resolves parents against
+        # a repaired hierarchy, and the reconciliation's updates land.
+        #
+        # THE ONLY STEP THAT WRITES ParentId ON RECORDS THIS MIGRATION DID NOT
+        # CREATE. Kept separate from the reconciliation precisely so it is
+        # visible in the plan, skippable with -OnlySteps, and rollback-able from
+        # the run's restore point. It repoints a child only when another Account
+        # of the same name as its parent carries exactly the level the rule
+        # requires; anything else is reported, never guessed.
+        Name = "AccountParentRepair"; Build = "Build-AccountParentRepair.ps1"
+        Object = "Account"; Csv = "Account-parent-repair.csv"; Operation = "Update"
+        Why = "Repoints Accounts parented onto a duplicate, so the org's hierarchy rules stop rejecting every later edit."
+    }
+    [ordered]@{
         # BEFORE the reconciliation, and that order is load-bearing. These
         # Accounts do not exist yet, so the reconciliation cannot match them;
         # creating them first means the very next step tags them with their
@@ -175,6 +195,28 @@ $Steps = @(
         Name = "Account"; Build = "Build-AccountReconciliation.ps1"
         Object = "Account"; Csv = "Account-update.csv"; Operation = "Update"
         Why = "UPDATE, not upsert - matches Airtable rows onto Accounts that already exist, including any just created."
+        # The org's two Account hierarchy rules, firing on an EXISTING parent
+        # this pipeline does not send and cannot repair. AccountParentRepair
+        # clears every one that has a sound twin to point at - 10 of the 20 that
+        # stopped the UAT run of 2026-08-24. The rest have no twin: 5 children of
+        # President Personnel Office (a mis-filing, not a duplicate) and 5
+        # Accounts marked "Level 3 or below" with no parent at all.
+        #
+        # ACCEPTED SO THE RUN COMPLETES, and the Accounts are fixed afterwards
+        # (project owner, 2026-08-24). The cost is exact and small: those
+        # Accounts stay untagged, withholding 9 Opportunities and 10 Meetings.
+        # A plain re-run picks all of it up once the records are corrected -
+        # they are listed in docs/data-quality/SALESFORCE-ACCOUNT-CLEANUP.md.
+        #
+        # Matched on the two rules' own wording rather than on
+        # FIELD_CUSTOM_VALIDATION_EXCEPTION, deliberately: a blanket match would
+        # swallow every future validation rule anyone adds to Account. The
+        # allowance still applies, so if this stops being 10 records the run
+        # halts and someone looks.
+        ExpectedFailures = @(
+            "must be one hierarchical level above",
+            "Parent Account is Required for Level 3 or below Accounts"
+        )
     }
     [ordered]@{
         Name = "PartnerAccount"; Build = "Build-PartnerAccountLoad.ps1"

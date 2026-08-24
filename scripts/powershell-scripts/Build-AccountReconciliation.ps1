@@ -102,7 +102,10 @@ Write-Host "Querying existing Salesforce Accounts..." -ForegroundColor Cyan
 # answer, it is a different question: a name collision either claims an FCIC
 # record or floods the review CSVs with candidates nobody can adjudicate.
 $AccountScope = Get-LdgcrmOwnedRecordTypeClause -SObject "Account"
-$Soql = "SELECT Id, Name, Type, ParentId, Parent.Name, LDGCRM_External_ID__c, LDGCRM_Market_Segment__r.LDGCRM_External_ID__c FROM Account WHERE $AccountScope"
+# Account_Level__c is READ so Select-LdgcrmDuplicateAccount can prefer the
+# soundest of two same-named records. It is un-prefixed - the OTCRM app's field
+# - and this migration never writes it.
+$Soql = "SELECT Id, Name, Type, ParentId, Parent.Name, Parent.Account_Level__c, Account_Level__c, LDGCRM_External_ID__c, LDGCRM_Market_Segment__r.LDGCRM_External_ID__c FROM Account WHERE $AccountScope"
 $SalesforceAccounts = @(Invoke-SalesforceQuery -Soql $Soql -OrgAlias $OrgAlias -ApiVersion $ApiVersion)
 Write-Host "$($SalesforceAccounts.Count) Salesforce Account records found (owned record types only)."
 
@@ -165,6 +168,10 @@ foreach ($SfAccount in $SalesforceAccounts) {
     $ParentName = ""
     if ($SfAccount.Parent -and $SfAccount.Parent.Name) { $ParentName = $SfAccount.Parent.Name }
     $SfAccount | Add-Member -NotePropertyName ParentName -NotePropertyValue $ParentName -Force
+
+    # Same reason: the export calls it Level, so the shared matcher sees one
+    # property name whichever source built the record.
+    $SfAccount | Add-Member -NotePropertyName Level -NotePropertyValue "$($SfAccount.Account_Level__c)" -Force
 
     $UnclaimedAccounts.Add($SfAccount)
 }
