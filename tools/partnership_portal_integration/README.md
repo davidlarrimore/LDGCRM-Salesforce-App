@@ -4,15 +4,34 @@ Readers for the Partner Portal (P3) integration: they authenticate as the
 External Client App `LDGCRM_P3_Client_app_Localdev` over the OAuth 2.0
 **client-credentials** flow and write rows to a UTF-8 CSV in `logs/tools/`.
 
-| Script | Query text lives | Use it when |
+| Script | Query text lives | Works today? |
 | --- | --- | --- |
-| [`Invoke-LdgcrmNamedQuery.ps1`](Invoke-LdgcrmNamedQuery.ps1) | **in the org**, as `ApiNamedQuery` metadata | The contract is fixed and reviewable server-side |
-| [`Invoke-LdgcrmSalesforceQuery.ps1`](Invoke-LdgcrmSalesforceQuery.ps1) | **in the caller**, composed locally | Ad-hoc reads, or any object at all |
+| [`Invoke-LdgcrmSalesforceQuery.ps1`](Invoke-LdgcrmSalesforceQuery.ps1) | **in the caller**, composed locally | ✅ Yes — use this one |
+| [`Invoke-LdgcrmNamedQuery.ps1`](Invoke-LdgcrmNamedQuery.ps1) | **in the org**, as `ApiNamedQuery` metadata | ❌ Blocked on a permission decision |
 | [`Common.PortalIntegration.ps1`](Common.PortalIntegration.ps1) | — | Shared: token, registry guard, flattening, CSV |
 
-Both take the same app, the same integration user and the same permission set,
-so **neither is more privileged than the other** — only where the SOQL text
-lives differs.
+## ⚠️ The named-query script does not work as the integration user yet
+
+Measured 2026-09-09. Same URL, same API version, same moment — only the caller
+differs:
+
+| Caller | `GET /services/data/v67.0/named/query/ldgcrmPartnerPortalAdminQuery` |
+| --- | --- |
+| An administrator | **1,089 records** |
+| `ldgcrm_p3_integration`, via client credentials | **400 `INVALID_FIELD`** |
+
+Read access on the queried object is necessary and **not sufficient** — the
+integration user holds exactly that through `LDGCRM_Partnership_Portal_API_R`
+and reads those same rows fine through the other script.
+
+What the run-as user needs instead is **not established**, and granting
+`Orgwide - Named Query - Admin` to an API-only user is a decision rather than an
+assumption. Until it is settled, use `Invoke-LdgcrmSalesforceQuery.ps1`.
+`scripts/docs/integration-user.md` section 3 owns that question.
+
+Both scripts take the same app, the same integration user and the same
+permission set, so **neither is more privileged than the other** — only where
+the SOQL text lives differs.
 
 ## Credentials
 

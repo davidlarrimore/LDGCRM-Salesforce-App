@@ -178,8 +178,14 @@ decision, not an assumption. **Until that is settled, the Partner Portal should
 call the ordinary query resource**, which this user can already do:
 
 ```powershell
-tools\Invoke-LdgcrmSalesforceQuery.ps1 -Object LDGCRM_Application_Contact__c
+tools\partnership_portal_integration\Invoke-LdgcrmSalesforceQuery.ps1 -Object LDGCRM_Application_Contact__c
 ```
+
+`tools\partnership_portal_integration\Invoke-LdgcrmNamedQuery.ps1` is the
+named-query path, ready for the day the grant above is settled. It fails today
+against this user, by design rather than by accident: its error handler
+recognises that `INVALID_FIELD` body specifically and says the caller's
+permissions are the likely cause, rather than reporting a schema fault.
 
 **It is a permission set ASSIGNMENT, so it does not travel and does not survive.**
 A change set cannot carry it, and a sandbox refresh drops it along with

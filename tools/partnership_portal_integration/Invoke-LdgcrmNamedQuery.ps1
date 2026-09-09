@@ -221,14 +221,32 @@ try {
             throw ("The named query '" + $NamedQuery + "' could not be resolved." + [Environment]::NewLine +
                    $Detail + [Environment]::NewLine +
                    [Environment]::NewLine +
-                   "This means the NAME did not resolve - not that the feature is off." + [Environment]::NewLine +
-                   "Check the spelling, and that you passed the API NAME rather than the label:" + [Environment]::NewLine +
+                   "IF THAT SAYS `"No such column 'DeveloperName' on entity 'ApiNamedQuery'`", the" + [Environment]::NewLine +
+                   "most likely cause is THE CALLER'S PERMISSIONS, not the query and not the org." + [Environment]::NewLine +
+                   [Environment]::NewLine +
+                   "Measured against PEOdV8DVn on 2026-09-09: this exact body came back for the" + [Environment]::NewLine +
+                   "client-credentials integration user, minutes after the SAME endpoint and the" + [Environment]::NewLine +
+                   "SAME query name returned 1,089 rows for an administrator. Salesforce resolves" + [Environment]::NewLine +
+                   "the name by querying ApiNamedQuery internally; a caller who cannot see that" + [Environment]::NewLine +
+                   "entity gets the lookup's own failure reported as a SCHEMA error." + [Environment]::NewLine +
+                   [Environment]::NewLine +
+                   "So this body means 'the name did not resolve FOR YOU'. It does NOT mean the" + [Environment]::NewLine +
+                   "feature is off, and it does NOT mean the table is empty - though an empty" + [Environment]::NewLine +
+                   "table produces the identical message, which is how it was misread once before." + [Environment]::NewLine +
+                   [Environment]::NewLine +
+                   "Read access on the object the query SELECTs from is NOT sufficient: the" + [Environment]::NewLine +
+                   "integration user holds exactly that, via LDGCRM_Partnership_Portal_API_R, and" + [Environment]::NewLine +
+                   "still cannot call this. What the run-as user needs instead is not established;" + [Environment]::NewLine +
+                   "'Orgwide - Named Query - Admin' is the obvious candidate and granting an admin" + [Environment]::NewLine +
+                   "permission set to an API-only user is a decision, not an assumption. See" + [Environment]::NewLine +
+                   "scripts/docs/integration-user.md section 3." + [Environment]::NewLine +
+                   [Environment]::NewLine +
+                   "Otherwise check the spelling, and that you passed the API NAME not the label:" + [Environment]::NewLine +
                    "  API name  ldgcrmPartnerPortalAdminQuery   <- what this wants" + [Environment]::NewLine +
                    "  Label     Login.gov Partner Portal Admin Query" + [Environment]::NewLine +
                    [Environment]::NewLine +
-                   "Run with -List to see what this org actually has, or fall back to" + [Environment]::NewLine +
-                   "Invoke-LdgcrmSalesforceQuery.ps1, which reads the same rows without" + [Environment]::NewLine +
-                   "depending on a named query existing at all.")
+                   "USE Invoke-LdgcrmSalesforceQuery.ps1 to read the same rows today. It reads" + [Environment]::NewLine +
+                   "them through the ordinary query resource, which this user can already do.")
         }
     }
 
