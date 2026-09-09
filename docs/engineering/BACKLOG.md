@@ -21,12 +21,17 @@ Ordered roughly by value, not by effort.
 up and the meeting history is solved separately, afterwards. **It is not a blocker on production**,
 and every reload proceeds without Meetings.
 
-**The backup needs no extra step.** `Get-AirtableExport.ps1` pulls the Meetings table like any other,
-and `data/airtable-exports/` is a current-state mirror the next pull overwrites, deliberately
-— **the latest pull is always the one to work from.** Re-pull when this is picked up rather than
-reaching for an older copy.
+**⚠️ THE SOURCE DATA IS FROZEN AND IRREPLACEABLE (2026-09-09).** Airtable has been shut down. This
+item used to say "re-pull when it is picked up rather than reaching for an older copy" — there is
+nothing left to re-pull from, and that advice is now exactly backwards.
 
-The approach below stands as the eventual design; nothing here needs revisiting before go-live.
+`Meetings.json` in the 2026-09-02 export is the **only surviving copy** of this data. It was never
+migrated to Salesforce, so unlike every other item here it has no second home in the org. Two copies
+exist, `data/airtable-exports/` and `dist/airtable-backup-20260902-180547.zip`, and **both are
+gitignored and local to one machine.** Confirm the data still exists before planning any of the work
+below, and treat preserving it as a prerequisite rather than an assumption.
+
+The approach below stands as the eventual design.
 
 ### Why the original approach was rejected
 

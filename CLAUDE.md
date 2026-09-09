@@ -168,46 +168,58 @@ rollups.
 Only active-vs-latest *within* one org is a meaningful comparison. Flows can also
 arrive from a change set **inactive**.
 
-## Airtable
+## ⚠️ Airtable is SHUT DOWN. The export is frozen and irreplaceable
 
-`tools/data-loading/Get-AirtableExport.ps1` pulls from the REST API into
-`data/airtable-exports/<Table>.json`, **overwriting each run** — it is a
-current-state mirror, and that is the intent. **Do not snapshot Airtable**
-(user, 2026-08-17): always load the latest pull. If an export looks stale,
-re-pull rather than reaching for an older copy, and expect counts to move.
+**There will never be new Airtable data** (user, 2026-09-09). The base is gone.
+The team works from the frozen **2026-09-02** pull and will eventually move to
+production Salesforce extracts instead.
 
-The pull is a **backup of the whole base**: all 22 tables, of which 10 are read
-by the transforms. `$DefaultTables` marks each `Migration` or `Backup`. A
-`Migration` label is **load-bearing** — `Get-AirtableTablePath` opens
-`<Label>.json` by that exact string. `-MigrationOnly` pulls just the 10.
+This **reverses** the rule that held for the whole migration — *"do not snapshot
+Airtable, always load the latest pull, re-pull if it looks stale."* There is
+nothing to re-pull from.
 
-Because that list is hardcoded, a table added to the base later would never be
-pulled and nothing would say so. After every pull the script asks
-`GET /v0/meta/bases/{baseId}/tables` what the base actually holds and reports
-anything it missed. It runs *after* the data is written and is **never fatal**:
-it needs `schema.bases:read`, and a token that pulls every record perfectly well
-may still be unable to list tables.
+- **Never advise re-pulling, and never treat export age as a defect.**
+  `Test-LdgcrmReadiness.ps1` warns when the newest file is over 7 days old. That
+  warning is now permanent noise, not a signal.
+- **Do not run `Get-AirtableExport.ps1` or `Backup-AirtableBase.ps1`.** They
+  cannot succeed. The pull writes per-table with `Set-Content` *after* fetching,
+  so a failed run leaves the files intact — but there is no reason to find out.
+- **`data/airtable-exports/` is no longer a mirror. It is the last copy.**
 
-`tools/Backup-AirtableBase.ps1` runs the same pull and zips it to
-`dist/airtable-backup-<timestamp>.zip`. Those archives answer *what the base held
-on that date*; **a load still reads `data/airtable-exports/`.** Never extract an
-old archive over that folder to reproduce an older count.
+### The preservation problem
 
-**Authentication** is a Personal Access Token (`pat...`, not the removed `key...`
-API keys), needing `data.records:read` plus `schema.bases:read`, explicitly
-granted to this base. Sent as `Authorization: Bearer <token>`.
+Two copies exist and **both are gitignored, on one machine**:
 
-**REST shape:** table **IDs** are used, not names — a rename silently 403s a
-name-based request, and Airtable returns 403 identically for "no permission" and
-"doesn't exist". Pagination is 100 records/page via `offset`. Rate limit is
-5 req/sec per base; the script paces ~250ms and retries `429` after 30s.
+| Copy | Size | Rule that hides it |
+| --- | --- | --- |
+| `data/airtable-exports/` (22 files) | 30 MB | `/data/**` |
+| `dist/airtable-backup-20260902-180547.zip` | 3.1 MB | `/dist/` |
 
-**An export can go stale in ways that change a column's SHAPE, not just its
-values.** Airtable converted Opportunities' identity-platform columns from linked
-records to plain multi-selects; a transform written for one shape reads the other
-as garbage. `Build-OpportunityLoad.ps1` therefore **hard-fails** rather than
-silently dropping 453 values. Copy that pattern: when a column's shape is
-load-bearing, assert it and fail loudly.
+Nothing is in git, and the source system no longer exists. **12 of the 22 tables
+were never migrated to Salesforce** — Meetings, Initiatives, Resources, Issuer
+Strings, Opportunity Status Changes and others — so for those, these files are
+the only record anywhere. The Meetings work in `docs/engineering/BACKLOG.md`
+depends on data that exists only there.
+
+Those ignore rules are correct: the content is applicant PII and must not be
+committed. But that makes durable storage an **explicit, external decision**
+someone has to take, not something the repo will do for you.
+
+### What still matters about the file layout
+
+All 22 tables are on disk; 10 are read by the transforms. `$DefaultTables` marks
+each `Migration` or `Backup`, and a `Migration` label is **load-bearing** —
+`Get-AirtableTablePath` opens `<Label>.json` by that exact string. Renaming a
+label silently breaks the lookup, and there is no longer any pull that would
+restore the file under its old name.
+
+**A column's SHAPE, not just its values, is load-bearing.** Airtable once
+converted Opportunities' identity-platform columns from linked records to plain
+multi-selects, and a transform written for one shape reads the other as garbage.
+`Build-OpportunityLoad.ps1` **hard-fails** rather than silently dropping 453
+values. The shape can no longer drift, so that assertion is now permanently
+satisfied — but keep the pattern for the Salesforce extracts that replace this:
+when a column's shape is load-bearing, assert it and fail loudly.
 
 ## ⚠️ Before mapping a column, confirm the target field is OURS
 

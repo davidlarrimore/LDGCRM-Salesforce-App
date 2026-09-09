@@ -129,21 +129,24 @@ org stays in `force-app/` looking current.
 sf org login web --alias peodv8dvn `
     --instance-url https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com
 
-# 2. Airtable credentials - needs base access and a Personal Access Token
-Copy-Item .env.example .env    # then fill in AIRTABLE_API_KEY
-
-# 3. Windows long-path support, once per clone
+# 2. Windows long-path support, once per clone
 git config core.longpaths true
 
-# 4. Check the org and the inputs are in a fit state. Read-only.
+# 3. Check the org and the inputs are in a fit state. Read-only.
+#    Its "export is N days old" warning is expected and permanent - see below.
 powershell tools/data-loading/Test-LdgcrmReadiness.ps1 -Environment Dev
 
-# 5. Pull the current Airtable base
-powershell tools/data-loading/Get-AirtableExport.ps1
-
-# 6. See what a load would do - runs every transform, writes nothing
+# 4. See what a load would do - runs every transform, writes nothing
 powershell tools/data-loading/Invoke-FullMigrationLoad.ps1 -Environment Dev -PlanOnly
 ```
+
+> **⚠️ There is no "pull Airtable" step any more. Airtable is shut down.** The
+> source data is the frozen 2026-09-02 export already in `data/airtable-exports/`,
+> and it is the **last copy** — `Get-AirtableExport.ps1` and
+> `Backup-AirtableBase.ps1` cannot succeed and should not be run. The Airtable
+> token in `.env` is therefore dead too. Export age is not a defect, so the
+> readiness check's ">7 days old" warning is now permanent noise. See
+> [CLAUDE.md](CLAUDE.md) for the preservation problem this creates.
 
 A sandbox that has just been refreshed holds **no records at all**, so the load
 needs `-BootstrapAccounts` to build an Account universe from the production

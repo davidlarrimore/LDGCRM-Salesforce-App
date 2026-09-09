@@ -39,9 +39,10 @@ output location there in the same change that creates it.
 [Environments and org aliases](#environments-and-org-aliases) for how a script is pointed at an org.
 The pipeline has four stages that run in order:
 
-1. **Pull** — `Get-AirtableExport.ps1` pulls current data from the Airtable REST API into
-   `data/airtable-exports/<Table>.json`. Already built. See the root `CLAUDE.md` ("Airtable API")
-   for auth/connection details.
+1. **Pull** — ⚠️ **this stage no longer runs. Airtable was shut down on 2026-09-09.**
+   `Get-AirtableExport.ps1` cannot succeed and must not be run. The pipeline now starts from the
+   frozen 2026-09-02 export in `data/airtable-exports/<Table>.json`, which is the **last copy in
+   existence**. See the root `CLAUDE.md` for the preservation problem that creates.
 2. **Prep / transform** — `Build-*.ps1` scripts read the Airtable JSON and the current state of
    `gsa-peo`, and write CSVs into `data/salesforce-loads/` ready for a Bulk API upsert/update. This
    is what's being built out now (see "Build status" below).

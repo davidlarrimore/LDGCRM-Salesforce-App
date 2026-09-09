@@ -5,14 +5,17 @@ description: Use when building or running Data Loader / sf-CLI-based migration s
 
 # Airtable → Salesforce data migration
 
-`tools/data-loading/` holds `Get-AirtableExport.ps1` (pulls source data straight from the Airtable
-REST API — see CLAUDE.md's "Scripts" section) plus, eventually, the upsert/load scripts that move that
-data into a GSA PEO org. This skill is the convention to follow when adding those.
+`tools/data-loading/` holds the transforms and loaders that move the Airtable extract into a GSA PEO
+Dev or QA sandbox. This skill is the convention to follow when changing them.
+
+**⚠️ Airtable is shut down (2026-09-09).** `Get-AirtableExport.ps1` cannot succeed and must not be
+run. The source is the frozen 2026-09-02 export, which is the last copy in existence — never advise
+re-pulling, and never treat its age as a defect.
 
 ## Where things live
 
-- **Source extracts:** `data/airtable-exports/<Table>.json` (gitignored — PII), written by
-  `Get-AirtableExport.ps1` and overwritten each run — always current Airtable state, not a history.
+- **Source extracts:** `data/airtable-exports/<Table>.json` (gitignored — PII). **Frozen and
+  irreplaceable**, not a mirror of anything live. 22 tables; 10 read by the transforms.
 - **Field mappings:** in the `Build-*.ps1` transforms themselves — there is no separate mapping file.
   (`data/mappings/` was removed 2026-08-14: a Data Loader GUI leftover, always empty, never read.)
   object/field mapping docs.
