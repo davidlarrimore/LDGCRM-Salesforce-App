@@ -1,6 +1,14 @@
-# scripts/ — reserved for Sprint 2
+# scripts/ — Sprint 2
 
-Empty on purpose. This folder is where Sprint 2's work will live.
+This folder is where Sprint 2's work lives.
+
+## What is here
+
+- **[`docs/deployment.md`](docs/deployment.md)** — the things a change set
+  **cannot carry**, and therefore have to be done by hand in every target org.
+  Read this before building or receiving a Sprint 2 change set. It leads with the
+  `OpportunityContactRole.Role` values, which are deactivated rather than missing
+  and will silently corrupt a load if they are not reactivated.
 
 ## What used to be here
 

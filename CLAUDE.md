@@ -89,10 +89,16 @@ Traps worth knowing before touching picklists:
   (`SELECT <field>, COUNT(Id) FROM <Object> GROUP BY <field>`); a rename is only
   safe at zero.
 - **Standard Value Sets cannot travel in a change set at all.** There is no such
-  component type in the outbound change set UI. They are Metadata API only, so
-  either GSA IT Engineering carries the file in their CLI deployment, or the
-  values are added by hand in every org. This bites `OpportunityContactRole.Role`,
-  whose values back 80% of the loaded contact roles.
+  component type in the outbound change set UI (confirmed 2026-09-09). They are
+  Metadata API only, so either GSA IT Engineering carries the file in their CLI
+  deployment, or the values are fixed by hand in every org.
+  This bites `OpportunityContactRole.Role`, whose values back 80% of the loaded
+  contact roles. **In Dev those two values are present but DEACTIVATED — they need
+  ACTIVATING, not creating**, and creating duplicates instead would be worse than
+  the original problem. The component is the value set `ContactRole`, not `Role`,
+  not `OpportunityContactRole`, and not `Role__c` (`Role` is standard and has no
+  suffix) — so searching a change set for the obvious names finds nothing and
+  reads like an absence. Full runbook: `scripts/docs/deployment.md`.
 
 ## Repository layout
 
