@@ -210,7 +210,7 @@ function Get-LogDirectory {
     #>
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet("cleanup", "data-migration")]
+        [ValidateSet("cleanup", "data-migration", "sprint2")]
         [string]$Category
     )
 
@@ -241,7 +241,7 @@ function Get-LogCategoryDirectory {
     #>
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet("cleanup", "data-migration")]
+        [ValidateSet("cleanup", "data-migration", "sprint2")]
         [string]$Category
     )
 
@@ -268,7 +268,7 @@ function Start-ScriptLog {
     #>
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet("cleanup", "data-migration")]
+        [ValidateSet("cleanup", "data-migration", "sprint2")]
         [string]$Category,
 
         [Parameter(Mandatory = $true)]

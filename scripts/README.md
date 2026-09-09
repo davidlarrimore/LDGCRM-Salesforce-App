@@ -13,6 +13,16 @@ This folder is where Sprint 2's work lives.
   Partner Portal API user: the permission set license goes on **before** the
   permission set, because the license is what makes `ApiUserOnly` grantable. None
   of the user-side setup survives a sandbox refresh.
+- **[`Set-LdgcrmIntegrationUser.ps1`](Set-LdgcrmIntegrationUser.ps1)** — automates
+  that runbook for one org. **It reports by default and writes only with
+  `-Apply`**, so a no-argument run against an environment is also how you ask
+  what state that environment is in.
+
+  It is the repo's **only** script that may target production, which is why it
+  carries its own four-org registry rather than widening the `Dev`/`QA`
+  `ValidateSet` in `tools/data-loading/`. That one deletes records and must stay
+  unable to reach production. Prod additionally needs a typed confirmation token.
+  Run output goes to `logs/sprint2/`, already covered by the root `.gitignore`.
 
 ## What used to be here
 

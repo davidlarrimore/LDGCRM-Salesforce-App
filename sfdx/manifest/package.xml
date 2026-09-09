@@ -12,6 +12,18 @@
         apps (e.g. FCIC) that share these metadata types - a wildcard here
         would pull in components with no relation to the LDGCRM app.
     -->
+    <!-- ApiNamedQuery DOES NOT EXIST BELOW API VERSION 65.0, and this manifest's
+         <version> is what the server checks - not the CLI's --api-version flag,
+         which does not change it. Retrieving the type while <version> said 64.0
+         failed with "Entity type 'ApiNamedQuery' is not available in this api
+         version" while the run still reported status "Succeeded" and success
+         true; the failure was only visible in the per-component result. If this
+         manifest's version is ever lowered, this type stops coming back and the
+         retrieve will not say so. -->
+    <types>
+        <members>ldgcrmPartnerPortalAdminQuery</members>
+        <name>ApiNamedQuery</name>
+    </types>
     <types>
         <members>Account</members>
         <members>Activity</members>
@@ -244,5 +256,9 @@
         <members>LDGCRM_P3_Client_app_Localdev_plcy</members>
         <name>ExtlClntAppConfigurablePolicies</name>
     </types>
-    <version>64.0</version>
+    <!-- Raised 64.0 -> 67.0 on 2026-09-09 because ApiNamedQuery does not exist
+         below 65.0. 67.0 is the highest gsa-peo serves. This governs EVERY type
+         in this manifest, so the first sync after the bump may return fuller XML
+         for unrelated components - review that diff on its own. -->
+    <version>67.0</version>
 </Package>

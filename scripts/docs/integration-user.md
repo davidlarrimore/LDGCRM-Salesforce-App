@@ -2,17 +2,57 @@
 
 > **Who this is for:** whoever stands up the Partner Portal (P3) API integration in
 > a new org, or repairs it after a sandbox refresh. It is the **user-side** setup:
-> the license, the permission set and the order they go on in.
+> the licenses, the permission sets and the order they go on in — on the
+> integration's user, and on the admin's own user.
 >
 > None of this arrives with a change set. A change set carries the permission set
 > **definition** and nothing else — not the user, not the license, not the
-> assignment. Everything below is done by hand in every org.
+> assignment. Every org needs the work done in it separately, either by the
+> script below or by hand.
 
 The integration user is what the Partner Portal authenticates as when it reads the
 CRM over the API. It is paired with the External Client App
 `LDGCRM_P3_Client_app_Localdev` (see the comment block in
 [`sfdx/manifest/package.xml`](../../sfdx/manifest/package.xml)), which holds the
 OAuth side of the same integration.
+
+## Sections 1 and 2 are scripted
+
+[`../Set-LdgcrmIntegrationUser.ps1`](../Set-LdgcrmIntegrationUser.ps1) does the
+user, the license and the permission set, in the right order, in any of the four
+environments. It **reports by default and writes only with `-Apply`**:
+
+```powershell
+scripts\Set-LdgcrmIntegrationUser.ps1 -Environment QA           # what state is QA in?
+scripts\Set-LdgcrmIntegrationUser.ps1 -Environment QA -Apply    # do it
+```
+
+Every step is idempotent, so a re-run after a partial failure finishes the job
+rather than duplicating it, and it verifies by re-querying the org rather than
+trusting what the writes reported. Production needs a typed confirmation token.
+
+**Read the rest of this document anyway.** The script automates the steps; it
+does not automate the judgement — why the order matters, why the profile must
+stay minimal, and what a change set will and will not bring with it. The manual
+route below is also the only route in an org the `sf` CLI is not authorized for,
+which the script will tell you about with the exact `sf org login web` command.
+
+**The usernames are listed in the script, not derived**, because Dev's does not
+follow the pattern the other three do:
+
+| Environment | Org alias | Integration username |
+| --- | --- | --- |
+| Dev | `peodv8dvn` | `ldgcrm_p3_integration@gsa.gov.peo1.peodv8dvn` |
+| QA | `peodv15dvn` | `ldgcrm_p3_integration@gsa.gov.peo.peodv15dvn` |
+| UAT | `peofl1uatp` | `ldgcrm_p3_integration@gsa.gov.peo.peofl1uatp` |
+| Prod | `gsa-peo` | `ldgcrm_p3_integration@gsa.gov.peo` |
+
+Dev carries a **`peo1`** that no rule predicts. These users are created one org
+at a time, so each username is a choice someone made rather than something a
+pattern reproduces. Deriving them would have created a second Dev user under the
+name the pattern predicts.
+
+---
 
 **In Dev (`peodv8dvn`) this is already done.** Measured 2026-09-09:
 
@@ -87,7 +127,133 @@ and the permission set would stop being the answer to "what can the portal see?"
 
 ---
 
-## 3. What the permission set actually grants
+## 3. ⚠️ Administering Named Queries needs a permission set on YOUR OWN user
+
+Everything else in this document goes on the integration user. This one does not.
+
+To reach *Setup → Integrations → Named Query API* and create or edit a Named
+Query, **the human admin doing the work** needs the stock permission set below on
+their own account. Being a System Administrator is not enough.
+
+| | |
+| --- | --- |
+| Label | **Orgwide - Named Query - Admin** |
+| API name | `Orgwide_Named_Query_Admin` |
+| Assigned to | the admin building the query, **not** `ldgcrm_p3_integration` |
+
+*Setup → Users → `<you>` → **Permission Set Assignments** → Edit Assignments* →
+add **Orgwide - Named Query - Admin** → Save.
+
+Confirmed in Dev on 2026-09-09, where it is the only permission set in the org
+whose label mentions Named Query. The second query answers the one that matters,
+which is whether it is on *your* account:
+
+```powershell
+sf data query --target-org peodv8dvn --query "SELECT Name, Label FROM PermissionSet WHERE Label LIKE '%Named Query%'"
+
+# Substitute your own username.
+sf data query --target-org peodv8dvn --query "SELECT PermissionSet.Label FROM PermissionSetAssignment WHERE Assignee.Username = '<you>' AND PermissionSet.Name = 'Orgwide_Named_Query_Admin'"
+```
+
+### ⚠️ CALLING a Named Query also needs more than section 4 grants
+
+Measured 2026-09-09, after `ldgcrmPartnerPortalAdminQuery` existed. Same URL,
+same API version, same moment — only the caller differs:
+
+| Caller | `GET /services/data/v67.0/named/query/ldgcrmPartnerPortalAdminQuery` |
+| --- | --- |
+| An administrator, via `sf api request rest` | **1,089 records** |
+| `ldgcrm_p3_integration`, via client credentials | **400 `INVALID_FIELD`** |
+
+So read access to `LDGCRM_Application_Contact__c` is **not** sufficient to call a
+Named Query over it. `LDGCRM_Partnership_Portal_API_R` grants that read and the
+integration user still cannot resolve the name.
+
+**What it needs instead is not yet established.** `Orgwide - Named Query - Admin`
+is the only permission set in the org whose label mentions Named Query, so it is
+the obvious candidate — but it is named *Admin*, and section 2's whole argument is
+that this user's reach should stay minimal and fully described by its permission
+set. Granting an admin permission set to an API-only integration user deserves a
+decision, not an assumption. **Until that is settled, the Partner Portal should
+call the ordinary query resource**, which this user can already do:
+
+```powershell
+tools\Invoke-LdgcrmSalesforceQuery.ps1 -Object LDGCRM_Application_Contact__c
+```
+
+**It is a permission set ASSIGNMENT, so it does not travel and does not survive.**
+A change set cannot carry it, and a sandbox refresh drops it along with
+everything else in sections 1 and 2. Expect to reassign it by hand.
+
+### Why this looks like the feature being missing
+
+Without it the Setup page is simply absent, which is indistinguishable from the
+Named Query API not being enabled in the org at all. Check this permission set
+before concluding anything about the feature.
+
+**The API side looked like the same absence, and was not.** With no Named Query
+defined, `SELECT Id FROM ApiNamedQuery` returns zero rows and the endpoint
+answers `400 INVALID_FIELD` rather than a `404`. That was read on 2026-09-09 as
+the feature being unprovisioned. It was not — the feature was on the whole time
+and the table was **empty**.
+
+The `400` says only that `ApiNamedQuery` has no `DeveloperName` column. Its label
+field is `MasterLabel`. So the error describes the **schema**, not the
+provisioning, and the query below works today with no org change of any kind:
+
+```powershell
+sf data query --use-tooling-api --target-org peodv8dvn --query "SELECT Id, MasterLabel FROM ApiNamedQuery"
+```
+
+**That same `400` has a second, unrelated cause, and it is the one that bites
+now.** Salesforce resolves a Named Query's name by querying `ApiNamedQuery` **as
+whoever called**, so when the caller cannot see that entity the failure surfaces
+as the identical complaint about a column. The message therefore describes
+neither the provisioning nor the query — it describes nothing that is wrong.
+Both the empty-table case above and the permission case in the table earlier
+produce it, which is why the error is worth nothing on its own and the
+admin-versus-caller comparison is worth everything.
+
+**Zero rows on a queryable table means empty, never absent.** A table that was not
+provisioned would fail to resolve at all.
+
+### The one that exists, and how to retrieve it
+
+| | |
+| --- | --- |
+| API name | `ldgcrmPartnerPortalAdminQuery` |
+| Label | Login.gov Partner Portal Admin Query |
+| Selects | Partner Portal admins from `LDGCRM_Application_Contact__c` |
+| Lives at | `sfdx/force-app/main/default/apiNamedQueries/` |
+
+It is in `manifest/package.xml`, so a normal sync keeps it — **but only because
+that manifest's `<version>` was raised to 67.0 in the same change.**
+
+**⚠️ `ApiNamedQuery` does not exist below API version 65.0, and the retrieve lies
+about it.** Retrieving the type against a manifest still saying `64.0` fails with
+`Entity type 'ApiNamedQuery' is not available in this api version` while the run
+reports `"status": "Succeeded"` and `"success": true`. The failure appears only in
+the per-component `files` array, as `state: "Failed"`.
+
+**The CLI's `--api-version` flag does not fix this.** It was tried at 67.0, 66.0
+and 65.0 and failed identically every time, because the server checks the version
+written into the **manifest**, which the flag does not change. The fix is the
+manifest's own `<version>`:
+
+```xml
+<types>
+    <members>ldgcrmPartnerPortalAdminQuery</members>
+    <name>ApiNamedQuery</name>
+</types>
+<version>67.0</version>
+```
+
+So if that version is ever lowered, this component silently stops being retrieved
+and the run still reports success. Check the component result, not the status.
+
+---
+
+## 4. What the permission set actually grants
 
 Read-only throughout — the `_R` suffix follows the same convention as the other
 three (`_CRE`, `_CRED`). Every object is `allowRead` with create, edit and delete
@@ -122,7 +288,7 @@ expecting a visibility change; there is none to make.
 
 ---
 
-## 4. ⚠️ `LDGCRM_Issuer_String__c` is granted, and production does not have it
+## 5. ⚠️ `LDGCRM_Issuer_String__c` is granted, and production does not have it
 
 The permission set grants read on `LDGCRM_Issuer_String__c`. That object was
 created in **Dev on 2026-09-08 by Rahul Kamarouthu** — the go-live date, after the
@@ -178,7 +344,7 @@ the field, which no longer exists in Dev, and it does not join the new object.
 
 ---
 
-## 5. What a change set can and cannot carry
+## 6. What a change set can and cannot carry
 
 | Thing | In a change set? |
 | --- | --- |
@@ -186,19 +352,21 @@ the field, which no longer exists in Dev, and it does not join the new object.
 | The **user** record | ❌ No. Create it by hand in each org |
 | The **permission set license** assignment | ❌ No. It is a user assignment, not metadata |
 | The **permission set** assignment to the user | ❌ No. Same reason |
-| `LDGCRM_Issuer_String__c` | ⚠️ Must be in the same change set — production does not have it. Section 4 |
+| The **Orgwide - Named Query - Admin** assignment on the admin | ❌ No. Section 3 |
+| `LDGCRM_Issuer_String__c` | ⚠️ Must be in the same change set — production does not have it. Section 5 |
 
 So a green change set deployment means the permission set arrived. It does not
 mean the integration works, and nothing about the deployment will say so.
 
 **A sandbox refresh wipes the user side of this entirely** — the user, the license
-assignment and the permission set assignment all go. The permission set definition
-survives, because it comes from production. After any refresh, expect to redo
-sections 1 and 2 and nothing else.
+assignment and the permission set assignments all go, on the integration user and
+on the admin alike. The permission set definitions survive, because they come from
+production. After any refresh, expect to redo sections 1, 2 and 3, and nothing
+else.
 
 ---
 
-## 6. Verifying it
+## 7. Verifying it
 
 Run these rather than inferring from Setup pages. All three should return exactly
 one row.
