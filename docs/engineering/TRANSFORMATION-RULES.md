@@ -1,4 +1,4 @@
-﻿# Airtable → Salesforce field transformation rules
+# Airtable → Salesforce field transformation rules
 
 > **Who this is for:** engineers writing or changing a transform, and anyone asking "why does this
 > field end up like that?" It is a **reference to search, not a document to read end to end** —
@@ -10,7 +10,9 @@
 >
 > **Not an engineer?** If the source data looks wrong, go to
 > [../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md](../data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md).
-> If you need to run a load, go to [../../scripts/docs/RUNNING-A-LOAD.md](../../scripts/docs/RUNNING-A-LOAD.md).
+> If you need to load a dev/QA sandbox, go to [../../README.md](../../README.md#loading-a-sandbox).
+> Sprint 1's operator runbooks are archived in `archive/sprint_1_scripts.zip`; they describe a
+> production migration pipeline that no longer exists.
 
 This is the authoritative, field-by-field record of how each Airtable table's columns become each
 Salesforce object's fields in this migration — every mapping decision, every excluded field, and
@@ -79,7 +81,7 @@ wrong in this migration:
 
 1. **A column's name can lie about its content.** Accounts' `States + DC/PR` sounds like it holds a
    state name; it's actually a boolean checkbox. Always open the actual JSON in
-   `scripts/data/airtable-exports/` and look at real values before assuming.
+   `data/airtable-exports/` and look at real values before assuming.
 2. **Salesforce's picklist metadata can lie about what's actually stored.** `Account.Type`'s
    `Federal` record type declares `"Federal Agency"` as a value, but 530 of 588 existing gsa-peo
    Accounts actually use the plain string `"Federal"` (the field isn't restricted, so old loads
@@ -212,7 +214,7 @@ it. Every `Build-*.ps1` script's lookup columns should use this `__r.LDGCRM_Exte
 When a transform script includes an explicit value-mapping table (like Impediment's `$CategoryMap`),
 treat any value that doesn't match the map as a signal to stop and ask a human, not something to
 silently blank out and move on from unnoticed — every script here logs unmapped/unmatched values to
-a review CSV in `scripts/logs/data-migration/` rather than dropping them silently.
+a review CSV in `logs/data-migration/` rather than dropping them silently.
 
 ---
 
@@ -368,7 +370,7 @@ itself. Three guards, each of which the raw version fails:
 3. **Minimum supporting evidence** (`-DomainInferenceMinSupport`, default 3). At 1, `usda.gov` would
    claim 19 contacts on the strength of a *single* known example, and `usdoj.gov` 7 on one.
 
-Every inferred link is written to `scripts/logs/data-migration/Contact-domain-inferred-account-<ts>.csv`.
+Every inferred link is written to `logs/data-migration/Contact-domain-inferred-account-<ts>.csv`.
 `-DisableDomainInference` turns the whole path off.
 
 **It is barely worth having, and that is worth recording.** Before path 3 existed it would have
@@ -395,7 +397,7 @@ therefore near-meaningless as loaded — not because the rule misfires, but beca
 ownership it inherits from carries almost no information.
 
 This is now an evidenced decision rather than an argument, and it is the strongest available input to
-D2 in [`RELOAD-QA-CHECKLIST.md`](../../scripts/docs/RELOAD-QA-CHECKLIST.md): keep the rule, drop the inheritance in
+D2 in Sprint 1's `RELOAD-QA-CHECKLIST.md` (archived in `archive/sprint_1_scripts.zip`): keep the rule, drop the inheritance in
 favour of the named fallback, or inherit only from real people. **No code change is proposed here —
 the rule was confirmed as-is on 2026-08-13 and this is evidence for revisiting it, not a decision to
 change it.**
@@ -1738,7 +1740,7 @@ They agree on **882** pairs. Each sees some the other doesn't — **117** Roles-
 Issuer-Strings-only. **The flag is their UNION**, not their intersection: both are authored data, and
 dropping a flag because the other source is silent would discard real information on the strength of
 an inference. Provenance for every flag is written to
-`scripts/logs/data-migration/ApplicationContact-admin-source-*.csv` (`BOTH` / `Contacts.Roles only` /
+`logs/data-migration/ApplicationContact-admin-source-*.csv` (`BOTH` / `Contacts.Roles only` /
 `Issuer Strings only`), because after a union nobody can otherwise answer "why is this person an
 admin?".
 
@@ -1868,7 +1870,7 @@ Two groups are deliberately **not** merged:
 script.** That is deliberate: the Application-Contact junction chunk must map *every* Airtable
 Contact record ID onto whichever Contact actually got created. If it re-derived the grouping itself
 the two implementations could drift and the junction would point at Contacts that don't exist. The
-script also emits `scripts/data/salesforce-loads/Contact-identity-map.csv` (every source record ID → its
+script also emits `data/salesforce-loads/Contact-identity-map.csv` (every source record ID → its
 surviving Contact) as a direct input to that chunk.
 
 ### `LastName` is required and mostly absent — a documented waterfall

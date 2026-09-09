@@ -2,7 +2,7 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Demographic_Served__c</fullName>
     <description>Originally created for TTS OTCRM - Login.gov Opportunities</description>
-    <label>Demographic Served (Deprecated)</label>
+    <label>Demographic Served</label>
     <required>false</required>
     <trackFeedHistory>false</trackFeedHistory>
     <trackHistory>false</trackHistory>

@@ -28,6 +28,28 @@
 !/logs/**/.gitkeep
 !/logs/**/README.md
 
+# ------------------------------------------------------------
+# data/ - THE PIPELINE'S INPUTS AND STAGED LOADS. APPLICANT PII.
+# ------------------------------------------------------------
+# Moved here from scripts/data/ (2026-09-08) when the dev/QA loading tools moved
+# to tools/. scripts/.gitignore used to be the authority for these rules and
+# travelled with the bundle; now that the data sits at the repo root, THIS file
+# is the only thing standing between applicant PII and a commit.
+#
+#   data/airtable-exports/   every record in the Airtable base - names, email
+#                            addresses, agency contacts, partner notes
+#   data/prod-accounts/      the production Account export
+#   data/salesforce-loads/   load-ready CSVs staged for the Bulk API
+#
+# Folder structure is kept (.gitkeep, README.md) so a fresh clone can run without
+# creating directories by hand; the contents are not. If you add a new output
+# location, add it here IN THE SAME CHANGE - an output folder nobody thought
+# about is how PII gets committed.
+/data/**
+!/data/**/
+!/data/**/.gitkeep
+!/data/**/README.md
+
 # Salesforce CLI cache, in case `sf` is ever run from the repo root
 # instead of sfdx/ (which has its own .gitignore for this already)
 /.sf/

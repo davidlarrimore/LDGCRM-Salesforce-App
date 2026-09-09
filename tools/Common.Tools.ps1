@@ -59,7 +59,7 @@
 # bundle and must use Get-LdgcrmRoot instead of the function below.
 #
 # WHERE tools/ OUTPUT LANDS: <repo>/logs/tools/, via Start-ToolLog below -
-# OUTSIDE the bundle. It used to go to scripts/logs/metadata/ on the reasoning
+# OUTSIDE the bundle. It used to go to logs/metadata/ on the reasoning
 # that one logging convention beats two and the folder was gitignored anyway.
 # That was wrong on the point that matters: it put engineering-only run output,
 # and a whole log category that only metadata tooling used, inside the folder
@@ -71,7 +71,7 @@ function Get-RepoRoot {
         The ENGINEERING repository root - the folder holding sfdx/, docs/,
         scripts/ and tools/.
 
-        This function used to live in scripts/powershell-scripts/Common.ps1 and was used by
+        This function used to live in tools/data-loading/Common.ps1 and was used by
         the whole pipeline. It was moved here on 2026-08-14 and deliberately
         DELETED from the bundle: left in place it would keep resolving happily
         after the bundle was dropped into the Operations repo, and quietly
@@ -87,15 +87,23 @@ function Get-RepoRoot {
 
 function Get-LdgcrmBundleRoot {
     <#
-        The Operations bundle (scripts/) as seen from the engineering repo.
+        DEPRECATED, AND IT NO LONGER POINTS AT ANYTHING.
 
-        Only for tooling that packages or inspects the bundle - notably
-        Export-OpsBundle.ps1. Scripts INSIDE the bundle must never call this;
-        they use Get-LdgcrmRoot, which derives the same folder from their own
-        location and therefore keeps working once the bundle is moved.
+        This returned the Operations bundle (scripts/) as seen from the
+        engineering repo, for tooling that packaged or inspected it. Sprint 1
+        shipped on 2026-09-08, the bundle was archived to
+        archive/sprint_1_scripts.zip, and scripts/ was emptied for Sprint 2.
+
+        Nothing calls this any more. It is kept, throwing rather than returning a
+        path, because returning <repo>/scripts would be worse than useless: the
+        folder still EXISTS, so every Join-Path would succeed and every read
+        would come back empty - which is exactly the silent-failure shape this
+        repo keeps getting bitten by. Delete it once Sprint 2 has settled.
     #>
 
-    Join-Path (Get-RepoRoot) "scripts"
+    throw ("Get-LdgcrmBundleRoot is retired: the operations bundle was archived to " +
+           "archive/sprint_1_scripts.zip on 2026-09-08 and scripts/ is now empty. " +
+           "Use Get-RepoRoot and resolve data/, logs/ and tools/data-loading/ from there.")
 }
 
 function Get-ToolLogDirectory {
@@ -122,7 +130,7 @@ function Start-ToolLog {
         HOW IT REDIRECTS THE BUNDLE'S HELPERS TOO. These scripts still
         dot-source the bundle's Common.ps1 for the confirmation gate and the
         Salesforce helpers, so a call to Get-LogDirectory would otherwise land
-        back inside scripts/logs/. Setting $env:LDGCRM_RUN_DIRECTORY first means
+        back inside logs/. Setting $env:LDGCRM_RUN_DIRECTORY first means
         the bundle's own "one directory per run" mechanism adopts this folder -
         Get-LogDirectory returns it, and Start-ScriptLog would JOIN it rather
         than create its own. So every downstream write follows, with no change

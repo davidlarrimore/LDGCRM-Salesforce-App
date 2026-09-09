@@ -62,11 +62,6 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
-        <field>Account.Deprecated_State__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
         <field>Account.Description</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -303,11 +298,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Contact.MobilePhone</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Contact.Newsletter__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -1423,11 +1413,6 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Opportunity.Type_of_Contract__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.deprecated_TLDGCRM_Technical_Readiness__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtlClntAppOauthSettings xmlns="http://soap.sforce.com/2006/04/metadata">
+    <commaSeparatedOauthScopes>Api</commaSeparatedOauthScopes>
+    <externalClientApplication>LDGCRM_P3_Client_app_Localdev</externalClientApplication>
+    <isFirstPartyAppEnabled>false</isFirstPartyAppEnabled>
+    <label>LDGCRM_P3_Client_app_Localdev_oauth</label>
+    <oauthLink>00Dco000005LYOn:888co0000007MgX</oauthLink>
+</ExtlClntAppOauthSettings>

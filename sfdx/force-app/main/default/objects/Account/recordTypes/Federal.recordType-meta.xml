@@ -2,7 +2,7 @@
 <RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Federal</fullName>
     <active>true</active>
-    <compactLayoutAssignment>LDGCRM_Federal_Account_Compact_Layout</compactLayoutAssignment>
+    <compactLayoutAssignment>Federal_Compact_Layout</compactLayoutAssignment>
     <description>Use this record type for creating federal agency or bureau accounts. For example, Department of Homeland Security (DHS)</description>
     <label>Federal</label>
     <picklistValues>
@@ -240,10 +240,6 @@
         <picklist>Type</picklist>
         <values>
             <fullName>Academia</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Federal Agency</fullName>
             <default>false</default>
         </values>
         <values>

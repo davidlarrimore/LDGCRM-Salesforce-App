@@ -3,14 +3,14 @@ param(
     [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
     [string]$Environment = "Dev",
 
-    # Empty = use the environment's registered alias (scripts/powershell-scripts/Common.Orgs.ps1).
+    # Empty = use the environment's registered alias (tools/data-loading/Common.Orgs.ps1).
     [string]$OrgAlias = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\Common.Tools.ps1")
-. (Join-Path $PSScriptRoot "..\..\scripts\powershell-scripts\Common.ps1")
+. (Join-Path $PSScriptRoot "..\data-loading\Common.ps1")
 
 $TargetOrg = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 

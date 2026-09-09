@@ -34,14 +34,6 @@
                 <behavior>Edit</behavior>
                 <field>Previous_Contact__c</field>
             </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>LDGCRM_Partner_Account__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>LDGCRM_Pronunciation__c</field>
-            </layoutItems>
         </layoutColumns>
         <layoutColumns>
             <layoutItems>
@@ -62,7 +54,7 @@
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
-                <field>Newsletter__c</field>
+                <field>Survey_Opt_Out__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
@@ -130,10 +122,6 @@
             <layoutItems>
                 <behavior>Edit</behavior>
                 <field>Description</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>LDGCRM_Subscription_Type__c</field>
             </layoutItems>
         </layoutColumns>
         <style>OneColumn</style>
@@ -353,13 +341,6 @@
         <fields>ACCOUNT.NAME</fields>
         <fields>CONTACT.EMAIL</fields>
         <relatedList>Contact.Previous_Contact__c</relatedList>
-    </relatedLists>
-    <relatedLists>
-        <fields>NAME</fields>
-        <fields>LDGCRM_Application__c</fields>
-        <fields>LDGCRM_Email__c</fields>
-        <fields>LGDCRM_P3_Partner_Portal_Admin__c</fields>
-        <relatedList>LDGCRM_Application_Contact__c.LDGCRM_contact__c</relatedList>
     </relatedLists>
     <relatedObjects>AccountId</relatedObjects>
     <showEmailCheckbox>false</showEmailCheckbox>

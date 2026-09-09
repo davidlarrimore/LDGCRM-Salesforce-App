@@ -138,6 +138,12 @@
                 <default>false</default>
                 <label>Max.gov</label>
             </value>
+            <value>
+                <fullName>Ping/Foregerock</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>Ping/Foregerock</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
     <visibleLines>8</visibleLines>

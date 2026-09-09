@@ -5,8 +5,8 @@
     then zips the result into dist/ with a timestamp so it survives the next pull.
 
     WHY THIS EXISTS
-      scripts/powershell-scripts/Get-AirtableExport.ps1 writes one JSON file per
-      table into scripts/data/airtable-exports/ and OVERWRITES that folder every
+      tools/data-loading/Get-AirtableExport.ps1 writes one JSON file per
+      table into data/airtable-exports/ and OVERWRITES that folder every
       run. That is deliberate - it is a current-state mirror of the base, and the
       standing rule is to load the latest pull rather than an older copy. But it
       means there is no point-in-time copy of the base anywhere, and "copy the
@@ -30,7 +30,7 @@
 
     ⚠ THE ZIP CONTAINS PII. Every applicant name, email and partner note in the
       base is in it. dist/ is gitignored, and this checks that with git rather
-      than assuming it. Treat the file the way you would treat scripts/data/:
+      than assuming it. Treat the file the way you would treat data/:
       never commit it, never attach it to a ticket.
 
     Run with -SkipPull to archive the export folder exactly as it stands (when a
@@ -55,18 +55,17 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "Common.Tools.ps1")
-. (Join-Path $PSScriptRoot "..\scripts\powershell-scripts\Common.ps1")
+. (Join-Path $PSScriptRoot "data-loading\Common.ps1")
 # For Get-LdgcrmAirtableTableCatalog - the same list the pull works from, so
 # "every table arrived" is checked against one definition rather than two.
-. (Join-Path $PSScriptRoot "..\scripts\powershell-scripts\Common.DataMigration.ps1")
+. (Join-Path $PSScriptRoot "data-loading\Common.DataMigration.ps1")
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $RepoRoot = Get-RepoRoot
-$Bundle = Get-LdgcrmBundleRoot
-$ExportDirectory = Join-Path $Bundle "data\airtable-exports"
-$ExportScript = Join-Path $Bundle "powershell-scripts\Get-AirtableExport.ps1"
+$ExportDirectory = Join-Path $RepoRoot "data\airtable-exports"
+$ExportScript = Join-Path $RepoRoot "tools\data-loading\Get-AirtableExport.ps1"
 
 # The zip carries the run's timestamp, so it can be traced back to the
 # transcript in logs/tools/ that recorded how it was produced.
@@ -254,7 +253,7 @@ $ReadmePath = Join-Path $RunDirectory "README.txt"
 $ReadmeLines = @(
     "Login.gov CRM migration - Airtable base backup"
     "Taken: $Timestamp (local time on the machine that ran it)"
-    "Source: Airtable base, pulled via scripts/powershell-scripts/Get-AirtableExport.ps1"
+    "Source: Airtable base, pulled via tools/data-loading/Get-AirtableExport.ps1"
     ""
     "airtable-exports/  one JSON file per Airtable table, each a top-level array"
     "                   of { id, createdTime, fields } records. Linked-record"
@@ -265,7 +264,7 @@ $ReadmeLines = @(
     "archive to a repository, attach it to a ticket, or upload it to a shared"
     "drive without checking where that drive is."
     ""
-    "To use it: extract airtable-exports/ over scripts/data/airtable-exports/."
+    "To use it: extract airtable-exports/ over data/airtable-exports/."
     "Note the pipeline's standing rule is to load the LATEST pull - reach for"
     "this copy to answer what the base held on this date, not to run a load."
 )
@@ -327,10 +326,10 @@ Write-Host "Written: $OutputPath ($SizeMb MB)" -ForegroundColor Green
 # ============================================================
 # VERIFY
 # ============================================================
-# Reads the FINISHED archive rather than trusting the list built above, the
-# same way Export-OpsBundle.ps1 does: the build and the check can only agree by
-# both being right, and a backup is the one artifact whose defects surface
-# only when it is already the last copy of something.
+# Reads the FINISHED archive rather than trusting the list built above: the
+# build and the check can only agree by both being right, and a backup is the
+# one artifact whose defects surface only when it is already the last copy of
+# something.
 
 if (-not $SkipVerification) {
     $Problems = [System.Collections.Generic.List[string]]::new()

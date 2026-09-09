@@ -200,7 +200,7 @@ Small, and fully worked around today — but the workarounds are the fragile par
 
 | Item | Effect |
 | --- | --- |
-| AmeriCorps + MCC duplicates | **5 records** would not migrate. Worked around by tagging the correct Account **by hand**, which a sandbox rebuild silently undoes — see `scripts/docs/RELOAD-QA-CHECKLIST.md`. **Resolving the duplicates removes the need for the manual step entirely.** |
+| AmeriCorps + MCC duplicates | **5 records** would not migrate. Worked around by tagging the correct Account **by hand**, which a sandbox rebuild silently undoes. **Resolving the duplicates removes the need for the manual step entirely.** |
 | `Under Secretary of Defense for Research and Engineering` duplicate | `Defense Technical Information Center` cannot be parented — its parent name is ambiguous, so the bootstrap refuses to guess and leaves it top level. |
 | Every other duplicate above | No records lost. The migration matches on parent as well as name, so same-named Accounts under different agencies resolve correctly. |
 | **Section 6 — the 81 unsaveable Accounts** | **Halted the UAT run of 2026-08-24 outright.** Now worked around twice over: `Build-AccountParentRepair.ps1` repoints 66 onto the sound twin of their parent, and the Account step *accepts* the remaining 15 as classified failures so the run completes. Cost per run: **10 Accounts untagged, 9 Opportunities and 10 Meetings withheld**, all recovered by a re-run. These are the two most fragile workarounds in this document — one writes `ParentId` on records this migration did not create, the other tolerates a failure on purpose. **Fixing the Accounts retires both.** |

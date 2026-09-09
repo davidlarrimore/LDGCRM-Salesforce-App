@@ -64,9 +64,9 @@
                 <label>Oracle AM</label>
             </value>
             <value>
-                <fullName>Ping/Foregerock</fullName>
+                <fullName>Ping/Forgerock</fullName>
                 <default>false</default>
-                <label>Ping/Foregerock</label>
+                <label>Ping/Forgerock</label>
             </value>
             <value>
                 <fullName>Shibboleth</fullName>

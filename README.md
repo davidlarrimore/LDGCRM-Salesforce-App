@@ -1,15 +1,13 @@
-# Login.gov Airtable → Salesforce CRM Migration
+# Login.gov Partnerships CRM
 
-Login.gov's partnership team tracks agencies, applications and opportunities in an **Airtable base**.
-This repo moves that data into **Salesforce**, and maintains the Salesforce app it lands in.
+Login.gov's partnership team tracks agencies, applications and opportunities in a
+**Salesforce app** running in GSA PEO's org. This repo holds that app, and the
+tooling used to develop it.
 
-Two kinds of work live here:
-
-- **`sfdx/`** — the Salesforce app's metadata: custom objects prefixed `LDGCRM_`, flows, layouts,
-  permission sets.
-- **`scripts/`** — PowerShell automation that pulls from Airtable, transforms the data, and loads it
-  into a Salesforce org. Repeatably: it reads Airtable fresh every time and matches against what is
-  already in Salesforce, so running it twice does not create duplicates.
+The app's data came from an **Airtable base**, migrated in Sprint 1 and **shipped
+to production on 2026-09-08**. That migration is complete. What remains here is
+the app itself, plus the tools to rebuild a developer sandbox so it can be worked
+on against realistic data.
 
 ---
 
@@ -17,128 +15,80 @@ Two kinds of work live here:
 
 | I want to… | Go to |
 | --- | --- |
-| **Run a data migration** *(start here if that's you)* | **[scripts/docs/SETUP.md](scripts/docs/SETUP.md)** |
-| **Stand the app up in a new org** — metadata, users and sharing, then the load | **[scripts/docs/DEPLOYMENT-GUIDE.md](scripts/docs/DEPLOYMENT-GUIDE.md)** |
-| Understand or change how the migration works | [docs/engineering/ARCHITECTURE.md](docs/engineering/ARCHITECTURE.md) |
-| Look up what a field maps to | [docs/engineering/TRANSFORMATION-RULES.md](docs/engineering/TRANSFORMATION-RULES.md) |
+| **Change the Salesforce app** *(start here if that's you)* | [Salesforce app changes](#salesforce-app-changes), below |
+| **Load a dev or QA sandbox** with realistic data | [Loading a sandbox](#loading-a-sandbox), below |
+| Understand how the loading tools work | [docs/engineering/ARCHITECTURE.md](docs/engineering/ARCHITECTURE.md) |
+| Look up what an Airtable column maps to | [docs/engineering/TRANSFORMATION-RULES.md](docs/engineering/TRANSFORMATION-RULES.md) |
 | Fix something in the Airtable source data | [docs/data-quality/](docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) |
-| **See where the project is** — what's left before production | **[docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md)** |
-| Change the Salesforce app itself | [Salesforce app changes](#salesforce-app-changes), below |
-
-Full index: **[docs/engineering/ARCHITECTURE.md](docs/engineering/ARCHITECTURE.md)**.
-
----
-
-## Environments
-
-Every script takes `-Environment Dev|QA|UAT|Full|Prod` (default **Dev**) and resolves the org alias
-itself. **You never pass a Salesforce username or alias by hand.**
-
-| `-Environment` | Alias | Used for |
-| --- | --- | --- |
-| `Dev` *(default)* | `peodv8dvn` | Day-to-day development and pipeline testing |
-| `QA` | `peodv15dvn` | Full end-to-end migration rehearsal |
-| `UAT` | `peofl1uatp` | User acceptance testing. A **full** sandbox. **Real Accounts — never rebuilt** |
-| `Full` | `peofl2stgp` | Operations dress rehearsal, immediately before production. **Real Accounts — never rebuilt** |
-| `Prod` | `gsa-peo` | **The live GSA PEO org. Real partner data.** |
-
-**An alias is the org's own sandbox name**, so it can be cross-checked and cannot quietly drift. The
-registry is [`scripts/powershell-scripts/Common.Orgs.ps1`](scripts/powershell-scripts/Common.Orgs.ps1); nothing else
-hard-codes an alias. Before reading or writing, every script asks the org for its own identity and
-stops if it disagrees with the registry — because an alias is just a pointer on your laptop, and the
-only trustworthy statement about what it points at comes from the org itself.
-
-Writes and deletes against `Prod` need the org alias typed at an **extra** gate, on top of whatever
-the script already asks for.
+| See what shipped, component by component | [docs/engineering/PRODUCTION-CHANGE-SET-INVENTORY.md](docs/engineering/PRODUCTION-CHANGE-SET-INVENTORY.md) |
+| Find Sprint 1's operator runbooks | `archive/sprint_1_scripts.zip`, `archive/sprint_1_docs.zip` |
 
 ---
 
 ## Repository layout
 
 ```
-scripts/                 ← THE OPERATIONS BUNDLE. Self-contained; ships to the Ops team.
-  README.md              Its own entry point — start here to RUN a migration
-  common/                Shared helpers: logging, org registry, confirmation gates
-  cleanup/               Sandbox factory reset (destructive, sandbox-only)
-  powershell-scripts/        Pull Airtable → transform → load → roll back
-  docs/                  Operator runbooks, incl. DEPLOYMENT-GUIDE.md — the
-                         order of operations for standing the app up in an org
-  data/                  Gitignored: Airtable exports, prod Account export, load CSVs
-  logs/                  Gitignored: transcripts, restore points, review CSVs
-  .env / .env.example    Airtable credentials (the .env is gitignored)
-  .gitignore             Travels WITH the folder — see below
+sfdx/                    THE PRODUCT. Salesforce DX project.
+  force-app/             Retrieved metadata - the source of truth for the data model
+  manifest/package.xml   Retrieval scope, and the basis for change sets
 
-sfdx/                    Salesforce DX project (force-app, manifest, tests)
-tools/                   Engineering-only. Needs sfdx/ or docs/, so NOT in the bundle.
-  metadata/              Pull metadata + export a data dictionary
-  Export-OpsBundle.ps1   Builds the zip handed to Operations
-docs/
-  PRODUCTION-READINESS.md  The seven gates to production
-  engineering/           How the pipeline WORKS
-  data-quality/          Asks for the Airtable data owners
+tools/                   Engineering-only. Nothing here ships.
+  data-loading/          Dev/QA sandbox load + factory reset (26 scripts)
+  metadata/              Sync-Metadata, data dictionary, change-set inventory
+  Backup-AirtableBase.ps1, Export-ReportPdf.ps1, Test-AccountMatching.ps1
+
+data/                    GITIGNORED - APPLICANT PII
+  airtable-exports/      The pulled Airtable base (all 22 tables)
+  prod-accounts/         Production Account export, seeds a sandbox rebuild
+  salesforce-loads/      Load-ready CSVs staged for the Bulk API
+
+logs/                    GITIGNORED. One directory per run.
+archive/                 Sprint 1, frozen: scripts + docs zips
+scripts/                 EMPTY - reserved for Sprint 2
+reference/               Salesforce user roster
+docs/engineering/        How the app and its tooling work
+docs/data-quality/       Open asks for the data owners
+.env / .env.example      Airtable credentials (the .env is gitignored)
 ```
 
-### `scripts/` is a self-contained bundle, on purpose
-
-The GSA Salesforce Operations team runs this pipeline out of **their own** GitHub
-repository, where it lives as a plain `/scripts` folder. So (changed 2026-08-14):
-
-- **Nothing in `scripts/` resolves a path above its own root.** Everything hangs off
-  `Get-LdgcrmRoot` in `scripts/powershell-scripts/Common.ps1`, which is the folder itself. The old
-  `Get-RepoRoot` was *deleted* from the bundle rather than left in place — it would have kept
-  resolving happily and quietly returned someone else's repository root.
-- **`scripts/.gitignore` is the authority** for `data/`, `logs/` and `.env`, not the root
-  `.gitignore`. A nested `.gitignore` applies in whatever repository contains it, so the PII
-  protection travels with the folder instead of being left behind on the move.
-- **Anything needing `sfdx/` or `docs/` lives in `tools/`** and uses `tools/Common.Tools.ps1`.
-  That is also the policy boundary: metadata moves by change set only, so Operations has no use
-  for a retrieve/deploy script.
-
-Build the hand-off zip with `tools/Export-OpsBundle.ps1`. It excludes `.env`, `data/` and `logs/`
-contents, then reads the finished archive back to prove it — and deletes the zip if anything
-unexpected is in it.
+**The root `.gitignore` is the only thing protecting `data/` and `.env`.** Sprint
+1's bundle carried its own nested `.gitignore` that travelled with the folder;
+that file is gone with the bundle. If you add a new output location, add the
+ignore rule **in the same change**.
 
 ---
 
-## Quick start
+## Environments
 
-```powershell
-# 1. Authenticate to a sandbox, at its own My Domain URL (not test.salesforce.com)
-sf org login web --alias peodv8dvn `
-    --instance-url https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com
+The loading tools take `-Environment Dev|QA` (default **Dev**) and resolve the
+org alias themselves. **You never pass a Salesforce username or alias by hand.**
 
-# 2. Airtable credentials — needs an admin account on the base and a Personal
-#    Access Token. See scripts/docs/SETUP.md; it needs two scopes and
-#    someone has to grant you base access first.
-Copy-Item scripts/.env.example scripts/.env    # then fill in AIRTABLE_API_KEY
+| `-Environment` | Alias | Used for |
+| --- | --- | --- |
+| `Dev` *(default)* | `peodv8dvn` | Day-to-day development |
+| `QA` | `peodv15dvn` | Shared testing against a freshly loaded sandbox |
 
-# 3. Windows long-path support, once per clone
-git config core.longpaths true
-
-# 4. See what a load would do — runs every transform, writes nothing
-powershell scripts/powershell-scripts/Invoke-FullMigrationLoad.ps1 -Environment Dev -PlanOnly
-```
-
-Then read **[scripts/README.md](scripts/README.md)** and
-**[scripts/docs/RUNNING-A-LOAD.md](scripts/docs/RUNNING-A-LOAD.md)**.
-
-> **Nothing writes to Salesforce except the load step.** Every `Build-*.ps1` transform is read-only
-> against the org, so you can always see exactly what *would* be written before anything is. Every
-> write is gated behind a typed token — `-Confirmation "LOAD"`, `"HARD DELETE"`, `"BOOTSTRAP"`,
-> `"ROLLBACK"` — which is passable non-interactively but never bypassable.
+**These tools cannot reach production.** `Dev` and `QA` are the only accepted
+values, rejected at parameter binding rather than by a runtime check, and the
+registry ([`tools/data-loading/Common.Orgs.ps1`](tools/data-loading/Common.Orgs.ps1))
+contains no production entry. Every script also asks the org for its own identity
+before reading or writing and stops if it disagrees — because an alias is just a
+pointer on your laptop, and the only trustworthy statement about what it points
+at comes from the org.
 
 ---
 
 ## Salesforce app changes
-
-Working on the app's metadata rather than the data migration.
 
 ```powershell
 # Pull metadata listed in sfdx/manifest/package.xml into sfdx/force-app.
 # Discovers new LDGCRM_ components and adds them to the manifest first.
 powershell tools/metadata/Sync-Metadata.ps1 -Environment Dev
 
-# Export a full object/field data dictionary CSV to logs/tools/
+# Report only - no manifest edit, no retrieve
+powershell tools/metadata/Sync-Metadata.ps1 -Environment Dev -WhatIf
+
+# Export a full object/field data dictionary CSV
 powershell tools/metadata/Get-LDGCRMDataDictionary.ps1 -Environment Dev
 ```
 
@@ -150,28 +100,75 @@ npm test                # sfdx-lwc-jest
 npm run prettier        # format
 ```
 
-A Husky `pre-commit` hook runs Prettier, ESLint and related Jest tests on staged files.
+A Husky `pre-commit` hook runs Prettier, ESLint and related Jest tests on staged
+files.
 
-> **Deploying is currently blocked org-wide by an unrelated app.** A pre-existing Apex compile error
-> in another application sharing the sandbox fails *any* deploy that runs tests, because Salesforce
-> compiles all Apex in the org first. For metadata-only changes on a sandbox, use
-> `sf project deploy start --test-level NoTestRun --target-org peodv8dvn`. See
-> [scripts/docs/TROUBLESHOOTING.md](scripts/docs/TROUBLESHOOTING.md#sf-project-deploy-fails-on-apex-unrelated-to-this-app).
+**Metadata moves between orgs by change set only.** Never `sf project deploy` a
+change from this repo — not even to Dev, which is the *source* org for change
+sets, so anything deployed there silently joins the next promotion. The one
+exception is deleting incorrect metadata. See [CLAUDE.md](CLAUDE.md).
 
-**Retrieving metadata is scoped on purpose.** The manifest covers this app only; the sandbox hosts
-unrelated applications. A broad wildcard retrieve pulls the entire org — review
-`git status sfdx/force-app` before committing if you run one.
+> **Deploying is currently blocked org-wide by an unrelated app.** A pre-existing
+> Apex compile error in `GSA_FCIC_AC_Manual_InitialBatch` fails *any* deploy that
+> runs tests, because Salesforce compiles all Apex in the org first. For
+> metadata-only changes on a sandbox, use
+> `sf project deploy start --test-level NoTestRun --target-org peodv8dvn`.
+
+**Retrieving is scoped on purpose.** The manifest covers this app only; the org
+also hosts FCIC and TTS OTCRM. A broad wildcard retrieve pulls the entire org —
+review `git status sfdx/force-app` before committing if you run one. Note also
+that **a retrieve never deletes local files**, so a component removed from the
+org stays in `force-app/` looking current.
+
+---
+
+## Loading a sandbox
+
+```powershell
+# 1. Authenticate, at the sandbox's own My Domain URL (not test.salesforce.com)
+sf org login web --alias peodv8dvn `
+    --instance-url https://gsa-peo--peodv8dvn.sandbox.my.salesforce.com
+
+# 2. Airtable credentials - needs base access and a Personal Access Token
+Copy-Item .env.example .env    # then fill in AIRTABLE_API_KEY
+
+# 3. Windows long-path support, once per clone
+git config core.longpaths true
+
+# 4. Check the org and the inputs are in a fit state. Read-only.
+powershell tools/data-loading/Test-LdgcrmReadiness.ps1 -Environment Dev
+
+# 5. Pull the current Airtable base
+powershell tools/data-loading/Get-AirtableExport.ps1
+
+# 6. See what a load would do - runs every transform, writes nothing
+powershell tools/data-loading/Invoke-FullMigrationLoad.ps1 -Environment Dev -PlanOnly
+```
+
+A sandbox that has just been refreshed holds **no records at all**, so the load
+needs `-BootstrapAccounts` to build an Account universe from the production
+export first — the transforms reconcile *onto* existing Accounts rather than
+creating them, and without it every downstream step silently withholds
+everything.
+
+> **Nothing writes to Salesforce except the load step.** Every `Build-*.ps1`
+> transform is read-only against the org, so you can always see exactly what
+> *would* be written before anything is. Every write is gated behind a typed
+> token — `-Confirmation "LOAD"`, `"HARD DELETE"`, `"BOOTSTRAP"`, `"ROLLBACK"` —
+> passable non-interactively but never bypassable.
 
 ---
 
 ## Coordination
 
-**More than one person can write to these orgs.** At least one colleague uses the Data Loader GUI
-against the same sandbox, and other teams share the org entirely. Before any write — even a small
-test batch — check that nobody else is mid-load. Two load processes against one org can race or
-double-load.
+**More than one person can write to these orgs.** At least one colleague uses the
+Data Loader GUI against the same sandbox, and other teams share the org entirely.
+Before any write — even a small test batch — check that nobody else is mid-load.
+Two load processes against one org can race or double-load.
 
 ---
 
-> For conventions aimed at AI coding assistants — data model detail, script patterns, gitignore
-> rationale — see [CLAUDE.md](CLAUDE.md).
+> For conventions aimed at AI coding assistants — data model detail, PowerShell
+> traps, record-type scoping, org gotchas — see [CLAUDE.md](CLAUDE.md).
+
+**Integration user:** `ldgcrm_integration@gsa.gov.peo1.peodv8dvn`

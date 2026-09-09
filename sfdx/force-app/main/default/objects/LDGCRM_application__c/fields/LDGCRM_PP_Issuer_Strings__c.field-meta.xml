@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_PP_Issuer_Strings__c</fullName>
+    <caseSensitive>false</caseSensitive>
+    <description>OEs maintain this field with the move to production requests from ZenDesk and ensure they accurately reflect what&apos;s in GitHub.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>OEs maintain this field with the move to production requests from ZenDesk and ensure they accurately reflect what&apos;s in GitHub.</inlineHelpText>
+    <label>Issuer Strings</label>
+    <length>40</length>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>true</unique>
+</CustomField>

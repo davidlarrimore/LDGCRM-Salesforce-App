@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LDGCRM_num_est_annual_idv__c</fullName>
+    <description>Estimated yearly identity verification transactions</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Estimated yearly identity verification transactions</inlineHelpText>
+    <label>Number of Estimated Annual IdV</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

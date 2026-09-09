@@ -10,7 +10,7 @@ ISBLANK( Name ) ||
 ISPICKVAL( Source__c, &quot;&quot; )||
 ISBLANK( Sourced_By__c )||
 ISBLANK( AccountId )||
-ISPICKVAL( LDGCRM_Opportunity_Type__c , &quot;&quot;)||
+ISPICKVAL( Opportunity_Type__c , &quot;&quot;)||
 ISBLANK( BD_Folder__c )
 )</errorConditionFormula>
     <errorMessage>Please enter the required fields for the Opportunity to enter Lead Qualification Stage.

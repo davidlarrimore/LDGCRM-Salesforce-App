@@ -5,7 +5,7 @@ description: Use when building or running Data Loader / sf-CLI-based migration s
 
 # Airtable → Salesforce data migration
 
-`scripts/powershell-scripts/` holds `Get-AirtableExport.ps1` (pulls source data straight from the Airtable
+`tools/data-loading/` holds `Get-AirtableExport.ps1` (pulls source data straight from the Airtable
 REST API — see CLAUDE.md's "Scripts" section) plus, eventually, the upsert/load scripts that move that
 data into a GSA PEO org. This skill is the convention to follow when adding those.
 
@@ -16,8 +16,8 @@ data into a GSA PEO org. This skill is the convention to follow when adding thos
 - **Field mappings:** in the `Build-*.ps1` transforms themselves — there is no separate mapping file.
   (`data/mappings/` was removed 2026-08-14: a Data Loader GUI leftover, always empty, never read.)
   object/field mapping docs.
-- **Scripts:** `scripts/powershell-scripts/*.ps1`.
-- **Run output:** `scripts/logs/data-migration/` (gitignored), via `scripts/powershell-scripts/Common.ps1`.
+- **Scripts:** `tools/data-loading/*.ps1`.
+- **Run output:** `logs/data-migration/` (gitignored), via `tools/data-loading/Common.ps1`.
 
 ## Required conventions for new scripts
 
@@ -40,7 +40,7 @@ data into a GSA PEO org. This skill is the convention to follow when adding thos
 4. **Load order follows the data model's dependencies** — parents before children/junctions:
    Account / `LDGCRM_Partner_account__c` before `LDGCRM_Application__c`, Contact before
    `LDGCRM_Application_Contact__c`, Opportunity before `LDGCRM_Opportunity_Impediment__c`, etc. This
-   is the reverse of the delete order in `scripts/powershell-scripts/Invoke-SandboxFactoryReset.ps1` — that script's object
+   is the reverse of the delete order in `tools/data-loading/Invoke-SandboxFactoryReset.ps1` — that script's object
    list is a ready reference for the dependency order either direction.
 5. **Dry run before a full load.** Validate mapping and row counts against a small batch (or a
    CSV-only export step) before loading everything — Bulk API loads at scale are hard to partially

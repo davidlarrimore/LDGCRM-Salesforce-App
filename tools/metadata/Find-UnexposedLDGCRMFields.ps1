@@ -2,7 +2,7 @@
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\Common.Tools.ps1")
-. (Join-Path $PSScriptRoot "..\..\scripts\powershell-scripts\Common.ps1")
+. (Join-Path $PSScriptRoot "..\data-loading\Common.ps1")
 
 <#
     Compares LDGCRM_ custom fields defined on each object (source of truth:

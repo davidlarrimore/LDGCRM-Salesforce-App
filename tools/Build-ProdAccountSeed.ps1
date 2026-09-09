@@ -39,7 +39,7 @@
          set, to prove out the actual production reconciliation+backfill
          process.
 
-    Source: the newest export in scripts/data/prod-accounts/ (renamed 2026-08-13 from
+    Source: the newest export in data/prod-accounts/ (renamed 2026-08-13 from
     "PEO PROD Accounts 07162026 (1).xls") - a Salesforce report export of
     production Account data. Despite the .xls extension this is actually an
     HTML table (a browser "Export" from Salesforce, not a real binary Excel
@@ -74,13 +74,13 @@ param(
     [ValidateSet("Dev", "QA", "UAT", "Full", "Prod")]
     [string]$Environment = "Dev",
 
-    # Empty = use the environment's registered alias (scripts/powershell-scripts/Common.Orgs.ps1).
+    # Empty = use the environment's registered alias (tools/data-loading/Common.Orgs.ps1).
     # Set this only to reach an org that isn't in the registry; doing so skips
     # the registry's identity checks.
     [string]$OrgAlias = "",
     [string]$ApiVersion = "67.0",
 
-    # Empty = newest the newest export in scripts/data/prod-accounts/, resolved after
+    # Empty = newest the newest export in data/prod-accounts/, resolved after
     # dot-sourcing by Resolve-ProdAccountExportPath. (Param defaults evaluate
     # before dot-sourcing, so it can't be resolved here.) The export was
     # renamed from "PEO PROD Accounts 07162026 (1).xls" on 2026-08-13.
@@ -90,8 +90,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "Common.Tools.ps1")
-. (Join-Path $PSScriptRoot "..\scripts\powershell-scripts\Common.ps1")
-. (Join-Path $PSScriptRoot "..\scripts\powershell-scripts\Common.DataMigration.ps1")
+. (Join-Path $PSScriptRoot "data-loading\Common.ps1")
+. (Join-Path $PSScriptRoot "data-loading\Common.DataMigration.ps1")
 
 $OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
@@ -121,7 +121,7 @@ if (-not $SourceFile) {
 }
 
 if (-not $SourceFile) {
-    throw "No production Account export found. Expected the newest export in scripts/data/prod-accounts/"
+    throw "No production Account export found. Expected the newest export in data/prod-accounts/"
 }
 
 # ============================================================

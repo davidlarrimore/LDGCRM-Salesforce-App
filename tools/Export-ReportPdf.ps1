@@ -24,8 +24,8 @@
        until someone opens it.
 
     Usage:
-        scripts\powershell-scripts\Export-ReportPdf.ps1
-        scripts\powershell-scripts\Export-ReportPdf.ps1 -HtmlPath "docs\my-report.html"
+        tools\data-loading\Export-ReportPdf.ps1
+        tools\data-loading\Export-ReportPdf.ps1 -HtmlPath "docs\my-report.html"
 #>
 
 param(
@@ -43,7 +43,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "Common.Tools.ps1")
-. (Join-Path $PSScriptRoot "..\scripts\powershell-scripts\Common.ps1")
+. (Join-Path $PSScriptRoot "data-loading\Common.ps1")
 
 $RepoRoot = Get-RepoRoot
 

@@ -9,7 +9,7 @@
     rather than shipping to Operations.
 
     TOUCHES NO ORG. The cascade cases run against the production Account export
-    in scripts/data/prod-accounts/, which is gitignored - if it is absent those
+    in data/prod-accounts/, which is gitignored - if it is absent those
     cases are skipped and the pure-logic ones still run, so the file is useful
     in a fresh clone rather than simply failing.
 
@@ -33,7 +33,7 @@ param()
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$Scripts  = Join-Path $RepoRoot "scripts\powershell-scripts"
+$Scripts  = Join-Path $RepoRoot "tools\data-loading"
 
 . (Join-Path $Scripts "Common.ps1")
 . (Join-Path $Scripts "Common.DataMigration.ps1")
@@ -113,7 +113,7 @@ Assert-Equals "blank stays blank"      (Get-LdgcrmMarketSegmentName -AirtableVal
 # ------------------------------------------------------------
 # The cascade needs a real Account population.
 # ------------------------------------------------------------
-$ExportDir = Join-Path $RepoRoot "scripts\data\prod-accounts"
+$ExportDir = Join-Path $RepoRoot "data\prod-accounts"
 $ExportFile = $null
 if (Test-Path -LiteralPath $ExportDir) {
     $ExportFile = @(Get-ChildItem -LiteralPath $ExportDir -File |
@@ -124,7 +124,7 @@ if (Test-Path -LiteralPath $ExportDir) {
 if (-not $ExportFile) {
     Write-Host ""
     Write-Host "SKIPPED: the cascade tests need a production Account export in" -ForegroundColor Yellow
-    Write-Host "         scripts/data/prod-accounts/ (gitignored, so absent in a fresh clone)." -ForegroundColor Yellow
+    Write-Host "         data/prod-accounts/ (gitignored, so absent in a fresh clone)." -ForegroundColor Yellow
 }
 else {
     Write-Host ""

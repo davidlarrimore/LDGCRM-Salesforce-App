@@ -2,7 +2,7 @@
 <RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Federal</fullName>
     <active>true</active>
-    <compactLayoutAssignment>LDGCRM_Federal_Compact_Layout</compactLayoutAssignment>
+    <compactLayoutAssignment>OTCRM_Federal_Compact_Layout</compactLayoutAssignment>
     <description>Use this record type for creating federal agency contacts. For example, jane.smith@state.gov for Department of State contact.</description>
     <label>Federal</label>
     <picklistValues>
@@ -100,6 +100,14 @@
     <picklistValues>
         <picklist>Source__c</picklist>
         <values>
+            <fullName>CoP</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Content Download</fullName>
+            <default>false</default>
+        </values>
+        <values>
             <fullName>Event</fullName>
             <default>false</default>
         </values>
@@ -121,6 +129,10 @@
         </values>
         <values>
             <fullName>Referral</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Social Media</fullName>
             <default>false</default>
         </values>
         <values>

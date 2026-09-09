@@ -99,6 +99,14 @@
     <picklistValues>
         <picklist>Source__c</picklist>
         <values>
+            <fullName>CoP</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Content Download</fullName>
+            <default>false</default>
+        </values>
+        <values>
             <fullName>Event</fullName>
             <default>false</default>
         </values>
@@ -120,6 +128,10 @@
         </values>
         <values>
             <fullName>Referral</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Social Media</fullName>
             <default>false</default>
         </values>
         <values>

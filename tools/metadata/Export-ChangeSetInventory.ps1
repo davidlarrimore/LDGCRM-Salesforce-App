@@ -67,7 +67,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "..\Common.Tools.ps1")
-. (Join-Path $PSScriptRoot "..\..\scripts\powershell-scripts\Common.ps1")
+. (Join-Path $PSScriptRoot "..\data-loading\Common.ps1")
 
 $OrgAlias = Resolve-LdgcrmOrgAlias -Environment $Environment -OrgAlias $OrgAlias
 
@@ -707,7 +707,7 @@ try {
     Write-Host ""
 
     # Deliberately NOT Get-LogDirectory. That helper returns the run directory
-    # while one is open, but falls back to scripts/logs/<category> otherwise -
+    # while one is open, but falls back to logs/<category> otherwise -
     # inside the Operations bundle, which engineering-only output must never
     # enter. Start-ToolLog has already published the run directory under
     # logs/tools/, so read it directly and keep the fallback impossible.

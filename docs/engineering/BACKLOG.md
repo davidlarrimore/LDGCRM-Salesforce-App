@@ -1,13 +1,15 @@
-# Migration backlog
+# Backlog
 
 > **Who this is for:** engineers picking up the next piece of work, and anyone asking "is this
 > already known?" Each item records the decisions it still needs, not just the task.
 
 **Work that is agreed but not yet built.** Built work is removed from this file rather than marked
-done — git carries the history, per-object build status lives in
-[ARCHITECTURE.md](ARCHITECTURE.md), field-level detail in
-[TRANSFORMATION-RULES.md](TRANSFORMATION-RULES.md), and overall readiness in
-[PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md).
+done — git carries the history, how the tooling works lives in
+[ARCHITECTURE.md](ARCHITECTURE.md), and field-level detail in
+[TRANSFORMATION-RULES.md](TRANSFORMATION-RULES.md).
+
+Sprint 1 shipped to production on 2026-09-08, so items here are **Sprint 2 candidates** unless they
+say otherwise.
 
 Ordered roughly by value, not by effort.
 
@@ -20,7 +22,7 @@ up and the meeting history is solved separately, afterwards. **It is not a block
 and every reload proceeds without Meetings.
 
 **The backup needs no extra step.** `Get-AirtableExport.ps1` pulls the Meetings table like any other,
-and `scripts/data/airtable-exports/` is a current-state mirror the next pull overwrites, deliberately
+and `data/airtable-exports/` is a current-state mirror the next pull overwrites, deliberately
 — **the latest pull is always the one to work from.** Re-pull when this is picked up rather than
 reaching for an older copy.
 

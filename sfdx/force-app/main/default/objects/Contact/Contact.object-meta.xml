@@ -199,14 +199,14 @@
     <actionOverrides>
         <actionName>NewContact</actionName>
         <content>ContactSearchLtng</content>
-        <formFactor>Large</formFactor>
+        <formFactor>Small</formFactor>
         <skipRecordTypeSelect>true</skipRecordTypeSelect>
         <type>LightningComponent</type>
     </actionOverrides>
     <actionOverrides>
         <actionName>NewContact</actionName>
         <content>ContactSearchLtng</content>
-        <formFactor>Small</formFactor>
+        <formFactor>Large</formFactor>
         <skipRecordTypeSelect>true</skipRecordTypeSelect>
         <type>LightningComponent</type>
     </actionOverrides>

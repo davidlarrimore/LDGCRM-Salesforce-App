@@ -489,7 +489,7 @@
             <default>false</default>
         </values>
         <values>
-            <fullName>Ping%2FForegerock</fullName>
+            <fullName>Ping%2FForgerock</fullName>
             <default>false</default>
         </values>
         <values>
@@ -1123,6 +1123,21 @@
         </values>
     </picklistValues>
     <picklistValues>
+        <picklist>Level_of_Priority__c</picklist>
+        <values>
+            <fullName>High</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Low</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Medium</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
         <picklist>Level_of_Security_Clearance_Required__c</picklist>
         <values>
             <fullName>Confidential</fullName>
@@ -1150,6 +1165,29 @@
         </values>
         <values>
             <fullName>Unknown</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Opportunity_Type__c</picklist>
+        <values>
+            <fullName>Add-on%2FMod</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Follow-on</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>New Business</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Renewal</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Winback</fullName>
             <default>false</default>
         </values>
     </picklistValues>
@@ -1236,6 +1274,14 @@
     <picklistValues>
         <picklist>Source__c</picklist>
         <values>
+            <fullName>CoP</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Content Download</fullName>
+            <default>false</default>
+        </values>
+        <values>
             <fullName>Event</fullName>
             <default>false</default>
         </values>
@@ -1260,7 +1306,102 @@
             <default>false</default>
         </values>
         <values>
+            <fullName>Social Media</fullName>
+            <default>false</default>
+        </values>
+        <values>
             <fullName>Website</fullName>
+            <default>false</default>
+        </values>
+    </picklistValues>
+    <picklistValues>
+        <picklist>Status__c</picklist>
+        <values>
+            <fullName>Agency signatures in progress</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Assessing</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Assessing contact-level qual</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Assessing opp-level qual</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Assessing org-level qual</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Contacted</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Draft proposal</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Executed</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Finalize proposal</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Follow up with contact</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Forms received</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Forms sent</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>GSA signatures in progress</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Initial meeting set</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Meeting set</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Not contacted</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Proposal approved</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Proposal drafted</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Proposal finalized</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Proposal sent</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Set initial meeting</fullName>
+            <default>false</default>
+        </values>
+        <values>
+            <fullName>Set meeting</fullName>
             <default>false</default>
         </values>
     </picklistValues>
@@ -1512,68 +1653,6 @@
         </values>
         <values>
             <fullName>Time and Materials %28T%26M%29</fullName>
-            <default>false</default>
-        </values>
-    </picklistValues>
-    <picklistValues>
-        <picklist>deprecated_TLDGCRM_Technical_Readiness__c</picklist>
-        <values>
-            <fullName>Does not have a website</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Has a broker app%2C with ability to add multiple vendors</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Has a website w%2Fo a sign-in solution</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Login%2Egov is integrated%2C but not used fully</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Login%2Egov is integrated%2C fully</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Uses a home-grown sign-in solution</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Uses a vendor sign-in solution</fullName>
-            <default>false</default>
-        </values>
-    </picklistValues>
-    <picklistValues>
-        <picklist>priority_type__c</picklist>
-        <values>
-            <fullName>HISP - High Volume</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>HISP - Lower Volume</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>High Volume</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>IdV Upgrade</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Leadership Escalation</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>N%2FA</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>Strategic</fullName>
             <default>false</default>
         </values>
     </picklistValues>

@@ -1037,11 +1037,6 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>Opportunity.deprecated_TLDGCRM_Technical_Readiness__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
         <field>OpportunityContactRole.LDGCRM_Date_Added__c</field>
         <readable>true</readable>
     </fieldPermissions>
