@@ -24,6 +24,16 @@
         <members>LDGCRM_Impediment__c</members>
         <members>LDGCRM_Opportunity_Impediment__c</members>
         <members>LDGCRM_Market_Segment__c</members>
+        <!-- LDGCRM_Issuer_String__c was created in Dev on 2026-09-08, AFTER the
+             production change set was built, so production does not have it. It is
+             a Master-Detail child of LDGCRM_application__c, and it replaces the
+             Text(40) field LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c,
+             which was deleted from Dev on 2026-09-09 and is gone from this repo.
+             PRODUCTION STILL HAS THAT FIELD, and a sandbox refresh restores it -
+             it came back once already. LDGCRM_Partnership_Portal_API_R grants read
+             on this object, so a change set carrying that permission set needs
+             this object alongside it. -->
+        <members>LDGCRM_Issuer_String__c</members>
         <name>CustomObject</name>
     </types>
     <types>
@@ -42,6 +52,12 @@
         <name>FlexiPage</name>
     </types>
     <types>
+        <!-- LDGCRM_Partnership_Portal_API_R is the P3 integration user's permission
+             set. It is NOT in a permission set group and is assigned directly,
+             because it carries ApiUserOnly - a permission that only a user holding
+             the "Salesforce API Integration" permission set license can be granted.
+             See scripts/docs/integration-user.md. -->
+        <members>LDGCRM_Partnership_Portal_API_R</members>
         <members>LDGCRM_Partnership_Team_Member_CRE</members>
         <members>LDGCRM_Partnership_Viewer_R</members>
         <members>LDGCRM_Production_Support_CRED</members>

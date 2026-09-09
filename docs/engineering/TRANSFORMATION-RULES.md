@@ -2741,7 +2741,7 @@ and **847 Applications have more than one**. Its own help text describes it as a
 maintain by hand against ZenDesk/GitHub. Three independent reasons, any one sufficient.
 
 **Superseded 2026-08-13:** the project owner confirmed this data is not being migrated and **the
-field was retired entirely.** It could not be a plain delete, and the reason is worth keeping because
+field is retired.** It could not be a plain delete, and the reason is worth keeping because
 it generalizes — a field that looks unused can still be load-bearing inside a formula:
 
 - `LDGCRM_Level_1_Complete_Pct__c` counts it as **1 of 9** checklist items. Since the migration never
@@ -2754,6 +2754,15 @@ it generalizes — a field that looks unused can still be load-bearing inside a 
 - Plus 4 report types, 3 permission sets and 1 layout.
 
 **Nothing in this pipeline changes when it goes** — no transform ever wrote it.
+
+**⚠️ Deleting it from Dev does not keep it deleted, and this has already happened once.** It was
+deleted from Dev on 2026-08-14, came back with the sandbox refresh, and was deleted again on
+2026-09-09. A refresh copies production's metadata, **production still has the field**, and a change
+set cannot carry a deletion — so every refresh restores it and someone has to delete it by hand
+again. The loop only closes when production drops the field, which is a Metadata API destructive
+change GSA IT Engineering has to carry, not something this repo can promote.
+
+Treat "the field is gone" as true of one org at one moment, never of the org set.
 
 ### Fields with no destination — the full inventory (as requested)
 

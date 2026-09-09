@@ -9,6 +9,10 @@ This folder is where Sprint 2's work lives.
   Read this before building or receiving a Sprint 2 change set. It leads with the
   `OpportunityContactRole.Role` values, which are deactivated rather than missing
   and will silently corrupt a load if they are not reactivated.
+- **[`docs/integration-user.md`](docs/integration-user.md)** — standing up the P3
+  Partner Portal API user: the permission set license goes on **before** the
+  permission set, because the license is what makes `ApiUserOnly` grantable. None
+  of the user-side setup survives a sandbox refresh.
 
 ## What used to be here
 

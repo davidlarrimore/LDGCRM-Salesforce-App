@@ -42,12 +42,16 @@
         themselves from fields this script does set (checkboxes, URLs, the
         Opportunity lookup).
       - LDGCRM_Annual_Revenue_Amount__c: no Airtable source found.
-      - LDGCRM_PP_Issuer_Strings__c: never migrated, and DELETED from the org on
-        2026-08-14. It could not be a plain delete: LDGCRM_Level_1_Complete_Pct__c
-        counted it as 1 of 9 checklist items and LDGCRM_Launch_Checklist_Completion__c
+      - LDGCRM_PP_Issuer_Strings__c: never migrated. Deleted from Dev on
+        2026-08-14, RESTORED BY THE SANDBOX REFRESH because production still has
+        it, and deleted from Dev again on 2026-09-09. It will keep coming back on
+        every refresh until production drops it - a change set cannot delete.
+        It could not be a plain delete: LDGCRM_Level_1_Complete_Pct__c counted it
+        as 1 of 9 checklist items and LDGCRM_Launch_Checklist_Completion__c
         hard-codes that 9 as a weight, so dropping the item would have silently
         moved a second metric. Resolved by re-pointing the checklist item at
-        LDGCRM_P3_Team_UUID__c instead. This script never wrote the field.
+        LDGCRM_P3_Team_UUID__c instead, which is why the divisor is still /9.
+        This script never wrote the field.
       - LDGCRM_Broker_App_Parent__c: a self-Lookup (Application -> Application).
         Deliberately NOT in the main upsert file - a first real load attempt
         (2026-08-12) confirmed Bulk API 2.0 does not resolve external-ID
