@@ -120,23 +120,83 @@ were active.
 
 ---
 
-## 2. Page layout assignment is manual, per profile
+## 2. Page layout assignment — the custom objects are fine, the shared ones are not
 
 **A permission set cannot assign a page layout. Only a profile can.** The three
 `LDGCRM_` permission sets grant object and field access, but a user still opens
 the record on whatever layout their profile already points at.
 
+A sandbox refresh copies production's profile layout assignments, so **whatever
+production has, Dev and QA now have.** That covers most of this — but not all of
+it. Measured in Dev (`peodv8dvn`) on 2026-09-09, for both
+`GSA Standard Salesforce User` and `GSA System Administrator`:
+
+| Layout | Assigned? |
+| --- | --- |
+| The six `LDGCRM_*` custom-object layouts | ✅ **Yes** — and complete, since those objects have no record types |
+| `Account-Federal` | ❌ No |
+| `Contact-Federal Contact Layout` | ❌ No |
+| `Contact-LDGCRM Federal Contact Layout` | ❌ No |
+| `Opportunity-Login%2Egov CRM` | ❌ No |
+
+**The split is not random.** Every layout that IS assigned belongs to an object we
+own outright. Every layout that is NOT belongs to **Account, Contact or
+Opportunity — the objects shared with FCIC and TTS OTCRM**, where the record type
+decides the layout and another app's assignment is already sitting there.
+
+The practical effect: a user opens a Federal Account or a Login.gov Opportunity
+and gets whatever layout that record type already points at, **not ours**. Nothing
+errors. The records are all present and correct; they are just displayed through
+the wrong layout.
+
+**What this check can and cannot tell you.** The retrieve above included only our
+ten layouts, so the profile reports assignments only among those. "Not assigned"
+therefore means precisely *our layout is not the one assigned* — it does not say
+which layout is. **The definitive test is opening one record of each type as a
+non-admin**, which is also the only test that catches a layout that exists but is
+missing fields.
+
+To fix, per profile, per record type:
 *Setup → Profiles → `<profile>` → Page Layout Assignment → Edit Assignment*
 
 **A profile is merged into the target's copy, not replaced**, so a green change set
-deployment does not mean the assignment arrived. **Verify by opening a record as a
-non-admin**, not by reading the profile.
+deployment does not mean an assignment arrived. And the four `GSA Standard *` /
+`GSA System Administrator` profiles are deliberately **not** in this repo (see the
+comment in [`sfdx/manifest/package.xml`](../../sfdx/manifest/package.xml)) — they
+were dropped from the production change set, so no change set we build will ever
+carry these assignments.
 
-Note the four `GSA Standard *` / `GSA System Administrator` profiles are
-deliberately **not** in this repo (see the comment in
-[`sfdx/manifest/package.xml`](../../sfdx/manifest/package.xml)) — they were dropped
-from the production change set, which makes this manual step more load-bearing,
-not less.
+### ⚠️ Checking this yourself: a Profile retrieved ALONE comes back empty
+
+The Metadata API reports a profile's settings **only for components included in
+the same retrieve**. Ask for the profile by itself and `layoutAssignments` is
+absent entirely — which looks identical to "no layouts are assigned" and will
+send you fixing a problem that may not exist.
+
+Retrieve the profile **and the layouts together**:
+
+```xml
+<types>
+    <members>GSA Standard Salesforce User</members>
+    <name>Profile</name>
+</types>
+<types>
+    <members>Account-Federal</members>
+    <!-- ...every layout you want an answer about... -->
+    <name>Layout</name>
+</types>
+```
+
+```powershell
+# From inside sfdx/. Writes to a scratch dir, so force-app/ is untouched.
+sf project retrieve start --manifest <that-file>.xml --target-org peodv8dvn `
+    --target-metadata-dir <scratch> --unzip
+```
+
+Then read `<layoutAssignments>` in the retrieved `.profile`. Note the layout name
+is URL-encoded in `package.xml` (`Opportunity-Login%2Egov CRM`) but appears
+**decoded** in the profile XML — compare on the decoded form or you will get false
+negatives.
 
 ---
 
