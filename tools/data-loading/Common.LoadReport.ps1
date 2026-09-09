@@ -693,7 +693,7 @@ function Write-LoadRunReport {
     Add-Line ("    <object>-*-failed-records.csv      rejected rows, with payloads")
     Add-Line ("    external-ids-*.csv                pre-run external IDs, required by a rollback")
     Add-Line ""
-    Add-Line "  Verification steps: docs/RELOAD-QA-CHECKLIST.md"
+    Add-Line "  Verification steps: archive/sprint_1_scripts.zip -> docs/RELOAD-QA-CHECKLIST.md"
     Add-Line ""
 
     $Text = ($Out -join [Environment]::NewLine)

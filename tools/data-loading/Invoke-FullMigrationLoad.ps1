@@ -2146,7 +2146,7 @@ if ($PlanOnly) {
     Write-Host "Restore point and baseline counts: $RunDirectory" -ForegroundColor DarkGray
 }
 else {
-    Write-Host "Verification steps: docs/RELOAD-QA-CHECKLIST.md" -ForegroundColor Cyan
+    Write-Host "Verification steps: archive/sprint_1_scripts.zip -> docs/RELOAD-QA-CHECKLIST.md" -ForegroundColor Cyan
 
     if ($Problems.Count -gt 0) { exit 1 }
 }
