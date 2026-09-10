@@ -6,15 +6,40 @@
     and writes the rows to a UTF-8 CSV.
 
         Invoke-LdgcrmNamedQuery.ps1
-            Runs ldgcrmPartnerPortalAdminQuery - every Partner Portal admin on
-            LDGCRM_Application_Contact__c. 1,089 rows in Dev on 2026-09-09.
+            Every Partner Portal admin on LDGCRM_Application_Contact__c.
+            1,089 rows in Dev on 2026-09-09.
 
-        Invoke-LdgcrmNamedQuery.ps1 -NamedQuery someOtherQuery
+        Invoke-LdgcrmNamedQuery.ps1 -NamedQuery ldgcrmApplicationContactsByTeamUuid -TeamUuid "abc-123"
 
-        Invoke-LdgcrmNamedQuery.ps1 -Parameters @{ teamUuid = "abc-123" }
+        Invoke-LdgcrmNamedQuery.ps1 -NamedQuery ldgcrmApplicationContactByEmail -Email "a@b.gov"
+
+        Invoke-LdgcrmNamedQuery.ps1 -NamedQuery ldgcrmApplicationContactsModifiedSince -ModifiedSince (Get-Date).AddDays(-1)
+
+        Invoke-LdgcrmNamedQuery.ps1 -NamedQuery someOtherQuery -Parameters @{ x = "y" }
 
         Invoke-LdgcrmNamedQuery.ps1 -List
             What named queries does this org have?
+
+    =========================================================================
+    ONE NAMED QUERY PER SCENARIO, NOT ONE QUERY WITH OPTIONAL FILTERS
+    =========================================================================
+    "If the Named Query API has multiple parameters, you must include all of
+    them as URI parameters." Every declared parameter is MANDATORY, there is no
+    way to write "ignore this one", and SOQL will not let a bind variable sit on
+    the left of a comparison - so ":teamUuid = 'ALL'" is not expressible either.
+
+    The only wildcard left is LIKE, and LIKE NEVER MATCHES NULL. Measured in Dev
+    on 2026-09-09: "LDGCRM_P3_Team_UUID__c LIKE '%'" returns 841 of the 1,089
+    admins, because 248 of them have no team. A single query with an optional-
+    looking team filter would drop 23% of the baseline in silence.
+
+    So each scenario gets its own named query, declaring exactly the parameters
+    its name implies. That is why the typed parameters below have NO defaults
+    and are sent only when passed: for any given query, most of them are wrong.
+
+    ** A PARAMETER THE QUERY DOES NOT DECLARE IS SILENTLY IGNORED. ** The guard
+    in Get-NamedQueryDeclaredParameter is what makes this design safe - without
+    it, aiming -TeamUuid at the wrong query returns every row and looks fine.
 
     =========================================================================
     THE ENDPOINT, AND WHY IT LOOKS LIKE IT DOES NOT EXIST
@@ -82,8 +107,29 @@ param(
     [Parameter(ParameterSetName = "Run")]
     [string]$NamedQuery = "ldgcrmPartnerPortalAdminQuery",
 
-    # Input parameters the named query declares, sent as URI query parameters.
-    # A named query may only parameterise its WHERE and LIMIT clauses.
+    # ---------------------------------------------------------------------
+    # The typed parameters below are sent ONLY when you pass them explicitly.
+    # ---------------------------------------------------------------------
+    # There are no defaults, and that is deliberate. Each named query declares
+    # exactly the parameters its name implies, so supplying one it does not
+    # declare is a mistake rather than a harmless extra - and Salesforce will
+    # not tell you, it just ignores it. The guard before the request checks what
+    # you passed against what the query actually declares, in both directions.
+
+    # ldgcrmApplicationContactsByTeamUuid
+    [Parameter(ParameterSetName = "Run")]
+    [string]$TeamUuid,
+
+    # ldgcrmApplicationContactByEmail
+    [Parameter(ParameterSetName = "Run")]
+    [string]$Email,
+
+    # ldgcrmApplicationContactsModifiedSince
+    [Parameter(ParameterSetName = "Run")]
+    [datetime]$ModifiedSince,
+
+    # Raw parameter values, for a named query this script knows nothing about.
+    # Entries here OVERRIDE anything the typed parameters above produced.
     [Parameter(ParameterSetName = "Run")]
     [hashtable]$Parameters = @{},
 
@@ -114,6 +160,86 @@ $ErrorActionPreference = "Stop"
 $ExitCode = 0
 
 . (Join-Path $PSScriptRoot "Common.PortalIntegration.ps1")
+
+
+function Get-NamedQueryDeclaredParameter {
+    <#
+        The :bind names the named query's own body declares, read from the org.
+
+        WHY THIS EXISTS. ** A URI PARAMETER A NAMED QUERY DOES NOT DECLARE IS
+        SILENTLY IGNORED. ** Not rejected, not warned about - dropped. Caught in
+        Dev on 2026-09-09: the query still had a hard-coded
+        "WHERE LGDCRM_P3_Partner_Portal_Admin__c = TRUE", this script sent five
+        parameters at it, and the call returned 1,089 rows and printed all five
+        as though they had been applied. A -TeamUuid run would have returned
+        every row in the org and looked exactly like a filtered one.
+
+        So the parameters this script sends are checked against the query that
+        will actually run, every time. Comparing counts would not catch it - an
+        ignored filter returns MORE rows, and more rows never looks like failure.
+
+        Needs ViewSetup, which the integration user now has for the named query
+        call itself, so this costs one extra request and no extra permission.
+
+        CONTRACT: returns a PSCustomObject with .Read (did we get the body?) and
+        .Names (an array, possibly empty).
+
+        IT IS AN OBJECT AND NOT AN ARRAY FOR A REASON. Returning a bare @()
+        unrolls to nothing on the way out of a function, so a caller testing
+        "$null -eq $result" cannot tell "the query declares no parameters" from
+        "the body could not be read". That is exactly what happened on the first
+        cut of this function: the body read fine, the old query declared zero
+        parameters, the empty array vanished, and the script reported it could
+        not reach the org. An object never unrolls.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$NamedQuery,
+
+        [Parameter(Mandatory = $true)]
+        [object]$Context
+    )
+
+    $Soql = "SELECT Body2 FROM ApiNamedQuery WHERE DeveloperName = '" + $NamedQuery + "'"
+    $Uri = $Context.DataBase + "/tooling/query?q=" + [uri]::EscapeDataString($Soql)
+
+    $Unread = [PSCustomObject]@{ Read = $false; Names = @() }
+    $Response = $null
+
+    try {
+        $Response = Invoke-RestMethod -Method Get -Uri $Uri -Headers $Context.Headers
+    }
+    catch {
+        return $Unread
+    }
+
+    $Rows = @($Response.records)
+
+    if ($Rows.Count -ne 1) {
+        return $Unread
+    }
+
+    $Body = [string]$Rows[0].Body2
+
+    if ([string]::IsNullOrWhiteSpace($Body)) {
+        return $Unread
+    }
+
+    # ":name" anywhere in the body. Salesforce has no datetime literal that
+    # would false-positive here, because a bind is the only use of a colon in
+    # SOQL outside a quoted string.
+    $Names = @()
+
+    foreach ($Match in [regex]::Matches($Body, ':([A-Za-z_][A-Za-z0-9_]*)')) {
+        $Name = $Match.Groups[1].Value
+
+        if ($Names -notcontains $Name) {
+            $Names += $Name
+        }
+    }
+
+    return [PSCustomObject]@{ Read = $true; Names = $Names }
+}
 
 # Discarded deliberately: Start-ToolLog returns the run's timestamp for naming
 # extra output files, and this script names its one CSV after the query instead.
@@ -196,12 +322,68 @@ try {
     # ---------------------------------------------------------------------
     $Uri = $Context.DataBase + "/named/query/" + $NamedQuery
 
-    if ($Parameters.Count -gt 0) {
+    # ONLY what the caller actually passed. $PSBoundParameters is the test, not
+    # "is it non-empty" - an explicit -Email "" is still a deliberate filter,
+    # and an omitted -TeamUuid must not become teamUuid="" and quietly match
+    # nothing. Nothing has a default, so nothing is sent by accident.
+    $Effective = @{}
+
+    # ** PARAMETER NAMES ARE LOWERCASE, AND SALESFORCE ENFORCES IT. ** A deploy
+    # carrying parameterName "teamUuid" is rejected with "must be lowercase", and
+    # a :teamUuid bind in the body is echoed back lowercased in error messages.
+    # So the SOQL bind, the parameterName and the URI parameter are all one
+    # lowercase word, and nothing here should camelCase them back.
+    if ($PSBoundParameters.ContainsKey("TeamUuid")) { $Effective["teamuuid"] = $TeamUuid }
+    if ($PSBoundParameters.ContainsKey("Email")) { $Effective["email"] = $Email }
+
+    if ($PSBoundParameters.ContainsKey("ModifiedSince")) {
+        # A datetime literal must carry an offset and NO fractional seconds.
+        # "o" emits seven of them (2026-09-09T00:00:00.0000000-04:00), which is
+        # not one of the literal forms the Named Query API documents.
+        $Effective["modifiedsince"] = $ModifiedSince.ToString("yyyy-MM-ddTHH:mm:sszzz")
+    }
+
+    foreach ($Key in $Parameters.Keys) {
+        $Effective[[string]$Key] = $Parameters[$Key]
+    }
+
+    # Prove the query declares what we are about to send. See
+    # Get-NamedQueryDeclaredParameter for why a count check cannot do this.
+    $Declared = Get-NamedQueryDeclaredParameter -NamedQuery $NamedQuery -Context $Context
+
+    if (-not $Declared.Read) {
+        Write-Warning ("Could not read " + $NamedQuery + "'s body from the org, so the parameters " +
+                       "below are UNVERIFIED. Salesforce ignores a parameter a named query does not " +
+                       "declare, so a filter may do nothing and the row count will not show it.")
+    }
+    else {
+        $DeclaredNames = @($Declared.Names)
+        $Ignored = @($Effective.Keys | Where-Object { $DeclaredNames -notcontains $_ })
+        $Unset = @($DeclaredNames | Where-Object { -not $Effective.ContainsKey($_) })
+
+        if ($Ignored.Count -gt 0) {
+            throw ("These parameters are not declared by '" + $NamedQuery + "' and Salesforce would " +
+                   "SILENTLY IGNORE them: " + (($Ignored | Sort-Object) -join ", ") + [Environment]::NewLine +
+                   "The query would run unfiltered and return MORE rows, which never looks like a" + [Environment]::NewLine +
+                   "failure. The query declares: " +
+                   $(if ($DeclaredNames.Count -eq 0) { "no parameters at all" } else { (($DeclaredNames | Sort-Object) -join ", ") }) + "." + [Environment]::NewLine +
+                   "Fix the query body in Setup > Integrations > Named Query API, or drop the" + [Environment]::NewLine +
+                   "parameters. scripts/docs/integration-user.md section 3 has the body to paste.")
+        }
+
+        if ($Unset.Count -gt 0) {
+            throw ("'" + $NamedQuery + "' declares parameters this run does not supply: " +
+                   (($Unset | Sort-Object) -join ", ") + [Environment]::NewLine +
+                   "Every parameter a named query declares is mandatory. Pass them with -Parameters.")
+        }
+    }
+
+    if ($Effective.Count -gt 0) {
         $Pairs = @()
 
-        foreach ($Key in $Parameters.Keys) {
+        foreach ($Key in $Effective.Keys) {
             $Pairs += ([uri]::EscapeDataString([string]$Key) + "=" +
-                       [uri]::EscapeDataString([string]$Parameters[$Key]))
+                       [uri]::EscapeDataString([string]$Effective[$Key]))
         }
 
         $Uri = $Uri + "?" + ($Pairs -join "&")
@@ -209,8 +391,8 @@ try {
 
     Write-Host ("Named Query : " + $NamedQuery)
 
-    if ($Parameters.Count -gt 0) {
-        Write-Host ("Parameters  : " + (($Parameters.Keys | Sort-Object) -join ", "))
+    foreach ($Key in ($Effective.Keys | Sort-Object)) {
+        Write-Host ("  " + $Key.PadRight(14) + " = " + $Effective[$Key])
     }
 
     Write-Host ""
@@ -255,7 +437,7 @@ try {
     # ---------------------------------------------------------------------
     # 6. Write
     # ---------------------------------------------------------------------
-    $Destination = Save-PortalRecordCsv -Records $Records -OutputName $NamedQuery -OutputPath $OutputPath
+    $null = Save-PortalRecordCsv -Records $Records -OutputName $NamedQuery -OutputPath $OutputPath
 
     if ($PassThru) {
         foreach ($Record in $Records) {

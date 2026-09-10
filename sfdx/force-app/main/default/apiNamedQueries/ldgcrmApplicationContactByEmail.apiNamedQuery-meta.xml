@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ApiNamedQuery xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <body2>SELECT Id, Name, LDGCRM_Email__c, LDGCRM_External_ID__c, LDGCRM_P3_Partner_Portal_Team_Name__c, LDGCRM_P3_Team_UUID__c, LGDCRM_P3_Partner_Portal_Admin__c, LDGCRM_contact__r.Name, LDGCRM_Application__r.Name, LastModifiedDate FROM LDGCRM_Application_Contact__c WHERE LDGCRM_Email__c = :email ORDER BY Name DESC</body2>
+    <description>Login.gov Partnership Portal Integration. Application Contacts for one email address. Returns MANY rows, not one - the same person appears once per Application they are on.</description>
+    <masterLabel>Login.gov Application Contacts - By Email</masterLabel>
+    <apiNamedQueryParameters>
+        <description>The contact email address to match exactly.</description>
+        <parameterLabel>Email</parameterLabel>
+        <parameterName>email</parameterName>
+    </apiNamedQueryParameters>
+</ApiNamedQuery>

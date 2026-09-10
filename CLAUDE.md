@@ -60,10 +60,35 @@ and check the profile before concluding anything is broken.
 
 **Do not promote metadata between orgs with `sf project deploy`.** Outbound/
 inbound change sets are the only sanctioned path, and the rule is strict (user,
-2026-08-13). From this repo, a CLI deploy is permitted for exactly one purpose:
-**DELETING corrupted or incorrect metadata.** Anything additive — a new field, a
-new picklist value, a new record-type assignment — goes in a change set, even
-when the change is obviously correct and even when it is only going to a sandbox.
+2026-08-13). From this repo, a CLI deploy is permitted for exactly two purposes:
+**DELETING corrupted or incorrect metadata**, and **`ApiNamedQuery`** (below).
+Anything else additive — a new field, a new picklist value, a new record-type
+assignment — goes in a change set, even when the change is obviously correct and
+even when it is only going to a sandbox.
+
+### `ApiNamedQuery` is CLI-deployed, on purpose (user, 2026-09-09)
+
+The Partner Portal's named queries are authored in
+`sfdx/force-app/main/default/apiNamedQueries/` and deployed with the CLI, in Dev
+and onward. They are the API contract the portal calls, they change with the
+client rather than with the data model, and **CLI setup is part of the production
+deploy** for them. Do not route them through a change set and do not ask someone
+to retype the SOQL into Setup.
+
+**Pin the manifest to 67.0 or the deploy fails while reporting success.**
+`ApiNamedQuery` does not exist below API 65.0 and `sourceApiVersion` is 64.0, so
+a `-m` or `-d` deploy generates a 64.0 manifest and dies with *"Entity type
+'ApiNamedQuery' is not available in this api version"* inside a run whose status
+still reads `Succeeded`. Deploy with an explicit manifest instead:
+
+```
+sf project deploy start --manifest <package.xml with version 67.0> \
+    --target-org <alias> --test-level NoTestRun
+```
+
+`tools/partnership_portal_integration/README.md` carries the component XML
+schema, which is not documented anywhere Salesforce publishes and took five
+failed deploys to establish.
 
 Practical consequence when something is blocked by missing metadata: **write down
 what needs adding and hand it to whoever builds the change set.** Do not "just
