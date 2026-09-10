@@ -159,35 +159,43 @@ sf data query --target-org peodv8dvn --query "SELECT Name, Label FROM Permission
 sf data query --target-org peodv8dvn --query "SELECT PermissionSet.Label FROM PermissionSetAssignment WHERE Assignee.Username = '<you>' AND PermissionSet.Name = 'Orgwide_Named_Query_Admin'"
 ```
 
-### API Catalog activation: required, and a CLI deploy appears to satisfy it
+### ⚠️ Activation is for AGENT ACTIONS. It does not gate REST, and it locks the query
 
-**A named query must be active in the API Catalog to be callable** (user,
-2026-09-09). What is NOT established is whether a CLI deploy leaves it active
-already.
+Settled by experiment on 2026-09-09, after two wrong answers in both directions.
 
-The evidence points that way. Four queries were deployed by CLI on 2026-09-09
-and answered over REST immediately, with nobody opening the API Catalog for
-them: `...All` returned 2,807 rows and `...ByTeamUuid` returned 10. Either the
-deploy activated them, or activation is not required for REST. **Both readings
-fit, and the org cannot distinguish them.**
+`ldgcrmApplicationContactsByEmail` was deployed by CLI and **nobody opened the
+API Catalog for it**. It returned 5 rows over REST, and a dry-run delete
+validated clean. So it was callable *and* unactivated at the same moment.
 
-**Activation state is not readable outside the UI.** `CatalogedApi` 404s on both
-the Tooling and data APIs, and `CatalogedApi`, `CatalogedApiVersion` and
-`CatalogedApiArtifactVersionInfo` list zero deployable components.
-`ApiNamedQuery` itself is `createable=false updateable=false deletable=false`
-with no active field, and the component XML carries no status element. So there
-is **no CLI command that activates one**, and no way to assert the state from a
-script either.
+| Query | Dry-run delete | Meaning |
+| --- | --- | --- |
+| `...ContactsByEmail`, CLI-deployed only | validates clean | **not activated**, yet answers over REST |
+| `...ContactByEmail`, activated in the UI | *"Cannot delete... It is activated as agent action"* | activated |
 
-Practical consequences, which do not depend on resolving the above:
+So: **a CLI deploy does not activate, and an unactivated query is callable.**
+Salesforce's own error names the purpose — *agent action* — matching the blog's
+"this activation does not have to be performed in order for the Named Query API
+to be used as a REST API."
 
-- **Deploying by CLI needs no separate activation step.** Those four were
-  callable the moment they deployed.
-- **A query created in Setup by hand may well need activating**, which is
-  consistent with the first one here being activated manually before it worked.
-- **Verify by calling it, not by reading a flag.** There is nothing to read.
-- Salesforce locks an activated query against editing until it is deactivated,
-  which is what blocked the first attempt to change a query body here.
+**Activating one costs you something.** It blocks deletion and editing until it
+is deactivated again, which is what stopped an earlier attempt to change a query
+body, and what left a duplicate in Dev that could not be cleaned up. Activate a
+query only when you actually want it as an Agentforce action.
+
+**There is no CLI command to activate or deactivate**, and no field to read.
+`CatalogedApi` 404s on both APIs, the three catalog metadata types list zero
+components, and `ApiNamedQuery` is `createable=false updateable=false
+deletable=false` with no active field.
+
+**But the state IS observable**, which is worth knowing because nothing else
+exposes it. A dry-run destructive deploy reports the refusal without deleting:
+
+```powershell
+# From inside sfdx/. Refuses => activated. Validates clean => not activated.
+sf project deploy start --manifest <empty 67.0 package.xml> `
+    --post-destructive-changes <manifest naming the query> `
+    --target-org peodv8dvn --test-level NoTestRun --dry-run
+```
 
 ### ⚠️ CALLING a Named Query needs `View Setup and Configuration`
 

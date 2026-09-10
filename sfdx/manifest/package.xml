@@ -21,7 +21,7 @@
          manifest's version is ever lowered, this type stops coming back and the
          retrieve will not say so. -->
     <types>
-        <members>ldgcrmApplicationContactByEmail</members>
+        <members>ldgcrmApplicationContactsByEmail</members>
         <members>ldgcrmApplicationContactsAll</members>
         <members>ldgcrmApplicationContactsByTeamUuid</members>
         <members>ldgcrmApplicationContactsModifiedSince</members>

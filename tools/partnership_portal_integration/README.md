@@ -43,7 +43,7 @@ gets one row shape whichever it calls. Counts measured in Dev on 2026-09-09.
 | `ldgcrmApplicationContactsPartnerAdminOnly` | none | 1,089 admins |
 | `ldgcrmApplicationContactsAll` | none | 2,807, everyone |
 | `ldgcrmApplicationContactsByTeamUuid` | `teamuuid` | one team |
-| `ldgcrmApplicationContactByEmail` | `email` | one person, once per Application |
+| `ldgcrmApplicationContactsByEmail` | `email` | one person, once per Application |
 | `ldgcrmApplicationContactsModifiedSince` | `modifiedsince` | changed at or after an instant |
 
 **Why not one query with optional filters.** Every declared parameter is

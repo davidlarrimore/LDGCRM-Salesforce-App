@@ -270,21 +270,36 @@ tools\partnership_portal_integration\Invoke-LdgcrmNamedQuery.ps1 `
     -NamedQuery ldgcrmApplicationContactsModifiedSince -ModifiedSince (Get-Date).AddDays(1)
 ```
 
-### Activation: no CLI command, and the deploy appears to handle it
+### ⚠️ Do NOT activate them, and do not put activation in the plan
 
-**A named query must be active in the API Catalog to be callable.** There is no
-CLI command that activates one, and no way to read the state from a script
-either: `CatalogedApi` 404s on both APIs, the three catalog metadata types list
-zero components, and `ApiNamedQuery` is `createable=false updateable=false
-deletable=false` with no active field.
+Activation in the API Catalog is for **Agentforce actions**. It does not gate
+REST, and it takes something away: an activated query **cannot be deleted or
+edited** until it is deactivated again.
 
-**A CLI deploy appears to leave them active.** The four deployed in Dev on
-2026-09-09 answered over REST immediately, with nobody opening the API Catalog.
-So a CLI-deployed query needs no separate activation step, while one created by
-hand in Setup may.
+Proved in Dev on 2026-09-09. `ldgcrmApplicationContactsByEmail` was deployed by
+CLI, nobody opened the API Catalog for it, it returned 5 rows over REST, and a
+dry-run delete validated clean — callable and unactivated at the same moment.
+The one query that *had* been activated refused deletion with *"Cannot delete
+Named Query... It is activated as agent action."*
 
-Do not try to verify this by reading a flag — there is none. **Call the query.**
-The checks below are the verification.
+That refusal already cost this project a stranded duplicate in Dev. **Adding an
+activation step to a production runbook would make every named query in
+production undeletable and uneditable, for no gain.**
+
+There is no CLI command to activate or deactivate, and no field to read.
+`CatalogedApi` 404s on both APIs, the catalog metadata types list zero
+components, and `ApiNamedQuery` is `createable=false updateable=false
+deletable=false` with no active field. If you ever need to know a query's state,
+a **dry-run destructive deploy** is the only way to ask:
+
+```powershell
+sf project deploy start --manifest <empty 67.0 package.xml> `
+    --post-destructive-changes <manifest naming the query> `
+    --target-org <alias> --test-level NoTestRun --dry-run
+```
+
+Refuses means activated. Validates clean means not. Nothing is deleted either
+way. Otherwise, verify a query by **calling** it — the checks below.
 
 ### What will bite in production specifically
 

@@ -11,7 +11,7 @@
 
         Invoke-LdgcrmNamedQuery.ps1 -NamedQuery ldgcrmApplicationContactsByTeamUuid -TeamUuid "abc-123"
 
-        Invoke-LdgcrmNamedQuery.ps1 -NamedQuery ldgcrmApplicationContactByEmail -Email "a@b.gov"
+        Invoke-LdgcrmNamedQuery.ps1 -NamedQuery ldgcrmApplicationContactsByEmail -Email "a@b.gov"
 
         Invoke-LdgcrmNamedQuery.ps1 -NamedQuery ldgcrmApplicationContactsModifiedSince -ModifiedSince (Get-Date).AddDays(-1)
 
@@ -108,7 +108,26 @@ param(
     # It defaults to the admin query because that one declares NO parameters, so
     # a zero-argument run still means something. Every other query in the set
     # needs its parameter passed.
+    #
+    # TAB-COMPLETES, rather than validating. A ValidateSet would be typo-proof
+    # but would also reject any query added to the org after this file was last
+    # edited, which is exactly the thing a generic runner must not do. The
+    # completer suggests; the org decides. A wrong name is caught before the
+    # call and answered with the list of real ones.
     [Parameter(ParameterSetName = "Run")]
+    [ArgumentCompleter({
+        param($CommandName, $ParameterName, $WordToComplete, $CommandAst, $FakeBoundParameters)
+
+        # Static, and deliberately so: a completer that called Salesforce would
+        # put a network round trip behind the Tab key.
+        @(
+            "ldgcrmApplicationContactsPartnerAdminOnly"
+            "ldgcrmApplicationContactsAll"
+            "ldgcrmApplicationContactsByTeamUuid"
+            "ldgcrmApplicationContactsByEmail"
+            "ldgcrmApplicationContactsModifiedSince"
+        ) | Where-Object { $_ -like "$WordToComplete*" }
+    })]
     [string]$NamedQuery = "ldgcrmApplicationContactsPartnerAdminOnly",
 
     # ---------------------------------------------------------------------
@@ -124,7 +143,7 @@ param(
     [Parameter(ParameterSetName = "Run")]
     [string]$TeamUuid,
 
-    # ldgcrmApplicationContactByEmail
+    # ldgcrmApplicationContactsByEmail
     [Parameter(ParameterSetName = "Run")]
     [string]$Email,
 
@@ -185,8 +204,12 @@ function Get-NamedQueryDeclaredParameter {
         Needs ViewSetup, which the integration user now has for the named query
         call itself, so this costs one extra request and no extra permission.
 
-        CONTRACT: returns a PSCustomObject with .Read (did we get the body?) and
-        .Names (an array, possibly empty).
+        CONTRACT: returns a PSCustomObject with .Read (did the org answer?),
+        .Found (does a query of this name exist?) and .Names (an array, possibly
+        empty). .Read false means the request failed; .Read true with .Found
+        false means the org answered and has no such query, which is a typo and
+        should be reported with the list of real names rather than as a failure
+        to reach the org.
 
         IT IS AN OBJECT AND NOT AN ARRAY FOR A REASON. Returning a bare @()
         unrolls to nothing on the way out of a function, so a caller testing
@@ -207,7 +230,7 @@ function Get-NamedQueryDeclaredParameter {
     $Soql = "SELECT Body2 FROM ApiNamedQuery WHERE DeveloperName = '" + $NamedQuery + "'"
     $Uri = $Context.DataBase + "/tooling/query?q=" + [uri]::EscapeDataString($Soql)
 
-    $Unread = [PSCustomObject]@{ Read = $false; Names = @() }
+    $Unread = [PSCustomObject]@{ Read = $false; Found = $false; Names = @() }
     $Response = $null
 
     try {
@@ -218,6 +241,11 @@ function Get-NamedQueryDeclaredParameter {
     }
 
     $Rows = @($Response.records)
+
+    # The org answered and has no query by this name. A typo, not a failure.
+    if ($Rows.Count -eq 0) {
+        return [PSCustomObject]@{ Read = $true; Found = $false; Names = @() }
+    }
 
     if ($Rows.Count -ne 1) {
         return $Unread
@@ -242,7 +270,34 @@ function Get-NamedQueryDeclaredParameter {
         }
     }
 
-    return [PSCustomObject]@{ Read = $true; Names = $Names }
+    return [PSCustomObject]@{ Read = $true; Found = $true; Names = $Names }
+}
+
+
+function Get-NamedQueryName {
+    <#
+        Every named query API name in the org, for tab completion and for telling
+        someone what they could have typed.
+
+        CONTRACT: returns a plain array, empty if the org cannot be reached. It is
+        a convenience, so it NEVER throws - a completer that threw would break
+        tab-completion in a way that looks like the shell is broken.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Context
+    )
+
+    $Soql = "SELECT DeveloperName FROM ApiNamedQuery ORDER BY DeveloperName"
+    $Uri = $Context.DataBase + "/tooling/query?q=" + [uri]::EscapeDataString($Soql)
+
+    try {
+        $R = Invoke-RestMethod -Method Get -Uri $Uri -Headers $Context.Headers
+        return @($R.records | ForEach-Object { $_.DeveloperName })
+    }
+    catch {
+        return @()
+    }
 }
 
 # Discarded deliberately: Start-ToolLog returns the run's timestamp for naming
@@ -354,6 +409,22 @@ try {
     # Prove the query declares what we are about to send. See
     # Get-NamedQueryDeclaredParameter for why a count check cannot do this.
     $Declared = Get-NamedQueryDeclaredParameter -NamedQuery $NamedQuery -Context $Context
+
+    if ($Declared.Read -and -not $Declared.Found) {
+        # The org answered and has nothing by this name. Say what it does have,
+        # rather than letting the call fail later on a resolution error that
+        # reads like a permission problem.
+        $Available = @(Get-NamedQueryName -Context $Context)
+
+        throw ("No named query called '" + $NamedQuery + "' exists in " +
+               $Context.Environment.Label + "." + [Environment]::NewLine +
+               $(if ($Available.Count -eq 0) {
+                     "The org returned no named queries at all."
+                 } else {
+                     "It has:" + [Environment]::NewLine + "  " + ($Available -join ([Environment]::NewLine + "  "))
+                 }) + [Environment]::NewLine +
+               "Pass the API NAME, not the label. -List prints these with their labels.")
+    }
 
     if (-not $Declared.Read) {
         Write-Warning ("Could not read " + $NamedQuery + "'s body from the org, so the parameters " +
