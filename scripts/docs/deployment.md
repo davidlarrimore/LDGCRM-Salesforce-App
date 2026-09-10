@@ -223,7 +223,7 @@ change set means one of the four landed.
 | Component | How it travels | Notes |
 | --- | --- | --- |
 | `LDGCRM_Partnership_Portal_API_R` | **Change set** | Must carry `LDGCRM_Issuer_String__c` too, or it fails on the missing object reference. Production does not have that object |
-| The five `ApiNamedQuery` components | **CLI deploy** | The documented exception in CLAUDE.md. Below |
+| The six `ApiNamedQuery` components | **CLI deploy** | The documented exception in CLAUDE.md. Below |
 | The External Client App | **By hand** | Consumer key and secret are per-org and are not metadata |
 | The integration user, its licence, its two permission-set assignments | **By hand** | `integration-user.md`. None of it is metadata |
 
@@ -233,7 +233,7 @@ change set means one of the four landed.
 `sourceApiVersion` is 64.0, so a `-m` or `-d` deploy builds a 64.0 manifest and
 fails with *"Entity type 'ApiNamedQuery' is not available in this api version"*
 **inside a run whose status reads `Succeeded`**. Write a manifest listing the
-five members with `<version>67.0</version>` and deploy that:
+six members with `<version>67.0</version>` and deploy that:
 
 ```powershell
 # From inside sfdx/.
@@ -250,13 +250,23 @@ document's other sections apply here: a per-component failure hides inside a
 ### Verifying it, in the order that isolates a failure
 
 ```powershell
-# 1. The queries exist in the target org.
+# 1. The queries exist in the target org. Expect 6.
 sf data query --use-tooling-api --target-org <alias> `
     --query "SELECT DeveloperName FROM ApiNamedQuery ORDER BY DeveloperName"
 
 # 2. The integration user can CALL one. This is the step that needs ViewSetup.
 tools\partnership_portal_integration\Invoke-LdgcrmNamedQuery.ps1 -List
 tools\partnership_portal_integration\Invoke-LdgcrmNamedQuery.ps1
+```
+
+**The portal's main lookup is the one to prove**, and proving it needs two
+counts, not one. Run it for a team you know, then run
+`...ByTeamUuid` for the same team. In Dev those are **4 and 10**. Equal numbers
+mean the admin filter is doing nothing; 1,089 means the team filter is.
+
+```powershell
+tools\partnership_portal_integration\Invoke-LdgcrmNamedQuery.ps1 `
+    -NamedQuery ldgcrmApplicationContactsPartnerAdminByTeamUuid -TeamUuid <a real team>
 ```
 
 **A count alone does not prove a parameterised query works.** A parameter the
