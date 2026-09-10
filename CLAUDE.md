@@ -100,6 +100,26 @@ not it was reviewed.
 (user, 2026-08-17). They deploy via the Salesforce CLI from their own GitHub
 repository, using the component set that originates as a change set built in Dev.
 
+### ⚠️ Two traps that hide over-broad PERMISSION SET access
+
+Both bit on 2026-09-09 while cutting `LDGCRM_Partnership_Portal_API_R` down.
+
+- **`fieldPermissions` MERGE on deploy. Omitting one does not remove it.** Same
+  behaviour as a Profile. Deploying a permission set with 72 field grants left
+  the org holding **148** — the deploy added and changed, and silently kept
+  everything it was not told about. **To revoke a field, deploy it explicitly
+  with `readable=false` and `editable=false`**; deleting the node achieves
+  nothing. The tell is a retrieve that comes back bigger than the file you sent.
+- **`viewAllFields=true` HIDES per-field FLS from a retrieve.** While that flag
+  was on, Account and Contact showed *zero* `fieldPermissions` in the retrieved
+  file. Turning it off exposed **75 grants that had been there all along** (34
+  Account, 41 Contact). So "the file lists no field permissions for this object"
+  is not evidence that none are granted — check `viewAllFields` first.
+
+**Verify a permission change by RETRIEVING, never by the deploy's own success.**
+The deploy reported `Succeeded` with `numberComponentsDeployed: 1` both times,
+including the one that left 76 unwanted grants in place.
+
 Traps worth knowing before touching picklists:
 
 - **A metadata deploy cannot delete a picklist value — it deactivates it**
