@@ -278,6 +278,18 @@ function Get-PortalApiContext {
     }
 
     Write-Host "Token acquired."
+
+    # The granted scopes, which Salesforce returns and this used to discard. They
+    # are the one request-side difference between this caller and an admin's
+    # session token, so a failure that depends on WHO called needs them on the
+    # record. Not PII - a scope list, not a row.
+    if (-not [string]::IsNullOrWhiteSpace($Token.scope)) {
+        Write-Host ("Granted scopes: " + $Token.scope)
+    }
+    else {
+        Write-Host "Granted scopes: (none reported)"
+    }
+
     Write-Host ""
 
     return [PSCustomObject]@{

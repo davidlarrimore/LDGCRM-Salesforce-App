@@ -72,12 +72,16 @@ Assign the **Salesforce API Integration** permission set license **before** the
 permission set. Not because it is tidier — because the permission set cannot be
 assigned without it.
 
-`LDGCRM_Partnership_Portal_API_R` grants two user permissions:
+`LDGCRM_Partnership_Portal_API_R` grants four user permissions:
 
 ```xml
 <userPermissions><enabled>true</enabled><name>ApiEnabled</name></userPermissions>
 <userPermissions><enabled>true</enabled><name>ApiUserOnly</name></userPermissions>
+<userPermissions><enabled>true</enabled><name>ViewRoles</name></userPermissions>
+<userPermissions><enabled>true</enabled><name>ViewSetup</name></userPermissions>
 ```
+
+The last two are what let the integration call a Named Query — section 3.
 
 **`ApiUserOnly` is the one that is gated.** It is the permission that makes a user
 API-only, and Salesforce will only grant it to a user who already holds the
@@ -155,37 +159,70 @@ sf data query --target-org peodv8dvn --query "SELECT Name, Label FROM Permission
 sf data query --target-org peodv8dvn --query "SELECT PermissionSet.Label FROM PermissionSetAssignment WHERE Assignee.Username = '<you>' AND PermissionSet.Name = 'Orgwide_Named_Query_Admin'"
 ```
 
-### ⚠️ CALLING a Named Query also needs more than section 4 grants
+### API Catalog activation is a manual per-org step, and it is NOT what gates the call
 
-Measured 2026-09-09, after `ldgcrmPartnerPortalAdminQuery` existed. Same URL,
-same API version, same moment — only the caller differs:
+Activating a Named Query in the **API Catalog** (*Setup → Integrations*) is a
+separate manual act, done once per org. Worth doing, and worth writing down,
+because **the component cannot carry it**:
+[`ldgcrmPartnerPortalAdminQuery.apiNamedQuery-meta.xml`](../../sfdx/force-app/main/default/apiNamedQueries/ldgcrmPartnerPortalAdminQuery.apiNamedQuery-meta.xml)
+holds four elements — `apiVersion`, `body2`, `description`, `masterLabel` — and
+no status, active or published element of any kind. So a retrieve cannot record
+the activation, a change set cannot deliver it, a `sf project deploy` cannot
+either, and a sandbox refresh has nothing to restore it from. It joins sections
+1, 2 and 3 on the list of things every org has to have done in it separately.
 
-| Caller | `GET /services/data/v67.0/named/query/ldgcrmPartnerPortalAdminQuery` |
-| --- | --- |
-| An administrator, via `sf api request rest` | **1,089 records** |
-| `ldgcrm_p3_integration`, via client credentials | **400 `INVALID_FIELD`** |
+**Activation is not what lets a caller run one.** Salesforce's developer blog says
+so directly: activation is for **agent action use**, and *"this activation does
+not have to be performed in order for the Named Query API to be used as a REST
+API."* An administrator read 1,089 rows from `ldgcrmPartnerPortalAdminQuery`
+while it was still unactivated.
 
-So read access to `LDGCRM_Application_Contact__c` is **not** sufficient to call a
-Named Query over it. `LDGCRM_Partnership_Portal_API_R` grants that read and the
-integration user still cannot resolve the name.
+### ⚠️ CALLING a Named Query needs `View Setup and Configuration`
 
-**What it needs instead is not yet established.** `Orgwide - Named Query - Admin`
-is the only permission set in the org whose label mentions Named Query, so it is
-the obvious candidate — but it is named *Admin*, and section 2's whole argument is
-that this user's reach should stay minimal and fully described by its permission
-set. Granting an admin permission set to an API-only integration user deserves a
-decision, not an assumption. **Until that is settled, the Partner Portal should
-call the ordinary query resource**, which this user can already do:
+The REST API guide's *Named Query API* page states it under User Permissions
+Needed:
 
-```powershell
-tools\partnership_portal_integration\Invoke-LdgcrmSalesforceQuery.ps1 -Object LDGCRM_Application_Contact__c
-```
+> To execute a Named Query API: **View Setup and Configuration**
 
-`tools\partnership_portal_integration\Invoke-LdgcrmNamedQuery.ps1` is the
-named-query path, ready for the day the grant above is settled. It fails today
-against this user, by design rather than by accident: its error handler
-recognises that `INVALID_FIELD` body specifically and says the caller's
-permissions are the likely cause, rather than reporting a schema fault.
+`ApiNamedQuery` is a setup entity. Salesforce resolves the query name by
+querying it **as the caller**, and reports an entity the caller cannot see as a
+column that does not exist — so a caller without this permission gets
+`400 INVALID_FIELD` describing a schema fault that is not there. Read access on
+the object the query SELECTs from governs which **rows** come back, not who may
+**call**.
+
+**Enabling it grants two permissions, not one.** Salesforce adds `ViewRoles`
+("View Roles and Role Hierarchy") alongside `ViewSetup`; both came back in the
+retrieve. Section 1 lists all four the permission set now carries.
+
+In Dev, `ldgcrm_p3_integration` calls the named query successfully — 1,089
+records, matching what an administrator gets from the same endpoint. Any other
+org needs the permission set to arrive **in a change set**, per CLAUDE.md, never
+a CLI deploy.
+
+### ⚠️ That grant widens the integration beyond what section 2 promises
+
+`ViewSetup` and `ViewRoles` are not object access, so **section 4's table is no
+longer the whole answer to "what can the portal see?"**. The user can read Setup
+— the org's configuration metadata, including FCIC's and TTS OTCRM's — and the
+role hierarchy.
+
+It is Salesforce's documented requirement, not a workaround, and there is no
+narrower grant to choose. **Flag it whenever the integration's scope is
+reviewed.** It is still far less than `Orgwide - Named Query - Admin`.
+
+If configuration exposure is ever judged unacceptable, the fallback is
+`Invoke-LdgcrmSalesforceQuery.ps1`, which reads the same rows on the same token
+and needs neither permission.
+
+### Do not conclude a permission is undocumented from the blog alone
+
+Salesforce's developer blog and every community write-up say only that "the user
+that executes the API request must have read access to the entity being queried."
+That is true and it is not the whole requirement. The `User Permissions Needed`
+table lives on the **reference** page, and the two together are the answer —
+which is why this looked undocumented for a day. **Check the reference page's
+permissions table before concluding a permission does not exist.**
 
 **It is a permission set ASSIGNMENT, so it does not travel and does not survive.**
 A change set cannot carry it, and a sandbox refresh drops it along with
@@ -359,6 +396,7 @@ the field, which no longer exists in Dev, and it does not join the new object.
 | The **permission set license** assignment | ❌ No. It is a user assignment, not metadata |
 | The **permission set** assignment to the user | ❌ No. Same reason |
 | The **Orgwide - Named Query - Admin** assignment on the admin | ❌ No. Section 3 |
+| The Named Query's **API Catalog activation** | ❌ No. The component has no element for it. Section 3 |
 | `LDGCRM_Issuer_String__c` | ⚠️ Must be in the same change set — production does not have it. Section 5 |
 
 So a green change set deployment means the permission set arrived. It does not

@@ -96,6 +96,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Set by the catch below and returned after the transcript closes. See the note
+# there: re-throwing printed every failure three times.
+$ExitCode = 0
+
 . (Join-Path $PSScriptRoot "Common.PortalIntegration.ps1")
 
 
@@ -216,8 +220,12 @@ catch {
     Write-Host ""
     Write-Host $_.Exception.Message
 
-    throw
+    # exit code, NOT re-throw. Re-throwing printed the same message a second
+    # time as the error record and a third inside FullyQualifiedErrorId.
+    $ExitCode = 1
 }
 finally {
     Stop-ToolLog
 }
+
+exit $ExitCode

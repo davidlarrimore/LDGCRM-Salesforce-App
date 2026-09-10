@@ -107,6 +107,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Set by the catch below and returned after the transcript closes, so a failure
+# is reported once as text and once as an exit code, rather than three times as
+# a PowerShell error record. Exiting from inside the try would skip nothing -
+# finally still runs - but this keeps the one exit in one place.
+$ExitCode = 0
+
 . (Join-Path $PSScriptRoot "Common.PortalIntegration.ps1")
 
 # Discarded deliberately: Start-ToolLog returns the run's timestamp for naming
@@ -218,35 +224,29 @@ try {
         param($Detail)
 
         if ($Detail -match "ApiNamedQuery" -or $Detail -match "NOT_FOUND" -or $Detail -match "INVALID_QUERY") {
-            throw ("The named query '" + $NamedQuery + "' could not be resolved." + [Environment]::NewLine +
+            # SIX LINES, ON PURPOSE. This message used to run to thirty, and
+            # PowerShell prints a thrown string THREE TIMES - once here, once as
+            # the error record, once inside FullyQualifiedErrorId - so thirty
+            # lines arrived as ninety and buried the one line that mattered.
+            # The reasoning lives in the doc; the console gets the verdict.
+            throw ("Named query '" + $NamedQuery + "' did not resolve FOR THIS CALLER." + [Environment]::NewLine +
                    $Detail + [Environment]::NewLine +
                    [Environment]::NewLine +
-                   "IF THAT SAYS `"No such column 'DeveloperName' on entity 'ApiNamedQuery'`", the" + [Environment]::NewLine +
-                   "most likely cause is THE CALLER'S PERMISSIONS, not the query and not the org." + [Environment]::NewLine +
+                   "THE CALLER IS MISSING 'View Setup and Configuration'. Salesforce's REST API" + [Environment]::NewLine +
+                   "guide lists it under User Permissions Needed: 'To execute a Named Query API:" + [Environment]::NewLine +
+                   "View Setup and Configuration'. Read access on the queried object governs" + [Environment]::NewLine +
+                   "which ROWS come back, not who may CALL - which is why the blog's 'just needs" + [Environment]::NewLine +
+                   "read access' is true and still not enough." + [Environment]::NewLine +
                    [Environment]::NewLine +
-                   "Measured against PEOdV8DVn on 2026-09-09: this exact body came back for the" + [Environment]::NewLine +
-                   "client-credentials integration user, minutes after the SAME endpoint and the" + [Environment]::NewLine +
-                   "SAME query name returned 1,089 rows for an administrator. Salesforce resolves" + [Environment]::NewLine +
-                   "the name by querying ApiNamedQuery internally; a caller who cannot see that" + [Environment]::NewLine +
-                   "entity gets the lookup's own failure reported as a SCHEMA error." + [Environment]::NewLine +
+                   "That SOQL above is Salesforce's, not ours: it resolves the name by querying" + [Environment]::NewLine +
+                   "ApiNamedQuery, a SETUP entity, as whoever called - and reports an entity the" + [Environment]::NewLine +
+                   "caller cannot see as a column that does not exist." + [Environment]::NewLine +
                    [Environment]::NewLine +
-                   "So this body means 'the name did not resolve FOR YOU'. It does NOT mean the" + [Environment]::NewLine +
-                   "feature is off, and it does NOT mean the table is empty - though an empty" + [Environment]::NewLine +
-                   "table produces the identical message, which is how it was misread once before." + [Environment]::NewLine +
-                   [Environment]::NewLine +
-                   "Read access on the object the query SELECTs from is NOT sufficient: the" + [Environment]::NewLine +
-                   "integration user holds exactly that, via LDGCRM_Partnership_Portal_API_R, and" + [Environment]::NewLine +
-                   "still cannot call this. What the run-as user needs instead is not established;" + [Environment]::NewLine +
-                   "'Orgwide - Named Query - Admin' is the obvious candidate and granting an admin" + [Environment]::NewLine +
-                   "permission set to an API-only user is a decision, not an assumption. See" + [Environment]::NewLine +
+                   "FIX: add ViewSetup to LDGCRM_Partnership_Portal_API_R. That is additive" + [Environment]::NewLine +
+                   "metadata, so it travels in a CHANGE SET, not a CLI deploy. It also widens the" + [Environment]::NewLine +
+                   "integration's reach past what section 4 of the doc describes - read it first." + [Environment]::NewLine +
                    "scripts/docs/integration-user.md section 3." + [Environment]::NewLine +
-                   [Environment]::NewLine +
-                   "Otherwise check the spelling, and that you passed the API NAME not the label:" + [Environment]::NewLine +
-                   "  API name  ldgcrmPartnerPortalAdminQuery   <- what this wants" + [Environment]::NewLine +
-                   "  Label     Login.gov Partner Portal Admin Query" + [Environment]::NewLine +
-                   [Environment]::NewLine +
-                   "USE Invoke-LdgcrmSalesforceQuery.ps1 to read the same rows today. It reads" + [Environment]::NewLine +
-                   "them through the ordinary query resource, which this user can already do.")
+                   "Reads the same rows meanwhile: Invoke-LdgcrmSalesforceQuery.ps1")
         }
     }
 
@@ -270,8 +270,14 @@ catch {
     Write-Host ""
     Write-Host $_.Exception.Message
 
-    throw
+    # exit 1, NOT re-throw. Re-throwing printed the whole message a second time
+    # as the error record and a third inside FullyQualifiedErrorId, on top of
+    # the Write-Host above. The exit code still says the run failed, the finally
+    # below still closes the transcript, and the operator reads it once.
+    $ExitCode = 1
 }
 finally {
     Stop-ToolLog
 }
+
+exit $ExitCode
