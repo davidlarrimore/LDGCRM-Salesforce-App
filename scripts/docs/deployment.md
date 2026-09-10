@@ -270,6 +270,21 @@ tools\partnership_portal_integration\Invoke-LdgcrmNamedQuery.ps1 `
     -NamedQuery ldgcrmApplicationContactsModifiedSince -ModifiedSince (Get-Date).AddDays(1)
 ```
 
+### There is NO activation step. Do not add one
+
+The API Catalog's *Activate* is for **agent actions**, not REST, and adding it to
+this plan would be ceremony. Measured in Dev on 2026-09-09: the four queries
+deployed by CLI were never activated and all four answer, and `CatalogedApi`,
+`CatalogedApiVersion` and `CatalogedApiArtifactVersionInfo` hold **zero
+components** in the org.
+
+There is also no CLI command that could do it. Activation leaves no deployable
+artefact, and `ApiNamedQuery` is `createable=false updateable=false
+deletable=false` through the Tooling API with no active field, so neither a
+deploy nor `sf data update record` reaches it. Activate a query only if you want
+it as an agent action, in which case Salesforce locks it against editing until
+you deactivate it again.
+
 ### What will bite in production specifically
 
 - **`LDGCRM_Issuer_String__c` does not exist there.** The permission set grants
