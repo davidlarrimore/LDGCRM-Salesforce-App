@@ -35,16 +35,26 @@ carries that caveat.
 
 ## The named queries
 
-One query per scenario. All five return the **same ten columns**, so the portal
-gets one row shape whichever it calls. Counts measured in Dev on 2026-09-09.
+One query per scenario. All six return the **same ten columns**, so the portal
+gets one row shape whichever it calls. Counts measured in Dev on 2026-09-09
+against team `3029c972-...`, which has 10 contacts of whom 4 are admins.
 
 | API name | Parameter | Rows |
 | --- | --- | --- |
-| `ldgcrmApplicationContactsPartnerAdminOnly` | none | 1,089 admins |
+| `ldgcrmApplicationContactsPartnerAdminByTeamUuid` | `teamuuid` | **4** — the portal's main lookup |
+| `ldgcrmApplicationContactsPartnerAdminOnly` | none | 1,089 admins, every team |
 | `ldgcrmApplicationContactsAll` | none | 2,807, everyone |
-| `ldgcrmApplicationContactsByTeamUuid` | `teamuuid` | one team |
-| `ldgcrmApplicationContactsByEmail` | `email` | one person, once per Application |
+| `ldgcrmApplicationContactsByTeamUuid` | `teamuuid` | 10 — a team's whole roster |
+| `ldgcrmApplicationContactsByEmail` | `email` | 5 — one row per Application |
 | `ldgcrmApplicationContactsModifiedSince` | `modifiedsince` | changed at or after an instant |
+
+**The two team queries are not interchangeable**: 4 admins against a 10-person
+roster. The admin flag in `...PartnerAdminByTeamUuid` is hardcoded `TRUE` rather
+than parameterised, so the portal's main lookup cannot accidentally return
+non-admins.
+
+Those two numbers are also what makes the pair testable. If the admin query ever
+returns 10 its admin filter is dead; if it returns 1,089 its team filter is.
 
 **Why not one query with optional filters.** Every declared parameter is
 mandatory, and SOQL will not let a bind sit on the left of a comparison, so

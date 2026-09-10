@@ -9,6 +9,10 @@
             Every Partner Portal admin on LDGCRM_Application_Contact__c.
             1,089 rows in Dev on 2026-09-09.
 
+        Invoke-LdgcrmNamedQuery.ps1 -NamedQuery ldgcrmApplicationContactsPartnerAdminByTeamUuid -TeamUuid "abc-123"
+            THE PORTAL'S MAIN LOOKUP: the ADMINS on one team. Not the same as
+            ...ByTeamUuid, which is that team's whole roster.
+
         Invoke-LdgcrmNamedQuery.ps1 -NamedQuery ldgcrmApplicationContactsByTeamUuid -TeamUuid "abc-123"
 
         Invoke-LdgcrmNamedQuery.ps1 -NamedQuery ldgcrmApplicationContactsByEmail -Email "a@b.gov"
@@ -121,6 +125,7 @@ param(
         # Static, and deliberately so: a completer that called Salesforce would
         # put a network round trip behind the Tab key.
         @(
+            "ldgcrmApplicationContactsPartnerAdminByTeamUuid"
             "ldgcrmApplicationContactsPartnerAdminOnly"
             "ldgcrmApplicationContactsAll"
             "ldgcrmApplicationContactsByTeamUuid"

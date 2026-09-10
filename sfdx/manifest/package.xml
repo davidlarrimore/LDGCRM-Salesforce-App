@@ -25,6 +25,7 @@
         <members>ldgcrmApplicationContactsAll</members>
         <members>ldgcrmApplicationContactsByTeamUuid</members>
         <members>ldgcrmApplicationContactsModifiedSince</members>
+        <members>ldgcrmApplicationContactsPartnerAdminByTeamUuid</members>
         <members>ldgcrmApplicationContactsPartnerAdminOnly</members>
         <name>ApiNamedQuery</name>
     </types>
