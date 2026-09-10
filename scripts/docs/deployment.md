@@ -270,20 +270,21 @@ tools\partnership_portal_integration\Invoke-LdgcrmNamedQuery.ps1 `
     -NamedQuery ldgcrmApplicationContactsModifiedSince -ModifiedSince (Get-Date).AddDays(1)
 ```
 
-### There is NO activation step. Do not add one
+### Activation: no CLI command, and the deploy appears to handle it
 
-The API Catalog's *Activate* is for **agent actions**, not REST, and adding it to
-this plan would be ceremony. Measured in Dev on 2026-09-09: the four queries
-deployed by CLI were never activated and all four answer, and `CatalogedApi`,
-`CatalogedApiVersion` and `CatalogedApiArtifactVersionInfo` hold **zero
-components** in the org.
+**A named query must be active in the API Catalog to be callable.** There is no
+CLI command that activates one, and no way to read the state from a script
+either: `CatalogedApi` 404s on both APIs, the three catalog metadata types list
+zero components, and `ApiNamedQuery` is `createable=false updateable=false
+deletable=false` with no active field.
 
-There is also no CLI command that could do it. Activation leaves no deployable
-artefact, and `ApiNamedQuery` is `createable=false updateable=false
-deletable=false` through the Tooling API with no active field, so neither a
-deploy nor `sf data update record` reaches it. Activate a query only if you want
-it as an agent action, in which case Salesforce locks it against editing until
-you deactivate it again.
+**A CLI deploy appears to leave them active.** The four deployed in Dev on
+2026-09-09 answered over REST immediately, with nobody opening the API Catalog.
+So a CLI-deployed query needs no separate activation step, while one created by
+hand in Setup may.
+
+Do not try to verify this by reading a flag — there is none. **Call the query.**
+The checks below are the verification.
 
 ### What will bite in production specifically
 

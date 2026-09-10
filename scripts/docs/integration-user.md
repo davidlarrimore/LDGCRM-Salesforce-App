@@ -159,32 +159,35 @@ sf data query --target-org peodv8dvn --query "SELECT Name, Label FROM Permission
 sf data query --target-org peodv8dvn --query "SELECT PermissionSet.Label FROM PermissionSetAssignment WHERE Assignee.Username = '<you>' AND PermissionSet.Name = 'Orgwide_Named_Query_Admin'"
 ```
 
-### ⚠️ Do NOT put API Catalog activation in a deployment plan
+### API Catalog activation: required, and a CLI deploy appears to satisfy it
 
-**It is not needed for REST, and there is no CLI command for it.** Both halves
-of that are measured, not inferred, so do not add a manual activation step to a
-runbook where it would be pure ceremony.
+**A named query must be active in the API Catalog to be callable** (user,
+2026-09-09). What is NOT established is whether a CLI deploy leaves it active
+already.
 
-Salesforce's developer blog says activation is for **agent action use** and that
-*"this activation does not have to be performed in order for the Named Query API
-to be used as a REST API."* Three independent checks in Dev on 2026-09-09 agree:
+The evidence points that way. Four queries were deployed by CLI on 2026-09-09
+and answered over REST immediately, with nobody opening the API Catalog for
+them: `...All` returned 2,807 rows and `...ByTeamUuid` returned 10. Either the
+deploy activated them, or activation is not required for REST. **Both readings
+fit, and the org cannot distinguish them.**
 
-| Check | Result |
-| --- | --- |
-| Four queries deployed by CLI, never activated | All answer. `...All` returns 2,807, `...ByTeamUuid` returns 10 |
-| An administrator calling the query before anyone activated it | 1,089 rows |
-| `CatalogedApi`, `CatalogedApiVersion`, `CatalogedApiArtifactVersionInfo` | **Zero components in the org** |
+**Activation state is not readable outside the UI.** `CatalogedApi` 404s on both
+the Tooling and data APIs, and `CatalogedApi`, `CatalogedApiVersion` and
+`CatalogedApiArtifactVersionInfo` list zero deployable components.
+`ApiNamedQuery` itself is `createable=false updateable=false deletable=false`
+with no active field, and the component XML carries no status element. So there
+is **no CLI command that activates one**, and no way to assert the state from a
+script either.
 
-So activation leaves no deployable artefact behind, which is why no CLI command
-reaches it. `ApiNamedQuery` itself is `createable=false updateable=false
-deletable=false` through the Tooling API and has no active field, so
-`sf data update record` is not a route either. The component XML carries
-`apiVersion`, `body2`, `description`, `masterLabel` and its parameters, and no
-status element of any kind.
+Practical consequences, which do not depend on resolving the above:
 
-**Activate one only if you want it as an agent action.** That is a UI step, once
-per org, and Salesforce then locks the query against editing until it is
-deactivated again.
+- **Deploying by CLI needs no separate activation step.** Those four were
+  callable the moment they deployed.
+- **A query created in Setup by hand may well need activating**, which is
+  consistent with the first one here being activated manually before it worked.
+- **Verify by calling it, not by reading a flag.** There is nothing to read.
+- Salesforce locks an activated query against editing until it is deactivated,
+  which is what blocked the first attempt to change a query body here.
 
 ### ⚠️ CALLING a Named Query needs `View Setup and Configuration`
 
