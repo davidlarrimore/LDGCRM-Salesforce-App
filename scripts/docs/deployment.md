@@ -215,7 +215,76 @@ repairs that class.
 
 ---
 
-## 4. Before signing off a target org
+## 4. The Partner Portal (P3) API integration
+
+Four things have to arrive, and **they arrive three different ways**. A green
+change set means one of the four landed.
+
+| Component | How it travels | Notes |
+| --- | --- | --- |
+| `LDGCRM_Partnership_Portal_API_R` | **Change set** | Must carry `LDGCRM_Issuer_String__c` too, or it fails on the missing object reference. Production does not have that object |
+| The five `ApiNamedQuery` components | **CLI deploy** | The documented exception in CLAUDE.md. Below |
+| The External Client App | **By hand** | Consumer key and secret are per-org and are not metadata |
+| The integration user, its licence, its two permission-set assignments | **By hand** | `integration-user.md`. None of it is metadata |
+
+### Deploying the named queries
+
+**Pin the manifest to 67.0.** `ApiNamedQuery` does not exist below API 65.0 and
+`sourceApiVersion` is 64.0, so a `-m` or `-d` deploy builds a 64.0 manifest and
+fails with *"Entity type 'ApiNamedQuery' is not available in this api version"*
+**inside a run whose status reads `Succeeded`**. Write a manifest listing the
+five members with `<version>67.0</version>` and deploy that:
+
+```powershell
+# From inside sfdx/.
+sf project deploy start --manifest <the 67.0 manifest> `
+    --target-org <alias> --test-level NoTestRun --json
+```
+
+`--test-level NoTestRun` is required for the reason in section 3, not for speed.
+
+**Check `numberComponentsDeployed`, never the status.** Both traps in this
+document's other sections apply here: a per-component failure hides inside a
+`Succeeded` run, and `rollbackOnError` means one bad component reverts the lot.
+
+### Verifying it, in the order that isolates a failure
+
+```powershell
+# 1. The queries exist in the target org.
+sf data query --use-tooling-api --target-org <alias> `
+    --query "SELECT DeveloperName FROM ApiNamedQuery ORDER BY DeveloperName"
+
+# 2. The integration user can CALL one. This is the step that needs ViewSetup.
+tools\partnership_portal_integration\Invoke-LdgcrmNamedQuery.ps1 -List
+tools\partnership_portal_integration\Invoke-LdgcrmNamedQuery.ps1
+```
+
+**A count alone does not prove a parameterised query works.** A parameter the
+query does not declare is silently ignored, and an ignored filter returns *more*
+rows, which never looks like a failure. Prove it with a filter that must return
+nothing:
+
+```powershell
+# Must be 0. If it returns everything, the parameter is not being applied.
+tools\partnership_portal_integration\Invoke-LdgcrmNamedQuery.ps1 `
+    -NamedQuery ldgcrmApplicationContactsModifiedSince -ModifiedSince (Get-Date).AddDays(1)
+```
+
+### What will bite in production specifically
+
+- **`LDGCRM_Issuer_String__c` does not exist there.** The permission set grants
+  read on it, so the change set must carry the object as well.
+- **`View Setup and Configuration` widens the integration** beyond its object
+  table — the user can read Setup, including the other two apps' configuration.
+  Documented in `integration-user.md` section 3; flag it at review rather than
+  discovering it in production.
+- **A sandbox refresh wipes the whole user side.** After any refresh, redo the
+  user, the licence and both permission-set assignments. The named queries and
+  the permission set definition survive, because they come from production.
+
+---
+
+## 5. Before signing off a target org
 
 Check these directly rather than inferring them from a green deployment. Each has
 failed silently at least once:
@@ -227,6 +296,7 @@ failed silently at least once:
 | Market Segment populated | 0 records without | The above, measured directly |
 | Page layouts assigned | open a record as a non-admin | Section 2 |
 | `TriggerControls__c` `Contact.On__c` | `True` | The load flips it off and restores it; confirm it was restored |
+| P3 named queries callable | 5, and a future-dated filter returns **0** | Section 4. A count alone cannot tell a working filter from an ignored one |
 
 The three Flows with the transposed `LGDCRM_` prefix are easy to miss: a
 `LIKE '%DGCRM%'` search **does not match them**, because "LGDCRM" does not contain
