@@ -25,7 +25,7 @@
     =========================================================================
     -NamedQuery used to be a parameter set here, added when NO named query
     existed in the org and the endpoint was therefore unverified. One exists now
-    - "ldgcrmPartnerPortalAdminQuery" - and the endpoint was confirmed against
+    - "ldgcrmApplicationContactsPartnerAdminOnly" - and the endpoint was confirmed against
     PEOdV8DVn on 2026-09-09, so that path moved to its own script:
 
         Invoke-LdgcrmNamedQuery.ps1

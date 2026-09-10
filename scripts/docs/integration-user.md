@@ -164,7 +164,7 @@ sf data query --target-org peodv8dvn --query "SELECT PermissionSet.Label FROM Pe
 Activating a Named Query in the **API Catalog** (*Setup → Integrations*) is a
 separate manual act, done once per org. Worth doing, and worth writing down,
 because **the component cannot carry it**:
-[`ldgcrmPartnerPortalAdminQuery.apiNamedQuery-meta.xml`](../../sfdx/force-app/main/default/apiNamedQueries/ldgcrmPartnerPortalAdminQuery.apiNamedQuery-meta.xml)
+[`ldgcrmApplicationContactsPartnerAdminOnly.apiNamedQuery-meta.xml`](../../sfdx/force-app/main/default/apiNamedQueries/ldgcrmApplicationContactsPartnerAdminOnly.apiNamedQuery-meta.xml)
 holds four elements — `apiVersion`, `body2`, `description`, `masterLabel` — and
 no status, active or published element of any kind. So a retrieve cannot record
 the activation, a change set cannot deliver it, a `sf project deploy` cannot
@@ -174,7 +174,7 @@ either, and a sandbox refresh has nothing to restore it from. It joins sections
 **Activation is not what lets a caller run one.** Salesforce's developer blog says
 so directly: activation is for **agent action use**, and *"this activation does
 not have to be performed in order for the Named Query API to be used as a REST
-API."* An administrator read 1,089 rows from `ldgcrmPartnerPortalAdminQuery`
+API."* An administrator read 1,089 rows from `ldgcrmApplicationContactsPartnerAdminOnly`
 while it was still unactivated.
 
 ### ⚠️ CALLING a Named Query needs `View Setup and Configuration`
@@ -264,8 +264,8 @@ provisioned would fail to resolve at all.
 
 | | |
 | --- | --- |
-| API name | `ldgcrmPartnerPortalAdminQuery` |
-| Label | Login.gov Partner Portal Admin Query |
+| API name | `ldgcrmApplicationContactsPartnerAdminOnly` |
+| Label | Login.gov Application Contacts - Partner Admin Only |
 | Selects | Partner Portal admins from `LDGCRM_Application_Contact__c` |
 | Lives at | `sfdx/force-app/main/default/apiNamedQueries/` |
 
@@ -285,7 +285,7 @@ manifest's own `<version>`:
 
 ```xml
 <types>
-    <members>ldgcrmPartnerPortalAdminQuery</members>
+    <members>ldgcrmApplicationContactsPartnerAdminOnly</members>
     <name>ApiNamedQuery</name>
 </types>
 <version>67.0</version>

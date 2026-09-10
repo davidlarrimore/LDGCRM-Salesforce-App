@@ -40,7 +40,7 @@ gets one row shape whichever it calls. Counts measured in Dev on 2026-09-09.
 
 | API name | Parameter | Rows |
 | --- | --- | --- |
-| `ldgcrmPartnerPortalAdminQuery` | none | 1,089 admins |
+| `ldgcrmApplicationContactsPartnerAdminOnly` | none | 1,089 admins |
 | `ldgcrmApplicationContactsAll` | none | 2,807, everyone |
 | `ldgcrmApplicationContactsByTeamUuid` | `teamuuid` | one team |
 | `ldgcrmApplicationContactByEmail` | `email` | one person, once per Application |
@@ -113,20 +113,23 @@ These rows are **applicant PII**. The transcript records counts only; the
 records themselves go to the CSV and nowhere else, so a log never becomes a
 second uncontrolled copy. `logs/` is gitignored — keep it that way.
 
-## ⚠️ The Named Query API reads as missing in three separate ways
+## ⚠️ This feature fails quietly in four separate ways
 
 It is present in Dev and it works. Each of these looked like the opposite:
 
 1. **The endpoint is absent from the resource map.** `GET /services/data/v67.0/`
    lists 57 resources and no named-query entry, while
    `/services/data/v67.0/named/query/<ApiName>` answers correctly. Verified
-   2026-09-09: 1,089 rows from `ldgcrmPartnerPortalAdminQuery`. Four plausible
-   alternative paths all return an `errorCode` object.
+   2026-09-09: 1,089 rows from `ldgcrmApplicationContactsPartnerAdminOnly`.
+   Four plausible alternative paths all return an `errorCode` object.
 2. **`400 INVALID_FIELD` has two unrelated causes and one message.** An empty
    `ApiNamedQuery` table produces it, and so does a caller without
    `View Setup and Configuration`. Either way the error describes a *schema*
    fault that is not there. Zero rows on a queryable table means empty, never
    absent.
+3. **The Setup page is invisible without a permission set.** Administering named
+   queries needs **Orgwide - Named Query - Admin** on the *admin's own* user;
+   System Administrator is not enough. Callers do not need it.
 4. **A URI parameter the query does not declare is SILENTLY IGNORED.** Not
    rejected, not warned about. Measured 2026-09-09: five parameters were sent at
    a query that declared none, and the call returned all 1,089 rows and printed
@@ -134,9 +137,6 @@ It is present in Dev and it works. Each of these looked like the opposite:
    rows, and more rows never looks like failure**, so no count check downstream
    would catch it. `Get-NamedQueryDeclaredParameter` reads the query's own body
    before every call and refuses on a mismatch in either direction.
-3. **The Setup page is invisible without a permission set.** Administering named
-   queries needs **Orgwide - Named Query - Admin** on the *admin's own* user;
-   System Administrator is not enough. Callers do not need it.
 
 `scripts/docs/integration-user.md` section 3 carries the detail, along with the
 manifest `<version>` trap — `ApiNamedQuery` does not exist below API 65.0, and a

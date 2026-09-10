@@ -47,7 +47,7 @@
         GET /services/data/v<ApiVersion>/named/query/<ApiName>
 
     VERIFIED against PEOdV8DVn on 2026-09-09: 1,089 records, done=true, with
-    exactly the columns ldgcrmPartnerPortalAdminQuery selects. Four plausible
+    exactly the columns ldgcrmApplicationContactsPartnerAdminOnly selects. Four plausible
     alternatives were tried the same day and every one of them returned an
     errorCode/message object instead:
 
@@ -101,11 +101,15 @@
 
 [CmdletBinding(DefaultParameterSetName = "Run")]
 param(
-    # API name of the named query, NOT its label. The one that exists in Dev is
-    # "ldgcrmPartnerPortalAdminQuery"; its label is "Login.gov Partner Portal
-    # Admin Query" and passing that will not resolve.
+    # API name of the named query, NOT its label. The default's label is
+    # "Login.gov Application Contacts - Partner Admin Only", and passing that
+    # will not resolve. -List prints the API names this org actually has.
+    #
+    # It defaults to the admin query because that one declares NO parameters, so
+    # a zero-argument run still means something. Every other query in the set
+    # needs its parameter passed.
     [Parameter(ParameterSetName = "Run")]
-    [string]$NamedQuery = "ldgcrmPartnerPortalAdminQuery",
+    [string]$NamedQuery = "ldgcrmApplicationContactsPartnerAdminOnly",
 
     # ---------------------------------------------------------------------
     # The typed parameters below are sent ONLY when you pass them explicitly.
@@ -138,7 +142,7 @@ param(
     [Parameter(ParameterSetName = "List", Mandatory = $true)]
     [switch]$List,
 
-    # 67.0 is the highest this org serves, and what ldgcrmPartnerPortalAdminQuery
+    # 67.0 is the highest this org serves, and what ldgcrmApplicationContactsPartnerAdminOnly
     # declares. sfdx-project.json says 64.0, which is the project's RETRIEVE
     # version and is not what this resource wants.
     [string]$ApiVersion = "67.0",
