@@ -18,7 +18,7 @@ on against realistic data.
 | **Change the Salesforce app** *(start here if that's you)* | [Salesforce app changes](#salesforce-app-changes), below |
 | **Load a dev or QA sandbox** with realistic data | [Loading a sandbox](#loading-a-sandbox), below |
 | Understand how the loading tools work | [docs/engineering/ARCHITECTURE.md](docs/engineering/ARCHITECTURE.md) |
-| Look up what an Airtable column maps to | [docs/engineering/TRANSFORMATION-RULES.md](docs/engineering/TRANSFORMATION-RULES.md) |
+| Look up what an Airtable column maps to | Release 2: [docs/engineering/TRANSFORMATION-RULES.md](docs/engineering/TRANSFORMATION-RULES.md). Release 1: `engineering/TRANSFORMATION-RULES.md` in `archive/sprint_1_docs.zip` |
 | Fix something in the Airtable source data | [docs/data-quality/](docs/data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) |
 | See what shipped, component by component | [docs/engineering/PRODUCTION-CHANGE-SET-INVENTORY.md](docs/engineering/PRODUCTION-CHANGE-SET-INVENTORY.md) |
 | Find Sprint 1's operator runbooks | `archive/sprint_1_scripts.zip`, `archive/sprint_1_docs.zip` |

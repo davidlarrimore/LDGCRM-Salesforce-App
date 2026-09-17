@@ -350,7 +350,7 @@ function Invoke-PortalRestPaged {
             if ($Detail -match "INSUFFICIENT_ACCESS" -or $Detail -match "INVALID_SESSION_ID") {
                 throw ("The integration user may not read this object or one of these fields: " + $Detail +
                        [Environment]::NewLine +
-                       "Check the app's 'Run As' user still holds LDGCRM_Partnership_Portal_API_R.")
+                       "Check the app's 'Run As' user still holds LDGCRM_Partner_Portal_API_R.")
             }
 
             throw ("Request failed: " + $Detail)

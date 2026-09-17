@@ -1797,7 +1797,7 @@ function Resolve-FallbackOwnerId {
         Salesforce, and still owned by the fallback owner's records set, will be
         pushed back to the fallback owner on the next load. The blank-OwnerId
         design preserved such changes; a named fallback owner cannot. Documented
-        in docs/engineering/TRANSFORMATION-RULES.md's "Record ownership" section.
+        in archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md's "Record ownership" section.
     #>
     param(
         [Parameter(Mandatory = $true)]
@@ -1856,7 +1856,7 @@ function Get-EmailDomain {
 #
 # Every rule here was derived by measuring the actual 970-row population on
 # 2026-08-13, not assumed. The measurements are recorded in
-# docs/engineering/TRANSFORMATION-RULES.md's Contact section.
+# archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md's Contact section.
 
 # Local parts that identify a ROLE or SHARED MAILBOX rather than a person:
 # support@, tracs-helpdesk@, fmcsa_api@, waso_youth_partner_portal@ and so on.

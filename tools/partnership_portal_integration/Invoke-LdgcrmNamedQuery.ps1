@@ -504,7 +504,7 @@ try {
                    "ApiNamedQuery, a SETUP entity, as whoever called - and reports an entity the" + [Environment]::NewLine +
                    "caller cannot see as a column that does not exist." + [Environment]::NewLine +
                    [Environment]::NewLine +
-                   "FIX: add ViewSetup to LDGCRM_Partnership_Portal_API_R. That is additive" + [Environment]::NewLine +
+                   "FIX: add ViewSetup to LDGCRM_Partner_Portal_API_R. That is additive" + [Environment]::NewLine +
                    "metadata, so it travels in a CHANGE SET, not a CLI deploy. It also widens the" + [Environment]::NewLine +
                    "integration's reach past what section 4 of the doc describes - read it first." + [Environment]::NewLine +
                    "scripts/docs/integration-user.md section 3." + [Environment]::NewLine +

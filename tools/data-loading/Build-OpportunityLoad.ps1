@@ -3,7 +3,7 @@
 <#
     Chunk 2 of the Airtable -> Salesforce data-migration pipeline (see
     docs/engineering/ARCHITECTURE.md). Full field-by-field investigation and every exclusion's
-    reasoning live in docs/engineering/TRANSFORMATION-RULES.md's Opportunity section -
+    reasoning live in archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md's Opportunity section -
     this header covers only what a script reader needs at a glance.
 
     Opportunity is an independent parent (like Contact and Impediment), but
@@ -63,7 +63,7 @@
     Accounts), not an authored link, so it cannot say which Partner Account an
     individual Opportunity belongs to. All 8 Partner Accounts under the
     Department of Defense carry byte-identical 50-Opportunity lists, several
-    named "(placeholder)". See docs/engineering/TRANSFORMATION-RULES.md.
+    named "(placeholder)". See archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md.
 
     OwnerId resolves in THREE steps (business rule 2026-08-14):
       1. Airtable's "Pod Opportunity Lead" (a collaborator object carrying

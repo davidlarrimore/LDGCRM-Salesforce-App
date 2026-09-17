@@ -222,7 +222,7 @@ change set means one of the four landed.
 
 | Component | How it travels | Notes |
 | --- | --- | --- |
-| `LDGCRM_Partnership_Portal_API_R` | **Change set** | Must carry `LDGCRM_Issuer_String__c` too, or it fails on the missing object reference. Production does not have that object |
+| `LDGCRM_Partner_Portal_API_R` | **Change set** | Must carry the `LDGCRM_Issuer_String__c` object too, or it fails on the missing object reference. Production does not have that object. Include its `LDGCRM_Issuer_String__c` field so the object arrives complete |
 | The six `ApiNamedQuery` components | **CLI deploy** | The documented exception in CLAUDE.md. Below |
 | The External Client App | **By hand** | Consumer key and secret are per-org and are not metadata |
 | The integration user, its licence, its two permission-set assignments | **By hand** | `integration-user.md`. None of it is metadata |
@@ -314,7 +314,8 @@ way. Otherwise, verify a query by **calling** it — the checks below.
 ### What will bite in production specifically
 
 - **`LDGCRM_Issuer_String__c` does not exist there.** The permission set grants
-  read on it, so the change set must carry the object as well.
+  read on it, so the change set must carry the object — and its issuer string
+  field, a separate component in the change set UI, or the object arrives empty.
 - **`View Setup and Configuration` widens the integration** beyond its object
   table — the user can read Setup, including the other two apps' configuration.
   Documented in `integration-user.md` section 3; flag it at review rather than

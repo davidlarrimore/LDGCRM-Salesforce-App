@@ -56,14 +56,14 @@ The pipeline has four stages that run in order:
    changing anything about how the `Build-*.ps1` scripts write their CSVs. If there's ever an
    org/compliance reason to switch to literal Data Loader, only `Invoke-SalesforceLoad.ps1` — not the
    transform scripts — would need to change. Built and proven: loaded all 39 Impediment records into
-   gsa-peo this way (see `TRANSFORMATION-RULES.md`'s Impediment section for what that first real load
+   gsa-peo this way (see Release 1's `TRANSFORMATION-RULES.md`, in `archive/sprint_1_docs.zip`, Impediment section for what that first real load
    surfaced).
 4. **Notes** — freeform/journal-style Airtable columns that don't belong in a dedicated field become
    `ContentNote` records (Enhanced Notes) attached to their parent record. **Runs last** — a note
    needs its parent to already exist. **Built 2026-08-13**: `Build-NotesLoad.ps1` +
    `Invoke-NotesLoad.ps1`. This is the one chunk that does **not** use the Bulk API — `ContentNote.Content`
    is a binary field that Bulk 2.0 CSV refuses, so it loads over REST
-   (`POST /composite/sobjects`), proven end to end against Dev. See `TRANSFORMATION-RULES.md`'s
+   (`POST /composite/sobjects`), proven end to end against Dev. See Release 1's `TRANSFORMATION-RULES.md` (`archive/sprint_1_docs.zip`),
    "Notes" section.
 
 ## Environments and org aliases
@@ -253,7 +253,7 @@ Expect a large share to fall back to the loading user anyway: only 5 of the expo
 match an *active* User in Dev, and `SNA MSadi` — who owns 607 production Accounts — is inactive
 there. That is expected, not a failure. It also means **Contact ownership still can't be meaningfully
 demonstrated outside production**, since Contacts inherit their Account's owner (see
-`TRANSFORMATION-RULES.md`'s "Record ownership", which also argues that production Account ownership
+Release 1's `TRANSFORMATION-RULES.md` in `archive/sprint_1_docs.zip`, "Record ownership", which also argues that production Account ownership
 may not be worth inheriting at all — 92% of it is one service account plus one person).
 
 ## Production Account seed (one-time bootstrap, not a pipeline stage)
@@ -316,9 +316,12 @@ Actually loading is always a separate, explicit step behind a typed confirmation
 `Invoke-SalesforceLoad.ps1` for every object bar one, `Invoke-NotesLoad.ps1` for Notes — and should
 not happen without that coordination.
 
-**For the full field-by-field mapping rules and every gotcha discovered per object, see
-[`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)** — that's the authoritative detail; this file
-covers pipeline architecture, build status, and how to run things.
+**For the full field-by-field mapping rules and every gotcha discovered per object, see Release 1's
+`TRANSFORMATION-RULES.md`, archived as `engineering/TRANSFORMATION-RULES.md` in
+`archive/sprint_1_docs.zip`** — that's the authoritative detail for everything these tools load;
+this file covers pipeline architecture, build status, and how to run things. Every
+`TRANSFORMATION-RULES.md` reference below means that archived Release 1 copy. The live
+[`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md) holds Release 2 rules only.
 
 **Before running a full wipe-and-reload, work through Sprint 1's `RELOAD-QA-CHECKLIST.md`**
 (archived in `archive/sprint_1_scripts.zip`) — the operational runbook: pre-flight, baseline
@@ -410,7 +413,7 @@ Airtable pull of 2026-08-12.
   anyone reports it as a bug: **a re-run re-asserts the fallback owner**, so a fallback-owned record
   that someone manually reassigns gets pushed back. Per-object sources, coverage, the three silent
   resolution traps, and the full rationale are in
-  [`TRANSFORMATION-RULES.md`](TRANSFORMATION-RULES.md)'s "Record ownership" section.
+  Release 1's `TRANSFORMATION-RULES.md` (`archive/sprint_1_docs.zip`), "Record ownership" section.
 - **Every write is gated by a typed token, which can also be passed as a flag.** Interactive by
   default; non-interactive by supplying the same token the prompt asks for — `-Confirmation "LOAD"`,
   `"HARD DELETE"`, `"BOOTSTRAP"`. That makes the pipeline runnable by CI, an agent, or the Operations

@@ -3,7 +3,7 @@
 <#
     Chunk 2 of the Airtable -> Salesforce data-migration pipeline (see
     docs/engineering/ARCHITECTURE.md). Full field-by-field reasoning lives in
-    docs/engineering/TRANSFORMATION-RULES.md's Contact section.
+    archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md's Contact section.
 
     Contact is an independent parent - nothing has to be loaded before it -
     but it does carry optional lookups to Account and LDGCRM_Partner_Account__c,

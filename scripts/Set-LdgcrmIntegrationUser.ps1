@@ -3,7 +3,7 @@
 <#
     Stands up the P3 Partner Portal API integration user in one org: creates the
     User, assigns the Salesforce API Integration permission set LICENSE, then
-    assigns the LDGCRM_Partnership_Portal_API_R permission set - in that order,
+    assigns the LDGCRM_Partner_Portal_API_R permission set - in that order,
     because the order is not a preference.
 
         scripts\Set-LdgcrmIntegrationUser.ps1 -Environment Dev
@@ -73,7 +73,7 @@ param(
     # Actually create things. Without it this reports the plan and stops.
     [switch]$Apply,
 
-    # Proceed when LDGCRM_Partnership_Portal_API_R is not in the org yet, doing
+    # Proceed when LDGCRM_Partner_Portal_API_R is not in the org yet, doing
     # the user and the licence and leaving the permission set for later.
     #
     # WHY THIS IS OPT-IN. The permission set arrives by change set, and until it
@@ -112,7 +112,7 @@ $IntegrationLanguage    = "en_US"
 
 # The two things assigned to it, in this order.
 $ApiLicenseDeveloperName = "SalesforceAPIIntegrationPsl"
-$PermissionSetName       = "LDGCRM_Partnership_Portal_API_R"
+$PermissionSetName       = "LDGCRM_Partner_Portal_API_R"
 
 $ProductionToken = "SET UP PRODUCTION INTEGRATION USER"
 

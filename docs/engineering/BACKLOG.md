@@ -6,7 +6,8 @@
 **Work that is agreed but not yet built.** Built work is removed from this file rather than marked
 done — git carries the history, how the tooling works lives in
 [ARCHITECTURE.md](ARCHITECTURE.md), and field-level detail in
-[TRANSFORMATION-RULES.md](TRANSFORMATION-RULES.md).
+[TRANSFORMATION-RULES.md](TRANSFORMATION-RULES.md) (Release 2) or, for what Release 1 loads,
+`engineering/TRANSFORMATION-RULES.md` in `archive/sprint_1_docs.zip`.
 
 Sprint 1 shipped to production on 2026-09-08, so items here are **Sprint 2 candidates** unless they
 say otherwise.

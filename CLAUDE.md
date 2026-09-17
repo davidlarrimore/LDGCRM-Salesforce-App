@@ -17,7 +17,9 @@ Two kinds of work happen here now:
 
 Records created by the original migration carry `LDGCRM_External_ID__c`,
 correlating them back to their Airtable source. That field is still the upsert
-key for every sandbox load.
+key for every sandbox load of a Release 1 object. **`LDGCRM_Issuer_String__c`
+(Release 2) deliberately has none** — its only data is the string itself — so it
+loads by insert.
 
 ## ⚠️ The loading tools are DEV/QA ONLY, and that is enforced
 
@@ -102,7 +104,7 @@ repository, using the component set that originates as a change set built in Dev
 
 ### ⚠️ Two traps that hide over-broad PERMISSION SET access
 
-Both bit on 2026-09-09 while cutting `LDGCRM_Partnership_Portal_API_R` down.
+Both bit on 2026-09-09 while cutting `LDGCRM_Partner_Portal_API_R` down.
 
 - **`fieldPermissions` MERGE on deploy. Omitting one does not remove it.** Same
   behaviour as a Profile. Deploying a permission set with 72 field grants left
@@ -115,6 +117,12 @@ Both bit on 2026-09-09 while cutting `LDGCRM_Partnership_Portal_API_R` down.
   file. Turning it off exposed **75 grants that had been there all along** (34
   Account, 41 Contact). So "the file lists no field permissions for this object"
   is not evidence that none are granted — check `viewAllFields` first.
+
+- **A REQUIRED field cannot have `fieldPermissions` at all.** The deploy fails
+  with *"You cannot deploy to a required field"*; object access already makes it
+  readable and editable. So a permission set listing no grant for a required
+  field is correct, not an omission. Hit on 2026-09-17 with
+  `LDGCRM_Issuer_String__c.LDGCRM_Issuer_String__c`.
 
 **Verify a permission change by RETRIEVING, never by the deploy's own success.**
 The deploy reported `Succeeded` with `numberComponentsDeployed: 1` both times,
@@ -310,17 +318,22 @@ more than one record type, also read
 entries are URL-encoded (`,`→`%2C`, `/`→`%2F`, `&`→`%26`). **Always prove a new
 object's picklist assumptions with a small test batch.**
 
-**On every object, `LDGCRM_External_ID__c` is `externalId=true` but
+**On every object that has it, `LDGCRM_External_ID__c` is `externalId=true` but
 `unique=false`** — Salesforce will not reject a duplicate at the database level.
 Upserts are safe; anything that inserts, or edits the field by hand, can silently
 create duplicates.
 
 **`OpportunityContactRole.LDGCRM_External_ID__c` has `externalId=false` and
 CANNOT be changed** — Salesforce forbids External ID fields on that object
-entirely. It is therefore the one object loaded by **INSERT + read-then-diff**
-rather than upsert.
+entirely. It is therefore loaded by **INSERT + read-then-diff** rather than
+upsert.
 
-See `docs/engineering/TRANSFORMATION-RULES.md` for the full field-by-field rules.
+**`TRANSFORMATION-RULES.md` is split by release.** `docs/engineering/TRANSFORMATION-RULES.md`
+holds **Release 2 rules only**. Release 1's field-by-field rules — everything
+`tools/data-loading/Build-*.ps1` implements — are archived as
+`engineering/TRANSFORMATION-RULES.md` inside `archive/sprint_1_docs.zip`, which is
+what the scripts' comments point to. Read that copy before changing a Release 1
+transform.
 
 ## ⚠️ EVERY read is scoped to the record types we own
 
@@ -573,7 +586,7 @@ Metadata API access. Read the warnings, not just the conclusion.
 | --- | --- | --- |
 | `docs/engineering/` | People **changing** the app | `ARCHITECTURE.md`, `TRANSFORMATION-RULES.md`, `BACKLOG.md`, `PRODUCTION-CHANGE-SET-INVENTORY.md` |
 | `docs/data-quality/` | The **data owners** | Airtable and Salesforce Account cleanup asks |
-| `archive/sprint_1_docs.zip` | History | Sprint 1's docs as they stood at go-live |
+| `archive/sprint_1_docs.zip` | History | Sprint 1's docs as they stood at go-live, except `engineering/TRANSFORMATION-RULES.md`, which is the final Release 1 version (2026-09-17) |
 
 ### ⚠️ EVERY document records what is TRUE NOW, not how it got there
 
@@ -589,8 +602,9 @@ Re-measure the survivors in the same change, so every number describes today.
 
 **The one exception is a RULE.** A business or transformation rule stays after it
 is implemented, because it describes how the system must behave rather than what
-happened. Those live in `docs/engineering/TRANSFORMATION-RULES.md` and must not
-be deleted as "completed" — deleting one invites it being re-litigated.
+happened. Release 2's live in `docs/engineering/TRANSFORMATION-RULES.md`; Release
+1's are in `engineering/TRANSFORMATION-RULES.md` inside `archive/sprint_1_docs.zip`. Neither is deleted as
+"completed" — deleting one invites it being re-litigated.
 
 ## Skills
 

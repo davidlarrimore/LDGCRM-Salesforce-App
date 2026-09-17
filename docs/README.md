@@ -11,7 +11,7 @@ app as it is **now**; they are not a record of the migration that built it.
 | Path | Audience | Contents |
 | --- | --- | --- |
 | [engineering/ARCHITECTURE.md](engineering/ARCHITECTURE.md) | People **changing** the app or its tooling | How the dev/QA loading tools fit together, and what each one does |
-| [engineering/TRANSFORMATION-RULES.md](engineering/TRANSFORMATION-RULES.md) | People **changing** the app | Field-by-field mapping rules and the settled business rules. **Rules stay here after they are implemented** |
+| [engineering/TRANSFORMATION-RULES.md](engineering/TRANSFORMATION-RULES.md) | People **changing** the app | **Release 2** field-by-field mapping rules and settled business rules. **Rules stay here after they are implemented.** Release 1's rules are archived in `archive/sprint_1_docs.zip` |
 | [engineering/BACKLOG.md](engineering/BACKLOG.md) | People **changing** the app | Work agreed but **not yet built**. A built item is deleted, not marked done |
 | [engineering/PRODUCTION-CHANGE-SET-INVENTORY.md](engineering/PRODUCTION-CHANGE-SET-INVENTORY.md) | GSA IT Engineering | What shipped, component by component. **Generated — never hand-edit** |
 | [data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md](data-quality/AIRTABLE-DATA-QUALITY-REQUESTS.md) | The **Airtable data owners** | Currently-open asks that cost records on a load |
@@ -28,7 +28,10 @@ The operator runbooks that shipped with the migration — `SETUP.md`,
 programme's readiness gates and the project deliverables:
 
 - `archive/sprint_1_scripts.zip` — the operations bundle's code and its runbooks
-- `archive/sprint_1_docs.zip` — these docs as they stood at go-live
+- `archive/sprint_1_docs.zip` — these docs as they stood at go-live, except
+  `engineering/TRANSFORMATION-RULES.md`, which is the final Release 1 version
+  (2026-09-17). **The Release 1 transformation rules live only there**; the
+  tools in `tools/data-loading/` still implement them
 
 They describe a pipeline that ran against UAT, a full sandbox and production.
 **None of that applies to the tools in `tools/data-loading/`**, which are Dev/QA

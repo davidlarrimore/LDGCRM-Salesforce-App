@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtlClntAppOauthConfigurablePolicies xmlns="http://soap.sforce.com/2006/04/metadata">
+    <clientCredentialsFlowUser>ldgcrm_p3_integration@gsa.gov.peo1.peodv8dvn</clientCredentialsFlowUser>
     <externalClientApplication>LDGCRM_P3_Client_app_Localdev</externalClientApplication>
     <ipRelaxationPolicyType>Enforce</ipRelaxationPolicyType>
-    <isClientCredentialsFlowEnabled>false</isClientCredentialsFlowEnabled>
+    <isClientCredentialsFlowEnabled>true</isClientCredentialsFlowEnabled>
     <isGuestCodeCredFlowEnabled>false</isGuestCodeCredFlowEnabled>
     <isTokenExchangeFlowEnabled>false</isTokenExchangeFlowEnabled>
     <label>LDGCRM_P3_Client_app_Localdev_oauthPlcy</label>

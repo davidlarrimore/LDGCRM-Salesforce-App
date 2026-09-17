@@ -18,7 +18,7 @@ lives differs.
 
 Salesforce's REST API guide lists it under *User Permissions Needed* — "To
 execute a Named Query API: **View Setup and Configuration**". Enabling it also
-adds `ViewRoles`. `LDGCRM_Partnership_Portal_API_R` carries both, so the named
+adds `ViewRoles`. `LDGCRM_Partner_Portal_API_R` carries both, so the named
 query works in Dev: 1,089 records, the same as an administrator gets.
 
 **A caller without them gets `400 INVALID_FIELD`** complaining about a column on

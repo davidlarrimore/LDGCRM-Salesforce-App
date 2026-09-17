@@ -5,7 +5,7 @@
     docs/engineering/ARCHITECTURE.md). Turns freeform Airtable columns that have no dedicated
     Salesforce field into ContentNote records attached to the record they
     describe. Full candidate analysis and the reasoning behind every inclusion
-    and exclusion live in docs/engineering/TRANSFORMATION-RULES.md's "Notes" section.
+    and exclusion live in archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md's "Notes" section.
 
     MUST RUN LAST. A note attaches to a record that has to already exist, so
     every other object must be loaded first.
@@ -42,7 +42,7 @@
     WHAT BECOMES A NOTE, AND WHAT DELIBERATELY DOES NOT
     ============================================================
     The candidate list was re-derived from the data on 2026-08-13 rather than
-    inherited - see TRANSFORMATION-RULES.md for the full table. A column
+    inherited - see archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md for the full table. A column
     qualifies only if it is unmapped, long-form, and MOSTLY UNIQUE across rows;
     the distinct-value ratio is what separates prose from a controlled
     vocabulary, and it is not visible from reading a sample.

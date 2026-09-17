@@ -155,9 +155,10 @@
     <externalSharingModel>ControlledByParent</externalSharingModel>
     <label>Issuer String</label>
     <nameField>
-        <label>Issuer String</label>
+        <displayFormat>ISID-{00000}</displayFormat>
+        <label>Issuer String ID</label>
         <trackHistory>false</trackHistory>
-        <type>Text</type>
+        <type>AutoNumber</type>
     </nameField>
     <pluralLabel>Issuer Strings</pluralLabel>
     <searchLayouts></searchLayouts>

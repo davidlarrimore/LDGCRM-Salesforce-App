@@ -7,7 +7,9 @@
     <isCodeCredFlowEnabled>false</isCodeCredFlowEnabled>
     <isCodeCredPostOnly>false</isCodeCredPostOnly>
     <isConsumerSecretOptional>true</isConsumerSecretOptional>
+    <isDPopEnabled>false</isDPopEnabled>
     <isDeviceFlowEnabled>false</isDeviceFlowEnabled>
+    <isEnforceRefreshTokenTTL>true</isEnforceRefreshTokenTTL>
     <isIntrospectAllTokens>false</isIntrospectAllTokens>
     <isNamedUserJwtEnabled>false</isNamedUserJwtEnabled>
     <isPkceRequired>true</isPkceRequired>

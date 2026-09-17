@@ -47,7 +47,7 @@
              Text(40) field LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c,
              which was deleted from Dev on 2026-09-09 and is gone from this repo.
              PRODUCTION STILL HAS THAT FIELD, and a sandbox refresh restores it -
-             it came back once already. LDGCRM_Partnership_Portal_API_R grants read
+             it came back once already. LDGCRM_Partner_Portal_API_R grants read
              on this object, so a change set carrying that permission set needs
              this object alongside it. -->
         <members>LDGCRM_Issuer_String__c</members>
@@ -69,12 +69,12 @@
         <name>FlexiPage</name>
     </types>
     <types>
-        <!-- LDGCRM_Partnership_Portal_API_R is the P3 integration user's permission
+        <!-- LDGCRM_Partner_Portal_API_R is the P3 integration user's permission
              set. It is NOT in a permission set group and is assigned directly,
              because it carries ApiUserOnly - a permission that only a user holding
              the "Salesforce API Integration" permission set license can be granted.
              See scripts/docs/integration-user.md. -->
-        <members>LDGCRM_Partnership_Portal_API_R</members>
+        <members>LDGCRM_Partner_Portal_API_R</members>
         <members>LDGCRM_Partnership_Team_Member_CRE</members>
         <members>LDGCRM_Partnership_Viewer_R</members>
         <members>LDGCRM_Production_Support_CRED</members>

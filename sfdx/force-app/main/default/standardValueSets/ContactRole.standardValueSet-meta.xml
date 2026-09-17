@@ -66,14 +66,4 @@
         <default>false</default>
         <label>Oversight</label>
     </standardValue>
-    <standardValue>
-        <fullName>Day-to-Day POC</fullName>
-        <default>false</default>
-        <label>Day-to-Day POC</label>
-    </standardValue>
-    <standardValue>
-        <fullName>Senior POC</fullName>
-        <default>false</default>
-        <label>Senior POC</label>
-    </standardValue>
 </StandardValueSet>

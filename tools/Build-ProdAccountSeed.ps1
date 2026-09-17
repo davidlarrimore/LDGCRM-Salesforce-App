@@ -18,7 +18,7 @@
     always carry that gap; one seeded by Invoke-AccountBootstrap.ps1 from empty
     will not.
 
-    Kept, not deleted, because docs/engineering/ARCHITECTURE.md and TRANSFORMATION-RULES.md
+    Kept, not deleted, because docs/engineering/ARCHITECTURE.md and archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md
     record what it did on 2026-08-13 and those accounts of the rebuild should
     stay checkable. Delete it once the bootstrap has been exercised in QA.
     ============================================================

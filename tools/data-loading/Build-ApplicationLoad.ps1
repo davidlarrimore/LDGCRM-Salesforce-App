@@ -5,7 +5,7 @@
     docs/engineering/ARCHITECTURE.md). Full field-by-field investigation,
     every exclusion's reasoning, and the Demographic Served picklist expansion
     (deployed separately via sfdx-metadata-sync before this script was written)
-    live in docs/engineering/TRANSFORMATION-RULES.md's Application section - this header only
+    live in archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md's Application section - this header only
     covers what a script reader needs at a glance, not the full justification.
 
     LDGCRM_Partner_Account__c is a REQUIRED Lookup - needs Partner Account
@@ -30,7 +30,7 @@
     Each one adapts the output to the org's current state, so a plain re-run
     picks up whatever has landed since - no code change needed.
 
-    Fields NOT written, deliberately (see docs/engineering/TRANSFORMATION-RULES.md for why each
+    Fields NOT written, deliberately (see archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md for why each
     one specifically):
       - LDGCRM_Market_Segment__c: before-save Flow derives it from the linked
         Partner Account's Account.
@@ -137,7 +137,7 @@ $LaunchLevelMap = @{
 $DefaultLaunchLevel = "1 - Very Low Impact"
 
 # The 24 Demographic Served categories used within the last 18 months
-# (2026-08-12 analysis - see docs/engineering/TRANSFORMATION-RULES.md), mapped to their
+# (2026-08-12 analysis - see archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md), mapped to their
 # LDGCRM_Demographic_Served__c value. Every value maps to itself except
 # "Contractors", which reuses the picklist's pre-existing "Gov't Employees
 # (Contractors)" value rather than adding a near-duplicate. Any Airtable

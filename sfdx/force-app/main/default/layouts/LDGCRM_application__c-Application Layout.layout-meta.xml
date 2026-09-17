@@ -354,6 +354,11 @@
         <relatedList>LDGCRM_Application_Contact__c.LDGCRM_Application__c</relatedList>
     </relatedLists>
     <relatedLists>
+        <fields>NAME</fields>
+        <fields>LDGCRM_Issuer_String__c</fields>
+        <relatedList>LDGCRM_Issuer_String__c.LDGCRM_Application__c</relatedList>
+    </relatedLists>
+    <relatedLists>
         <fields>TASK.SUBJECT</fields>
         <fields>TASK.WHO_NAME</fields>
         <fields>ACTIVITY.TASK</fields>
@@ -371,7 +376,7 @@
     <showRunAssignmentRulesCheckbox>false</showRunAssignmentRulesCheckbox>
     <showSubmitAndAttachButton>false</showSubmitAndAttachButton>
     <summaryLayout>
-        <masterLabel>00hcq000007Qp2s</masterLabel>
+        <masterLabel>00hSJ00000DySd8</masterLabel>
         <sizeX>4</sizeX>
         <sizeY>2</sizeY>
         <summaryLayoutItems>

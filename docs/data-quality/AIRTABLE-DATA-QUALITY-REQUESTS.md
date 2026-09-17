@@ -14,8 +14,10 @@
 something you fixed is no longer here, that is the confirmation it landed.
 
 **Decisions that have been made are not listed here either.** Where the project owner has settled how
-something migrates, it is a rule, not a request: see
-[TRANSFORMATION-RULES.md → Settled business rules](../engineering/TRANSFORMATION-RULES.md#settled-business-rules--closed-not-open-questions).
+something migrates, it is a rule, not a request: see "Settled business rules" in Release 1's
+`TRANSFORMATION-RULES.md`, archived as `engineering/TRANSFORMATION-RULES.md` in
+`archive/sprint_1_docs.zip`, and in the Release 2
+[TRANSFORMATION-RULES.md](../engineering/TRANSFORMATION-RULES.md#settled-business-rules--closed-not-open-questions).
 That covers derived contact names, the `Launch Level` default, the `None` impediment, portal-team
 optionality, contact merging, Partner Portal Admin sourcing, the decommissioned Applications and the
 `Gov Employees` → `Federal Employees` rename — **please don't re-raise those.**

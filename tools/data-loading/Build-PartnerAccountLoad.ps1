@@ -24,7 +24,7 @@
     would be redundant at best (the Flow would just overwrite it on insert
     anyway) and reintroduces exactly the kind of value-mapping bug already
     found and fixed in Build-AccountReconciliation.ps1's Market Segment column
-    (see docs/engineering/TRANSFORMATION-RULES.md) for no benefit. The same pattern applies to
+    (see archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md) for no benefit. The same pattern applies to
     Opportunity and Application, which have their own analogous before-save
     Flows deriving Market Segment from their related Account - neither of
     those future transform scripts should set it either.

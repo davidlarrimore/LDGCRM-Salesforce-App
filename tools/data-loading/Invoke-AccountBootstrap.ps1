@@ -78,7 +78,7 @@
         already exists keeps whatever owner it has.
         Consequence, worth knowing before a rehearsal: Contact ownership
         inherits from Account, so it still cannot be demonstrated outside
-        production. See TRANSFORMATION-RULES.md's "Record ownership" section.
+        production. See archive/sprint_1_docs.zip:engineering/TRANSFORMATION-RULES.md's "Record ownership" section.
 
     THIS SCRIPT WRITES TO SALESFORCE. Unlike the Build-*.ps1 transforms (which
     only ever produce CSVs) this one inserts and updates records, because the

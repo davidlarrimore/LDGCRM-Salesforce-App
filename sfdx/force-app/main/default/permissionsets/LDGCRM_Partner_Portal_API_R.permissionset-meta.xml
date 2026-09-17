@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
-    <description>Read Only (R) access for Partnership Portal API</description>
+    <description>Read Only (R) access for Partner Portal API</description>
     <fieldPermissions>
         <editable>false</editable>
         <field>LDGCRM_Application_Contact__c.LDGCRM_Application__c</field>
@@ -362,7 +362,7 @@
         <readable>true</readable>
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
-    <label>LDGCRM - Partnership Portal API - R</label>
+    <label>LDGCRM - Partner Portal API - R</label>
     <objectPermissions>
         <allowCreate>false</allowCreate>
         <allowDelete>false</allowDelete>
