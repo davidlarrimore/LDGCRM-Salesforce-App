@@ -1,14 +1,16 @@
-TITLE: Login.gov Partnerships CRM - Technical Design
+TITLE: Login.gov Partnerships CRM - System Architecture and Technical Design
 
 Template Version 1.04 - Date Issued: January 17, 2019
 Document prepared 23 September 2026
+
+This is the standing design of the whole application as it exists after Release 2. It is updated with every release. What changed in a given release, and why, is in that release's design document (Release 2 - Design).
 
 # 1 - App Revision History
 
 1.00 - 18 August 2026 - First technical design. Describes the application as packaged in outbound change set LDGCRM_Sprint_1_24 (232 components across 24 metadata types) and the one-time Airtable data migration that populated it - Technical Lead: [GSA IT to supply]
 2.00 - 23 September 2026 - Release 2. Adds the Login.gov Partner Portal (P3) integration: an External Client App per portal environment, an API-only integration user, a read-only permission set and six named queries. Adds the Issuer String object (one record per distinct issuer string) and its load. Removes the deprecated Application fields LDGCRM_PP_Issuer_Strings__c and LDGCRM_Est_Monthly_Active_Users__c - Technical Lead: Dave Larrimore - QQ2A-C
 
-Archive instructions: make a copy of this document at the start of the fiscal year and save it in the usual location. Append Technical Design - FY## to the file name of the archived copy. Keep only the current fiscal year's entries in the revision history.
+Archive instructions: make a copy of this document at the start of the fiscal year and save it in the usual location. Append System Architecture and Technical Design - FY## to the file name of the archived copy. Keep only the current fiscal year's entries in the revision history.
 
 # 3 - Project Information
 
@@ -50,7 +52,7 @@ The Login.gov Partner Portal (P3) also depended on that data. Before a Login Adm
 
 ## 3.2 Object Model
 
-The application uses eight custom objects and five standard ones.
+The application uses seven custom objects and five standard ones.
 
 IMG: object-model.png | Figure 1. Object model as built in Release 1. Issuer String, added in Release 2, is shown in Figure 2.
 
@@ -89,13 +91,48 @@ Partner Portal. The Application carries the P3 Team UUID and team name. Applicat
 
 Throughout. Contacts are held once per person and joined to Applications through Application Contact and to Opportunities through Opportunity Contact Role. Market Segment is set once on the Account and stamped down the hierarchy by Flow.
 
+## 3.4 System Architecture
+
+### System context
+
+IMG: system-context.png | Figure 4. System context: who uses the application, what it is built from, what shares its org, and what connects to it.
+
+- Users. The partnership team and GSA production support use the Lightning app, signed in through GSA enterprise SSO. Login.gov Onboarding Engineers never sign in to Salesforce; they use the Partner Portal (P3), which reads from the CRM on their behalf.
+- The org. The application runs in the GSA PEO Salesforce org (gsa-peo), which it shares with FCIC and the defunct TTS OTCRM. Account, Contact and Opportunity carry record types from all three. This application owns Account record type Federal, Contact record types Federal and GSA, Opportunity record type Login_gov, and every LDGCRM_ object. Nothing it reads or writes goes outside those.
+- Automation belonging to other applications fires in the same org: FCIC's Contact trigger and the Genesys PureCloud webhook on Contact insert. Neither is part of this application, and neither is visible in its metadata.
+- Connected systems. P3 is the only system that connects at run time, and it only reads (section 4.5). Airtable was the one-time source of the Release 1 migration and is retired. GSA IT Engineering deploys metadata to UAT, Full and Production.
+
+### Logical architecture
+
+IMG: logical-architecture.png | Figure 5. Logical architecture, layer by layer.
+
+- Users and channels: Lightning Experience for GSA staff; the REST API for one integration user.
+- Presentation: one Lightning app, record pages, layouts, paths, list views, report types, reports and dashboards (section 4.2).
+- Access control: permission set groups for object and field access; org-wide defaults, public groups and sharing rules for record access (sections 4.2 and 4.3).
+- Business logic: nine record-triggered Flows plus formula and roll-up summary fields (section 4.1).
+- Integration: six named queries behind an External Client App and an API-only user (section 4.5).
+- Data: seven custom objects and five standard objects on owned record types (sections 3.2 and 4.4).
+- Platform: standard Salesforce only. The application contains no Apex, triggers, Lightning Web Components, Visualforce or callouts, so every layer is enforced by the platform rather than by code.
+
+### Environments and promotion
+
+IMG: environment-landscape.png | Figure 6. Environments and how metadata moves between them.
+
+- Dev (peodv8dvn) is where the application is built and the source of every change set. The source repository's sfdx/force-app is retrieved from it and is the authoritative definition of the data model.
+- QA (peodv15dvn) is the test and rehearsal sandbox. UAT (peofl1uatp) and Full (peofl2stgp) are full sandboxes for acceptance testing and pre-production rehearsal. Production is gsa-peo.
+- Metadata is promoted by change set. GSA IT Engineering deploys the component set that originates as a change set built in Dev, with the Salesforce CLI from its own repository, with test level NoTestRun.
+- Two things cannot travel in a change set and are deployed by Metadata API instead: the named queries (CLI, with a manifest pinned to API 67.0) and deletions (destructive changes).
+- Some configuration is not metadata at all and is done by hand, or by a repository script, in every org: public group membership, the integration user and its licence and permission set, External Client App keys and secrets, and the Opportunity Contact Role values in the ContactRole standard value set.
+- The sandbox loading tools in tools/data-loading rebuild Dev or QA from the frozen Airtable export. They cannot target UAT, Full or Production: every -Environment parameter is restricted to Dev and QA, and each script confirms from the org itself that it is a sandbox.
+- A sandbox refresh copies production. It removes the integration user and its setup, invalidates CLI logins, can reset a user's profile, and restores anything deleted only in the sandbox.
+
 # 4 - Functionality
 
 ## 4.1 Process Automation
 
 The application has no Apex, triggers, Lightning Web Components, batch jobs or scheduled jobs. All automation is nine record-triggered Flows. Release 2 adds none.
 
-IMG: process-automation.png | Figure 4. The nine record-triggered Flows, grouped by purpose.
+IMG: process-automation.png | Figure 7. The nine record-triggered Flows, grouped by purpose.
 
 - LDGCRM_Partner_Account_Before_Save_Create_Update_Market_Segment. Partner Account, before save, create. Sets Market Segment from the parent Account.
 - LDGCRM_Opportunity_Before_Save_Assign_Account_and_Market_Segment. Opportunity, before save, create and update. Sets Account and Market Segment.
@@ -203,7 +240,7 @@ N/A. The migration used FCIC's TriggerControls__c custom setting to pause FCIC's
 
 A user needs both object permission (from a permission set group) and record access (from org-wide defaults, public groups and sharing rules). A user with the permission set group but in neither group sees an empty application.
 
-IMG: data-sharing-model.png | Figure 5. Data sharing model.
+IMG: data-sharing-model.png | Figure 8. Data sharing model.
 
 - Opportunity, Account, Contact: Private. Owner plus sharing rules.
 - Partner Account, Opportunity Impediment, Issuer String: Controlled by Parent.
@@ -359,7 +396,7 @@ login2, the application logo.
 
 Yes, from Release 2. The Login.gov Partner Portal (P3) reads Application Contact records over the Salesforce REST API to verify Partner Admins. The integration is read only and one way: P3 pulls, Salesforce pushes nothing. There is no outbound message, platform event, Apex callout, MuleSoft flow or middleware.
 
-IMG: p3-system-connectivity.png | Figure 6. System and network connectivity between P3 and Salesforce.
+IMG: p3-system-connectivity.png | Figure 9. System and network connectivity between P3 and Salesforce.
 
 ### What information is needed as an input, and from what system?
 
@@ -373,7 +410,7 @@ To P3, per request: Application Contact rows (name, email, Team UUID, team name,
 
 Authentication. OAuth 2.0 client credentials against an External Client App. The app's Run As user is ldgcrm_p3_integration, an API-only user on the Minimum Access - API Only Integrations profile holding one permission set, LDGCRM_Partner_Portal_API_R. That permission set is the complete statement of what P3 can read.
 
-IMG: p3-auth-sequence.png | Figure 7. Token request and named query call.
+IMG: p3-auth-sequence.png | Figure 10. Token request and named query call.
 
 Named queries. Six ApiNamedQuery components, all over LDGCRM_Application_Contact__c and all returning the same ten columns:
 
@@ -388,11 +425,11 @@ Every filter uses = rather than LIKE, because LIKE never matches null and would 
 
 Environments. Each portal environment has its own External Client App in its paired org. Integration (portal.int.identitysandbox.gov) and Production (portal.login.gov) both read the production org.
 
-IMG: p3-environment-pairing.png | Figure 8. Portal environments and Salesforce orgs.
+IMG: p3-environment-pairing.png | Figure 11. Portal environments and Salesforce orgs.
 
-Security. Transport is HTTPS with TLS 1.2 or higher. The credential is read only and API only. Residual risks: calling a named query requires View Setup and Configuration, which lets the integration user read Setup metadata; View All on Account and Contact is org wide; and the api scope allows any SOQL the permission set permits. The Release 2 P3 Integration Design covers setup, controls and open questions in full.
+Security. Transport is HTTPS with TLS 1.2 or higher. The credential is read only and API only. Residual risks: calling a named query requires View Setup and Configuration, which lets the integration user read Setup metadata; View All on Account and Contact is org wide; and the api scope allows any SOQL the permission set permits. Release 2 - Design covers setup, controls and open questions in full.
 
-IMG: p3-security-controls.png | Figure 9. Security controls and residual risk.
+IMG: p3-security-controls.png | Figure 12. Security controls and residual risk.
 
 ## 4.6 Data Management
 
@@ -475,7 +512,7 @@ The application has no custom code, so the platform's controls mitigate most row
 
 ### Related documents
 
-- Release 2 P3 Integration Design: setup, security and open questions for the Partner Portal integration.
+- Release 2 - Design: what Release 2 changed and why, with setup, security and open questions for the Partner Portal integration.
 - Technical Deployment Plan: pre-deployment, package, post-deployment, verification and rollback steps.
 - Data Migration Plan: the Release 1 migration and the Release 2 Issuer String load.
 - Production change set inventory: component listing of LDGCRM_Sprint_1_24.

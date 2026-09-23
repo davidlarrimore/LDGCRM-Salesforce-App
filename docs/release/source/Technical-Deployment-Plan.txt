@@ -223,7 +223,7 @@ The first line reports the org's state and changes nothing. Environments: Dev, Q
 
 2. Create one External Client App per portal environment on this org.
 Description: Production hosts two portal environments, Integration and Production, so it gets two apps: LDGCRM_P3_Client_app_Int and LDGCRM_P3_Client_app_Prod. QA gets LDGCRM_P3_Client_app_QA. An app cannot be renamed after creation.
-Manual only: Setup > External Client App Manager > New External Client App. Full field-by-field settings are in the Release 2 P3 Integration Design, section Set up External Client Application. The essentials:
+Manual only: Setup > External Client App Manager > New External Client App. Full field-by-field settings are in Release 2 - Design, section Set up External Client Application. The essentials:
 - Distribution State: Local
 - Enable OAuth. Callback URL: https://<portal host>/api/salesforce/partner_admin_verification
 - OAuth Scope: Manage user data via APIs (api) only

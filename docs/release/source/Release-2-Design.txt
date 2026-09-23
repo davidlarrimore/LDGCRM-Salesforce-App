@@ -1,4 +1,4 @@
-TITLE: Release 2 - Login.gov Partner Portal (P3) to Salesforce Integration Design
+TITLE: Release 2 Design - Partner Portal (P3) Integration and Issuer Strings
 
 Application: Login.gov Partnerships CRM (LDGCRM)
 Salesforce org: GSA PEO (gsa-peo)
@@ -8,6 +8,15 @@ Development lead: Dave Larrimore - QQ2A-C
 Requesting team: Federation and Integration Experience (FIE), Login.gov
 Source requirement: 1-pager: Connecting Salesforce to P3 (AJ Farkas - F2AG, 8 May 2026)
 GSA IT point of contact for Salesforce: Mike Bowers - IADB
+
+This document describes what Release 2 changes and why. The design of the whole application after this release is in Login.gov Partnerships CRM - System Architecture and Technical Design. The steps to deploy it are in Release 2 - Technical Deployment Plan, and the Issuer String load in Release 2 - Data Migration Plan.
+
+# Release Scope
+
+- Partner Portal (P3) integration: a read-only, authenticated connection from P3 to the CRM so P3 can verify Partner Admins. New: a permission set, an API-only integration user, six named queries and one External Client App per portal environment.
+- Issuer Strings: a new object holding every issuer string registered for an Application, one record per distinct string, and a one-time load of 918 records.
+- Removal of two deprecated Application fields: LDGCRM_PP_Issuer_Strings__c (replaced by the Issuer String object) and LDGCRM_Est_Monthly_Active_Users__c (never populated).
+- Unchanged: the object model other than Issuer String, the nine Flows, sharing rules, reports and the three user permission set groups apart from their Issuer String access.
 
 # Background (the Why)
 
@@ -229,6 +238,57 @@ Request (from the 1-pager) to Salesforce field
 - Application: LDGCRM_Application__r.Name.
 - Issuer strings: held in LDGCRM_Issuer_String__c, one record per string under its Application. The integration user can read them, but no named query returns them in this release (open question 3).
 
+# Issuer String Object
+
+IMG: issuer-string-model-and-load.png | Figure 5. The Issuer String object, the field it replaces, and how the 932 source rows become 918 records.
+
+Why
+
+- An issuer string (a SAML entity ID or OIDC client ID) identifies one Login.gov integration. The CRM held it in LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c, a unique Text(40) field with room for one string per Application.
+- That field could not hold the real data. An Application commonly has several issuer strings, and 808 of the 930 strings in the Airtable source are longer than 40 characters.
+- The Airtable Issuer Strings table was therefore never migrated in Release 1. Release 2 adds an object that can hold it.
+
+Design decisions
+
+- One record per distinct issuer string, across the whole object. The string field is unique and case-insensitive, so Salesforce itself rejects a duplicate. Decided 18 September 2026.
+- Master-Detail child of Application, reparentable. A string cannot exist without an Application, inherits its visibility, and moves to another Application by reparenting rather than by being copied.
+- The string lives in its own Text(200) field, not in Name. A Text Name is limited to 80 characters and 14 strings are longer; the longest is 104. Name is an Auto Number.
+- No external ID. The string is the only data on the record. The load is therefore an insert and cannot be re-run on top of itself.
+
+Set up Custom Object (delivered by change set; shown here for reference)
+
+Setup > Object Manager > Create > Custom Object > Save
+
+- Label: Issuer String. Plural Label: Issuer Strings.
+- Object Name: LDGCRM_Issuer_String__c
+- Record Name: Issuer String ID. Data Type: Auto Number. Display Format: ISID-{00000}. Starting Number: 1.
+- Allow Reports: checked. Track Field History: checked. Allow Bulk API Access: checked.
+- Sharing: Controlled by Parent (follows from the Master-Detail).
+
+Fields & Relationships > New
+
+- Application (LDGCRM_Application__c): Master-Detail to Application (LDGCRM_application__c). Allow reparenting: checked. Related list label on Application: Issuer Strings.
+- Issuer String (LDGCRM_Issuer_String__c): Text, length 200. Required. Unique, treating "ABC" and "abc" as duplicate values (case-insensitive). Help text: The issuer string (SAML entity ID or OIDC client ID) this Application uses to authenticate with Login.gov.
+
+Page layouts and access
+
+- Page layout: Issuer String Layout. The Application Layout and the Application Lightning record page gain an Issuer Strings related list.
+- Access: Partnership Viewer read; Partnership Team Member create, read and edit; Production Support create, read, edit and delete; Partner Portal API read. Field-level security cannot be set on the string field, because it is required; object access makes it readable and editable.
+- No tab. Issuer Strings are reached from their Application.
+
+Data
+
+- Source: the Airtable Issuer Strings table in the frozen export of 2 September 2026 (932 rows).
+- 918 records: 7 rows have no Application or no text, 2 exact repeats collapse, and 5 strings belong only to Applications that were not migrated.
+- 55 source rows link to more than one Application. Each still becomes one record under one Application. In Dev, 50 of those parents were chosen arbitrarily; the application owner is to confirm them before the production load (open question 6).
+
+# Deprecated Field Removal
+
+- LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c (Text(40), label Issuer Strings (Deprecated)). Replaced by the Issuer String object. Onboarding Engineers maintained it by hand in production, so its values are exported before it is deleted.
+- LDGCRM_application__c.LDGCRM_Est_Monthly_Active_Users__c (Number(18,0), label Estimated Monthly Active Users). Never populated by the migration, on no layout, granted by no permission set. Whether production has it is checked before deletion.
+- A change set cannot delete a field, so both are removed by destructive Metadata API deploy, or by hand in Setup, after the Release 2 change set is verified. Until production drops them, every sandbox refresh brings them back.
+- Nothing blocks either deletion: no formula, validation rule, Flow or named query references them. The report type Login.gov Applications with Partner Portal Issuer Strings loses its issuer string column and is to be rebuilt on the Issuer String object or deleted.
+
 # Deployment Summary
 
 The full procedure is in the Technical Deployment Plan. The integration arrives by four routes, and a successful change set covers only one of them.
@@ -260,3 +320,5 @@ The full procedure is in the Technical Deployment Plan. The integration arrives 
 3. Does P3 need issuer strings (the 1-pager asks that issuer strings be associated with Partner Admin email addresses)? If so, a seventh named query over LDGCRM_Issuer_String__c is needed. Owner: Team FIE.
 4. Secret rotation interval and the secure hand-off channel for the key and secret. Owner: P3 ATO owner and GSA IT.
 5. Approval of the residual risks above, particularly View Setup and Configuration and org-wide View All on Account and Contact. Owner: ISSO.
+6. Which Application each of the 55 multi-Application issuer strings belongs to; 50 were chosen arbitrarily in Dev. Owner: Application owner (Login.gov Partnerships).
+7. Rebuild or delete the report type Login.gov Applications with Partner Portal Issuer Strings. Owner: Login.gov Partnerships.
