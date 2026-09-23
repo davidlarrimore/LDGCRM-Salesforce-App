@@ -395,29 +395,26 @@ alone and it fails on the missing object reference.
 `LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c` was a **Text(40), unique**
 field holding one issuer string per Application, maintained by OEs from ZenDesk
 move-to-production requests. The new object holds issuer strings as a
-**one-to-many child** instead, removing both limits that field imposed: an
-Application can have many, and the same string can appear under more than one
-Application, because strings move between Applications.
+**one-to-many child** instead, removing the limits that field imposed: an
+Application can have many, and a string is not capped at 40 characters. The
+string itself stays **unique** across the object (2026-09-18), so it identifies
+one integration and is recorded once.
 
-The field was **deleted from Dev on 2026-09-09**, and is no longer in this repo.
-
-| | Holds | State |
+| | Holds | State (2026-09-23) |
 | --- | --- | --- |
-| `LDGCRM_PP_Issuer_Strings__c` (field) | one string per Application | **gone from Dev, still in production** |
-| `LDGCRM_Issuer_String__c` (object) | many per Application | Dev only, **2,598 records awaiting a reload** |
+| `LDGCRM_PP_Issuer_Strings__c` (field) | one string per Application | **In production. Deleted from Dev** |
+| `LDGCRM_Issuer_String__c` (object) | many per Application | **Dev only**, 918 records |
 
-**The cutover is half done, in both directions.** Production still has the field
-and not the object; Dev has the object and not the field. Until the reload, its
-issuer strings sit in `Name`, triplicated, with the field meant to hold them
-blank — and it is the one the integration user is granted read on. So a portal
-pointed at Dev reads the wrong field, and the same portal pointed at
-production has no object to read at all.
+**Production has the field and not the object.** So the portal pointed at
+production has no object to read at all, until the Sprint 2 change set lands.
 
-**Deleting the field from Dev does not keep it deleted.** It was deleted once
-before, on 2026-08-14, and the sandbox refresh brought it back, because a refresh
-copies production and a change set cannot carry a deletion. Expect it to return
-on the next refresh, and expect to delete it by hand again, until production drops
-it via a destructive Metadata API change carried by GSA IT Engineering.
+**Deleting the field is a Sprint 2 POST-DEPLOYMENT STEP** —
+[`deployment.md` section 5](deployment.md). A change set cannot carry a deletion,
+so it goes by destructive Metadata API deploy, in every org, after the object has
+arrived. It has been deleted from Dev twice (2026-08-14, 2026-09-09) and a refresh
+restored it both times; that will keep happening until production drops it. Its
+file is deliberately **not** in `force-app/`, so do not commit it when a retrieve
+writes it back.
 
 The report type `LDGCRM_Login_gov_Applications_with_Partner_Portal_Issuer_Strings`
 is named for issuer strings but joins **only** `LDGCRM_application__c`. It reported

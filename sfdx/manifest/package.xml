@@ -13,8 +13,9 @@
         would pull in components with no relation to the LDGCRM app.
     -->
     <!-- ApiNamedQuery DOES NOT EXIST BELOW API VERSION 65.0, and this manifest's
-         <version> is what the server checks - not the CLI's --api-version flag,
-         which does not change it. Retrieving the type while <version> said 64.0
+         <version> is what the server checks - not the CLI's api-version flag
+         (spelled with two leading dashes, which cannot be written inside an XML
+         comment), which does not change it. Retrieving the type while <version> said 64.0
          failed with "Entity type 'ApiNamedQuery' is not available in this api
          version" while the run still reported status "Succeeded" and success
          true; the failure was only visible in the per-component result. If this
@@ -36,6 +37,12 @@
         <members>Opportunity</members>
         <members>OpportunityContactRole</members>
         <members>LDGCRM_Partner_account__c</members>
+        <!-- LDGCRM_Est_Monthly_Active_Users__c is DEPRECATED and is a Sprint 2
+             POST-DEPLOYMENT STEP (scripts/docs/deployment.md section 6): it is
+             deleted by hand, per org, because a change set cannot carry a
+             deletion. A retrieve of this object will keep writing the field file
+             back until the org it is read from has dropped it - keep that file
+             out of force-app/ and out of any commit. -->
         <members>LDGCRM_Application__c</members>
         <members>LDGCRM_Application_Contact__c</members>
         <members>LDGCRM_Impediment__c</members>
@@ -44,10 +51,11 @@
         <!-- LDGCRM_Issuer_String__c was created in Dev on 2026-09-08, AFTER the
              production change set was built, so production does not have it. It is
              a Master-Detail child of LDGCRM_application__c, and it replaces the
-             Text(40) field LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c,
-             which was deleted from Dev on 2026-09-09 and is gone from this repo.
-             PRODUCTION STILL HAS THAT FIELD, and a sandbox refresh restores it -
-             it came back once already. LDGCRM_Partner_Portal_API_R grants read
+             Text(40) field LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c.
+             PRODUCTION STILL HAS THAT FIELD, and every sandbox refresh restores
+             it. Deleting it is a Sprint 2 POST-DEPLOYMENT STEP
+             (scripts/docs/deployment.md section 5); keep its file out of
+             force-app/ when a retrieve writes it back. LDGCRM_Partner_Portal_API_R grants read
              on this object, so a change set carrying that permission set needs
              this object alongside it. -->
         <members>LDGCRM_Issuer_String__c</members>
@@ -119,6 +127,7 @@
         <members>LDGCRM_Partner_Account__c-Partner Account Layout</members>
         <members>LDGCRM_application__c-Application Layout</members>
         <members>Opportunity-Login%2Egov CRM</members>
+        <members>LDGCRM_Issuer_String__c-Issuer String Layout</members>
         <name>Layout</name>
     </types>
     <types>

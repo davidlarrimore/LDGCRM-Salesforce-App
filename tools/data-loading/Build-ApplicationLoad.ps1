@@ -908,8 +908,13 @@ foreach ($Row in $AirtableApplications) {
         # '# of Estimated Annual IdV Transactions' and '# of Estimated Monthly
         # Active Users' are NOT migrated: their target fields
         # (LDGCRM_num_est_annual_idv__c, LDGCRM_Est_Monthly_Active_Users__c)
-        # were deleted from the org on 2026-08-13 as no longer wanted, and the
-        # metadata was removed from this repo to match.
+        # were deleted from the org on 2026-08-13 as no longer wanted.
+        #
+        # Both field files are present in force-app/ again, which is NOT a
+        # reason to map them. LDGCRM_Est_Monthly_Active_Users__c is deprecated
+        # and its per-org deletion is a post-deployment step
+        # (scripts/docs/deployment.md section 6); a sandbox refresh restores the
+        # field until production drops it.
         #
         # Worth knowing how it surfaced, because the error is unhelpful: Bulk
         # API rejected the WHOLE batch with

@@ -316,6 +316,8 @@ way. Otherwise, verify a query by **calling** it — the checks below.
 - **`LDGCRM_Issuer_String__c` does not exist there.** The permission set grants
   read on it, so the change set must carry the object — and its issuer string
   field, a separate component in the change set UI, or the object arrives empty.
+  The field it replaces, `LDGCRM_PP_Issuer_Strings__c`, is deleted **after** it
+  arrives — section 5.
 - **`View Setup and Configuration` widens the integration** beyond its object
   table — the user can read Setup, including the other two apps' configuration.
   Documented in `integration-user.md` section 3; flag it at review rather than
@@ -326,7 +328,253 @@ way. Otherwise, verify a query by **calling** it — the checks below.
 
 ---
 
-## 5. Before signing off a target org
+## 5. ⚠️ POST-DEPLOYMENT STEP — delete `LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c`
+
+**Run this after the Sprint 2 change set has deployed and been verified, in every
+org it reaches.** Sprint 2 removes this field from every org. It is the deprecated Text(40),
+unique, one-per-Application field labelled *Issuer Strings (Deprecated)*, replaced
+by the `LDGCRM_Issuer_String__c` object (Auto Number ID, Text(200) string,
+Master-Detail to Application). Leaving it in place leaves two places to record an
+issuer string, one of which cannot hold most of them.
+
+| Org | State (2026-09-23) |
+| --- | --- |
+| Production | **Has the field** |
+| Dev (`peodv8dvn`) | **Deleted.** SOQL rejects the column; it is in Deleted Fields until it expires. Deleted 2026-08-14 and 2026-09-09 too, and a refresh restored it both times |
+| QA / UAT / Full | Assume present — every refresh copies production |
+
+**Run `tools/metadata/Remove-DeprecatedField.ps1` rather than doing this by hand.**
+It implements every step below — the state probe, the export, the destructive
+manifest pair, the dry run, the component-count check, the SOQL verification and
+the `force-app/` cleanup — and it is safe to re-run, because it detects a field
+that is already gone and says so instead of reporting a hollow success:
+
+```powershell
+# Check first; changes nothing.
+powershell tools/metadata/Remove-DeprecatedField.ps1 -OrgAlias <alias> -WhatIf
+
+# Then the real one. The token is "DELETE FIELD IN PRODUCTION" against production.
+powershell tools/metadata/Remove-DeprecatedField.ps1 -OrgAlias <alias> `
+    -Field PP_Issuer_Strings -Confirmation "DELETE FIELD"
+```
+
+The rest of this section is what the script does and why, and is what to read when
+it fails or when a target org disagrees with it.
+
+### Why a change set cannot do it
+
+A change set only adds and changes; it **cannot carry a deletion**. This is a
+**destructive Metadata API change**, so it travels the same way as the
+`ContactRole` value set in section 1: in GSA IT Engineering's CLI deployment, not
+in the change set. Until production drops the field, **every sandbox refresh puts
+it back**, so deleting it from a sandbox is only ever temporary.
+
+### Order — after the new object, never before
+
+1. The change set carrying `LDGCRM_Issuer_String__c` **and** its
+   `LDGCRM_Issuer_String__c` field has deployed (section 4).
+2. **Export the field's values from the target org.** In production OEs maintain
+   it by hand from ZenDesk move-to-production requests, so it is real data and the
+   delete destroys it:
+
+   ```powershell
+   # From inside sfdx/. data/ is gitignored.
+   sf data export bulk --target-org <alias> --result-format csv --wait 10 `
+       --output-file ..\data\salesforce-backups\LDGCRM_PP_Issuer_Strings__c-<alias>.csv `
+       --query "SELECT Id, Name, LDGCRM_External_ID__c, LDGCRM_PP_Issuer_Strings__c FROM LDGCRM_application__c WHERE LDGCRM_PP_Issuer_Strings__c != null"
+   ```
+
+3. Delete the field (below).
+
+### Nothing blocks it — checked, not assumed
+
+A field delete **hard-blocks only on a formula reference**. No formula, validation
+rule, Flow or named query in `force-app/` references the field (searched
+2026-09-17). Page layouts, permission-set FLS and report-type columns are removed
+automatically by the delete. The report type
+`LDGCRM_Login_gov_Applications_with_Partner_Portal_Issuer_Strings` loses its only
+issuer string column, so **any saved report built on it loses that column
+silently** — check them before deleting in production. `force-app/` is scoped to
+this app, so re-check the target org for references from outside it.
+
+### The delete
+
+`destructiveChanges.xml`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c</members>
+        <name>CustomField</name>
+    </types>
+    <version>64.0</version>
+</Package>
+```
+
+`package.xml` — empty, required alongside it:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <version>64.0</version>
+</Package>
+```
+
+```powershell
+# From inside sfdx/. Dry run first: it reports any blocking reference without deleting.
+sf project deploy start --manifest <dir>\package.xml `
+    --post-destructive-changes <dir>\destructiveChanges.xml `
+    --target-org <alias> --test-level NoTestRun --dry-run --json
+
+# Then the real one.
+sf project deploy start --manifest <dir>\package.xml `
+    --post-destructive-changes <dir>\destructiveChanges.xml `
+    --target-org <alias> --test-level NoTestRun --json
+```
+
+**⚠️ Use `--manifest`, never `--metadata-dir`.** `--metadata-dir` silently ignores
+a destructive manifest and reports `Succeeded` having deleted nothing. **Check
+`numberComponentsDeployed` is 1**, not just the status.
+
+### Verifying it — the Tooling API lies for about 15 days
+
+A deleted field stays in the **Recycle Bin's Deleted Fields for 15 days**, and
+Tooling API `FieldDefinition` keeps listing it for that long. So a
+`FieldDefinition` query is **not** evidence the delete failed. Ask SOQL instead,
+which leads:
+
+```powershell
+# Must FAIL with "No such column 'LDGCRM_PP_Issuer_Strings__c'".
+sf data query --target-org <alias> `
+    -q "SELECT LDGCRM_PP_Issuer_Strings__c FROM LDGCRM_application__c LIMIT 1"
+```
+
+Within those 15 days the field can still be **undeleted** from Setup → Object
+Manager → Application → Fields & Relationships → Deleted Fields. After that it is
+gone, and so is its data — which is why step 2 exports it first.
+
+### After a sandbox refresh
+
+Re-run the delete in the refreshed sandbox, and then `sf project retrieve` will
+stop writing the field back into `force-app/`. A retrieve never deletes a local
+file, so remove
+`sfdx/force-app/main/default/objects/LDGCRM_application__c/fields/LDGCRM_PP_Issuer_Strings__c.field-meta.xml`
+by hand if it reappears. **Do not commit it.**
+
+---
+
+## 6. ⚠️ POST-DEPLOYMENT STEP — delete `LDGCRM_application__c.LDGCRM_Est_Monthly_Active_Users__c`
+
+**Deprecated in Sprint 2. Delete it by hand in every org that has it.** It is the
+Number(18, 0) field labelled *Estimated Monthly Active Users*, help text *"From
+the cost estimate"*. Its Airtable source column, `# of Estimated Monthly Active
+Users`, was never migrated, so nothing in `tools/data-loading/` writes it.
+
+Mechanically this is the same job as section 5, and the same rules apply: a change
+set cannot carry a deletion, and a deletion in a sandbox is undone by the next
+refresh. What differs is the org state, which is **not** the same as section 5's
+and has to be established before anything is deleted.
+
+### First establish which orgs actually have it
+
+| Org | State (2026-09-23) |
+| --- | --- |
+| Production | **Check it. Do not assume either way.** The field is *not* in `LDGCRM_Sprint_1_24` — the inventory was snapshotted 2026-08-17, after the 2026-08-13 deletion — so it reached production only if an earlier change set carried it |
+| Dev (`peodv8dvn`) | **Deleted.** SOQL rejects the column; it is in Deleted Fields until it expires |
+| QA / UAT / Full | Assume present — every refresh copies production |
+
+Use the same script as section 5 — this field is registered in it as
+`-Field Est_Monthly_Active_Users`, and `-Field All` (the default) does both.
+
+**`force-app/` cannot answer this.** A retrieve never deletes a local file, so the
+file being present is equally consistent with "the org has it" and "it was deleted
+from the org months ago and the file was left behind". Ask the org:
+
+```powershell
+# Field present => returns rows. Field absent => fails with
+# "No such column 'LDGCRM_Est_Monthly_Active_Users__c'".
+sf data query --target-org <alias> `
+    -q "SELECT COUNT(Id) FROM LDGCRM_application__c WHERE LDGCRM_Est_Monthly_Active_Users__c != null"
+```
+
+That query answers both questions at once: whether the field exists, and whether
+it holds data worth exporting. Do **not** ask `FieldDefinition` — section 5
+explains why it is the wrong witness in both directions.
+
+### Nothing blocks it — checked 2026-09-18, not assumed
+
+A field delete **hard-blocks only on a formula reference**. Searched across
+`force-app/`: no formula, validation rule, Flow, named query, report type,
+FlexiPage or list view names this field. It is **not on `Application Layout`**,
+and **no permission set grants FLS on it** — all four `LDGCRM_` permission sets
+carry `viewAllFields=false` on `LDGCRM_application__c`, so that absence is real
+rather than hidden by the flag described in CLAUDE.md.
+
+The practical consequence: **no user can see this field today**, on any layout,
+through any of our permission sets. Deleting it removes nothing from anyone's
+screen. `force-app/` is scoped to this app, so still re-check the target org for
+references from FCIC or TTS OTCRM before deleting in production.
+
+### Export first if the org holds data
+
+Unlike section 5's field, this one has no known hand-maintained data — but the
+count query above is the only thing that proves it for a given org. **If it
+returns anything other than 0, export before deleting**; the delete destroys the
+values and the 15-day window is the only way back.
+
+```powershell
+# From inside sfdx/. data/ is gitignored.
+sf data export bulk --target-org <alias> --result-format csv --wait 10 `
+    --output-file ..\data\salesforce-backups\LDGCRM_Est_Monthly_Active_Users__c-<alias>.csv `
+    --query "SELECT Id, Name, LDGCRM_External_ID__c, LDGCRM_Est_Monthly_Active_Users__c FROM LDGCRM_application__c WHERE LDGCRM_Est_Monthly_Active_Users__c != null"
+```
+
+### The manual delete
+
+*Setup → Object Manager → **Application** → Fields & Relationships →
+**Estimated Monthly Active Users** → **Del*** → confirm.
+
+For GSA IT Engineering's CLI deployment it is the same destructive pair as
+section 5, with one member swapped — reuse those commands, including the
+**`--manifest`, never `--metadata-dir`** warning and the
+`numberComponentsDeployed` check:
+
+```xml
+<types>
+    <members>LDGCRM_application__c.LDGCRM_Est_Monthly_Active_Users__c</members>
+    <name>CustomField</name>
+</types>
+```
+
+### Verifying it
+
+```powershell
+# Must FAIL with "No such column 'LDGCRM_Est_Monthly_Active_Users__c'".
+sf data query --target-org <alias> `
+    -q "SELECT LDGCRM_Est_Monthly_Active_Users__c FROM LDGCRM_application__c LIMIT 1"
+```
+
+`FieldDefinition` keeps listing the field for ~15 days, and Setup → Object Manager
+→ Application → **Deleted Fields** can still undelete it for that long. After
+that it is gone, along with its data.
+
+### After a sandbox refresh
+
+Re-run the delete, and remove
+`sfdx/force-app/main/default/objects/LDGCRM_application__c/fields/LDGCRM_Est_Monthly_Active_Users__c.field-meta.xml`
+by hand if a retrieve writes it back. **Do not commit it.**
+
+### Its twin, which this section does not decide
+
+`LDGCRM_num_est_annual_idv__c` was dropped on the same day, for the same reason,
+and is in the same state — deleted from Dev, file back in `force-app/`. Nothing
+here deprecates it. **Whoever deletes this field will be looking straight at it**,
+so get a decision on it before starting rather than in the middle.
+
+---
+
+## 7. Before signing off a target org
 
 Check these directly rather than inferring them from a green deployment. Each has
 failed silently at least once:
@@ -339,6 +587,8 @@ failed silently at least once:
 | Page layouts assigned | open a record as a non-admin | Section 2 |
 | `TriggerControls__c` `Contact.On__c` | `True` | The load flips it off and restores it; confirm it was restored |
 | P3 named queries callable | 5, and a future-dated filter returns **0** | Section 4. A count alone cannot tell a working filter from an ignored one |
+| `LDGCRM_PP_Issuer_Strings__c` deleted | SOQL on the field **fails** | Section 5. `FieldDefinition` still lists it for ~15 days; a refresh brings it back |
+| `LDGCRM_Est_Monthly_Active_Users__c` deleted | SOQL on the field **fails** | Section 6. Same 15-day trap, same refresh behaviour. Confirm the org had it before recording it as done |
 
 The three Flows with the transposed `LGDCRM_` prefix are easy to miss: a
 `LIKE '%DGCRM%'` search **does not match them**, because "LGDCRM" does not contain

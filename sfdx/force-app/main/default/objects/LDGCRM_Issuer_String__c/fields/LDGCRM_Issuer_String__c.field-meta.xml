@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>LDGCRM_Issuer_String__c</fullName>
-    <description>The issuer string (SAML entity ID or OIDC client ID) this Application uses to authenticate with Login.gov. Not unique: the same string can appear under more than one Application when it has moved between them.</description>
+    <caseSensitive>false</caseSensitive>
+    <description>The issuer string (SAML entity ID or OIDC client ID) this Application uses to authenticate with Login.gov.</description>
     <externalId>false</externalId>
-    <inlineHelpText>The SAML entity ID or OIDC client ID registered for this Application. The same string may appear on another Application it was previously or later assigned to.</inlineHelpText>
+    <inlineHelpText>The issuer string (SAML entity ID or OIDC client ID) this Application uses to authenticate with Login.gov.</inlineHelpText>
     <label>Issuer String</label>
     <length>200</length>
     <required>true</required>
     <trackHistory>false</trackHistory>
     <trackTrending>false</trackTrending>
     <type>Text</type>
-    <unique>false</unique>
+    <unique>true</unique>
 </CustomField>

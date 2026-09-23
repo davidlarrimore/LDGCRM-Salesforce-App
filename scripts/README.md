@@ -9,6 +9,38 @@ This folder is where Sprint 2's work lives.
   Read this before building or receiving a Sprint 2 change set. It leads with the
   `OpportunityContactRole.Role` values, which are deactivated rather than missing
   and will silently corrupt a load if they are not reactivated.
+
+## ⚠️ Post-deployment steps
+
+Run these **after** the Sprint 2 change set has deployed and been verified, in
+every org it reaches. A change set cannot do them.
+
+Both are automated by **`tools/metadata/Remove-DeprecatedField.ps1`**, which takes
+a bare `-OrgAlias` so it can reach UAT, Full and production, and does both fields
+by default:
+
+```powershell
+powershell tools/metadata/Remove-DeprecatedField.ps1 -OrgAlias <alias> -WhatIf
+powershell tools/metadata/Remove-DeprecatedField.ps1 -OrgAlias <alias> -Confirmation "DELETE FIELD"
+```
+
+1. **Delete `LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c`** — the deprecated
+   Text(40) *Issuer Strings (Deprecated)* field, replaced by the
+   `LDGCRM_Issuer_String__c` object. Export its values first, then delete it with
+   a destructive Metadata API deploy (`--manifest` + `--post-destructive-changes`,
+   never `--metadata-dir`). A change set cannot carry a deletion, and every sandbox
+   refresh restores the field until production drops it. Full procedure,
+   verification and the 15-day Tooling API trap:
+   [`docs/deployment.md` section 5](docs/deployment.md#5--post-deployment-step--delete-ldgcrm_application__cldgcrm_pp_issuer_strings__c).
+2. **Delete `LDGCRM_application__c.LDGCRM_Est_Monthly_Active_Users__c`** — the
+   Number(18, 0) *Estimated Monthly Active Users* field, deprecated in Sprint 2.
+   Nothing loads it, no layout shows it and no permission set grants it, so the
+   delete is invisible to users — but **which orgs still have it is an open
+   question**, not an assumption: it is absent from the Sprint 1 change set,
+   deleted from Dev on 2026-08-13, and its file is back in `force-app/` anyway.
+   Ask the org with SOQL before deleting, and export any values first. Full
+   procedure:
+   [`docs/deployment.md` section 6](docs/deployment.md#6--post-deployment-step--delete-ldgcrm_application__cldgcrm_est_monthly_active_users__c).
 - **[`docs/integration-user.md`](docs/integration-user.md)** — standing up the P3
   Partner Portal API user: the permission set license goes on **before** the
   permission set, because the license is what makes `ApiUserOnly` grantable. None
