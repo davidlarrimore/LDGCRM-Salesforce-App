@@ -1,0 +1,489 @@
+TITLE: Login.gov Partnerships CRM - Technical Design
+
+Template Version 1.04 - Date Issued: January 17, 2019
+Document prepared 23 September 2026
+
+# 1 - App Revision History
+
+1.00 - 18 August 2026 - First technical design. Describes the application as packaged in outbound change set LDGCRM_Sprint_1_24 (232 components across 24 metadata types) and the one-time Airtable data migration that populated it - Technical Lead: [GSA IT to supply]
+2.00 - 23 September 2026 - Release 2. Adds the Login.gov Partner Portal (P3) integration: an External Client App per portal environment, an API-only integration user, a read-only permission set and six named queries. Adds the Issuer String object (one record per distinct issuer string) and its load. Removes the deprecated Application fields LDGCRM_PP_Issuer_Strings__c and LDGCRM_Est_Monthly_Active_Users__c - Technical Lead: Dave Larrimore - QQ2A-C
+
+Archive instructions: make a copy of this document at the start of the fiscal year and save it in the usual location. Append Technical Design - FY## to the file name of the archived copy. Keep only the current fiscal year's entries in the revision history.
+
+# 3 - Project Information
+
+Project Title: Login.gov Partnerships CRM (LDGCRM)
+Executive Sponsor: Chanan Delivuk - F2AF
+Application Owner: Peter Marks - F2AF; Erin Duffy - Q2AA-C; Moncef Belyamani - F2AF
+GSA IT Government Lead: Mike Bowers - IADB
+Development Lead: Dave Larrimore - QQ2A-C
+Business Lines/Groups Impacted: Technology Transformation Services (TTS) - Login.gov
+Subject Matter Expert Resources: [GSA IT to supply]
+
+## 3.1 Project Success Criteria
+
+### What is the problem?
+
+The Login.gov partnership team works with federal, state and local agencies that use Login.gov as their identity provider. It tracked those relationships in Airtable: interested agencies, signed agreements, live applications, contacts, and what blocks each deal. Airtable is not an approved GSA application and has been shut down.
+
+The Login.gov Partner Portal (P3) also depended on that data. Before a Login Admin grants the Partner Admin role on a partner team, P3 must confirm the person is an authorised Partner Admin. This is a User Management requirement in the P3 ATO.
+
+### What is needed?
+
+- A Salesforce application in the GSA PEO org that is the system of record for the Login.gov partnership programme, holding the Airtable history.
+- Records held alongside GSA's existing federal Accounts and Contacts rather than in a parallel list.
+- Record-level security that GSA sets deliberately and can audit.
+- Reporting the partnership team can run without help: pipeline by market segment, revenue blocked by impediment, upcoming launches and applications at risk.
+- Every migrated record traceable to its Airtable source row.
+- Release 2: a read-only, authenticated way for P3 to read the authorised Partner Admins for a team, and a place to hold every issuer string registered for an Application.
+
+### How will we know we are finished?
+
+1. The application is in production, and every component verifies against the component inventory.
+2. All nine Flows are active in production.
+3. The data migration completes with every row not loaded accounted for by name and reason.
+4. Every migrated record carries LDGCRM_External_ID__c.
+5. Partnership team members, signed in as themselves, can see and edit the records they should and cannot see the others.
+6. The reports in the Login.gov folders give the answers the team got from Airtable.
+7. Release 2: in each portal environment, P3 obtains a token as the integration user and completes a Partner Admin verification against its paired org.
+8. Release 2: each distinct issuer string exists exactly once, under an Application, and the deprecated issuer string field is gone from every org.
+
+## 3.2 Object Model
+
+The application uses eight custom objects and five standard ones.
+
+IMG: object-model.png | Figure 1. Object model as built in Release 1. Issuer String, added in Release 2, is shown in Figure 2.
+
+IMG: issuer-string-model-and-load.png | Figure 2. The Issuer String object and the field it replaces.
+
+- Market Segment (LDGCRM_Market_Segment__c), custom. Five fixed segments. Everything else inherits its segment from here.
+- Partner Account (LDGCRM_Partner_Account__c), custom. One partner agreement. Master-Detail child of Account.
+- Application (LDGCRM_application__c), custom. One integration delivered under an agreement. Carries the launch checklist and the P3 Team UUID and team name.
+- Impediment (LDGCRM_Impediment__c), custom. A named obstacle shared across the Opportunities it blocks.
+- Opportunity Impediment (LDGCRM_Opportunity_Impediment__c), custom junction. Joins an Impediment to an Opportunity with a severity. Two Master-Details.
+- Application Contact (LDGCRM_Application_Contact__c), custom junction. Joins a Contact to an Application and carries the Partner Portal Admin flag. Two Lookups. This is the object P3 reads.
+- Issuer String (LDGCRM_Issuer_String__c), custom, Release 2. One issuer string (SAML entity ID or OIDC client ID). Master-Detail child of Application.
+- Account (standard). The federal agency. Record type Federal. The application reconciles onto existing Accounts and does not create them.
+- Contact (standard). A person at an agency or at GSA. Record types Federal and GSA.
+- Opportunity (standard). A prospective agreement. Record type Login_gov with its own seven-stage sales process.
+- Opportunity Contact Role (standard junction). Who is involved in a deal, and in what role.
+- Activity (Task and Event, standard). Meetings and tasks. Two fields added.
+
+### Naming defects that are permanent
+
+These are in shipped API names and cannot be corrected without breaking every reference. Anyone querying the application must reproduce them exactly.
+
+- LDGCRM_contact__c on Application Contact has a lower-case c.
+- LGDCRM_P3_Partner_Portal_Admin__c on Application Contact has a transposed prefix.
+- Three of the nine Flows carry the transposed LGDCRM_ prefix, and one of them is named Before_Save although it runs after save. A search for LIKE '%DGCRM%' misses all three; search both prefixes.
+
+## 3.3 High Level System Process Flow
+
+IMG: process-flow.png | Figure 3. High-level system process flow.
+
+Pipeline. An agency's interest becomes an Opportunity on the Login_gov record type and moves through Prospecting, Identified, Qualified, Scoped, Agreements, and then Closed Won or Closed Lost. Obstacles are recorded as Impediments joined to it with a severity of Blocker or Impediment. A Blocker adds the Opportunity's estimated annual revenue to the Impediment's Blocked Revenue roll-up.
+
+Agreement and launch. A Closed Won Opportunity produces a Partner Account, the agreement, as a Master-Detail child of the agency's Account. Each integration delivered under it is an Application, starting at Pending Agreement and working through a launch checklist sized by Launch Level 1 to 5, then Move to Production Request and Active. Each Application records its issuer strings as Issuer String child records.
+
+Partner Portal. The Application carries the P3 Team UUID and team name. Application Contacts flagged Partner Portal Admin are the people P3 allows to be made Partner Admins for that team. P3 reads them through the integration in section 4.5.
+
+Throughout. Contacts are held once per person and joined to Applications through Application Contact and to Opportunities through Opportunity Contact Role. Market Segment is set once on the Account and stamped down the hierarchy by Flow.
+
+# 4 - Functionality
+
+## 4.1 Process Automation
+
+The application has no Apex, triggers, Lightning Web Components, batch jobs or scheduled jobs. All automation is nine record-triggered Flows. Release 2 adds none.
+
+IMG: process-automation.png | Figure 4. The nine record-triggered Flows, grouped by purpose.
+
+- LDGCRM_Partner_Account_Before_Save_Create_Update_Market_Segment. Partner Account, before save, create. Sets Market Segment from the parent Account.
+- LDGCRM_Opportunity_Before_Save_Assign_Account_and_Market_Segment. Opportunity, before save, create and update. Sets Account and Market Segment.
+- LDGCRM_Application_Before_Save_Assign_Market_Segment. Application, before save, create and update. Sets Market Segment via Partner Account and Account.
+- LDGCRM_Partner_Account_After_Save_Update_Re_Parent_Cascade. Partner Account, after save, update. Cascades a new Account and Market Segment to the agreement's Applications when the Partner Account is re-parented.
+- LDGCRM_ApplicationContact_BeforeSave_NewRecordDuplicateCheck. Application Contact, before save, create. Blocks a second row joining the same Contact and Application.
+- LDGCRM_Opportunity_Impediment_Before_Save_New_Record_Duplicate_Check. Opportunity Impediment, before save, create. Blocks a second row joining the same Impediment and Opportunity.
+- LGDCRM_Opportunity_Impediment_Before_Save_Update_Blocked_Revenue. Opportunity Impediment, after save, create and update. Sets Blocked Revenue when severity is Blocker.
+- LGDCRM_Opportunity_After_Save_Update_Opportunity_Impediments. Opportunity, after save, update. Re-drives Blocked Revenue when the Opportunity's revenue changes.
+- LGDCRM_Opportunity_Before_Save_Update_Current_Status_Summary_DateTime. Opportunity, before save, update. Stamps the status summary's last-modified time.
+
+An inactive Flow is invisible to every record count. A QA load once completed with every count correct and Market Segment blank on every Partner Account, Opportunity and Application, because the Flows were off. Activating them later does not repair existing records. Flow activation is therefore checked before any load and after every deployment.
+
+## 4.2 Configuration Details
+
+### App Setup
+
+One Lightning app: Login.gov Partnerships CRM (LDGCRM_Login_Gov_CRM_App). Standard navigation, large and small form factors, brand colour #0070D2, logo from the login2 content asset, home page LDGCRM_Home_Page. The PEO org also hosts FCIC and TTS OTCRM; this document covers only this app.
+
+### Tab Setup
+
+Market Segments, Accounts, Partner Accounts, Opportunities, Applications, Contacts, Impediments, Events, Reports, Dashboards. Four are custom tabs. The junction objects and Issuer String have no tab; they are reached through their parents' related lists.
+
+### User Profile(s)
+
+No application permission is granted by profile. Access is by permission set group.
+
+- GSA Standard Salesforce User: existing, unchanged.
+- GSA Standard Basic User: existing, unchanged.
+- GSA Standard Platform User: existing, unchanged.
+- GSA System Administrator: existing. Full access assumed.
+- Minimum Access - API Only Integrations: stock Salesforce profile, used unchanged by the Release 2 integration user ldgcrm_p3_integration.
+
+### Permission Set(s)
+
+- LDGCRM - G - Partnership Team Member - CRE (group; contains LDGCRM_Partnership_Team_Member_CRE and OrgWide_Hide_Salesforce_Classic_System). Create, read and edit on Account, Contact, Opportunity, Partner Account, Application, Impediment, Market Segment and Issuer String. Create, read, edit and delete on the two junctions. No View All or Modify All.
+- LDGCRM - G - Partnership Viewer - R (group; contains LDGCRM_Partnership_Viewer_R and OrgWide_Hide_Salesforce_Classic_System). Read on all objects, Issuer String included. View All on Account, Contact and Market Segment.
+- LDGCRM - G - Production Support - CRED (group; contains LDGCRM_Production_Support_CRED and OrgWide_Hide_Salesforce_Classic_System). Create, read, edit and delete on all objects, Issuer String included. Modify All and View All on Market Segment.
+- LDGCRM - Partner Portal API - R (Release 2; not in a group). Assigned only to ldgcrm_p3_integration. Read only on ten objects: Account and Contact (with View All Records and View All Fields), Opportunity, and the seven LDGCRM objects (View All on Market Segment). No create, edit or delete. 72 field read grants. User permissions: API Enabled, API Only User, View Setup and Configuration, View Roles and Role Hierarchy. Requires the Salesforce API Integration permission set licence on the user first.
+
+Team members can delete only junction rows. Full delete belongs to production support. The viewer group sees Contact record type Federal only; the other two also see GSA.
+
+### Custom Permissions
+
+N/A.
+
+### Public Groups & Queues
+
+- LDGCRM Team Members (LDGCRM_Team_Members): read/write access to LDGCRM records. Grant Access Using Hierarchies on.
+- LDGCRM Viewers (LDGCRM_Viewers): read-only access to LDGCRM records. Grant Access Using Hierarchies on.
+- Queues: N/A.
+
+Group membership does not travel in a change set. It is populated in each org by hand.
+
+### Sharing Rules
+
+Fourteen rules, all granting to the two public groups.
+
+- Account: LDGCRM_Account_Federal_Record_Type_R (Federal, Read, Viewers); LDGCRM_Account_Federal_Record_Type_R_W (Federal, Edit, Team Members).
+- Contact: LDGCRM_Contact_Federal_GSA_R (Federal or GSA, Read, Viewers); LDGCRM_Federal_and_GSA_R_W (Federal or GSA, Edit, Team Members).
+- Opportunity: LDGCRM_Opportunity_Federal_R (Login_gov, Read, Viewers); LDGCRM_Opportunity_Federal_R_W (Login_gov, Edit, Team Members).
+- Application, Application Contact, Impediment, Market Segment: one owner-based Read rule for Viewers and one Edit rule for Team Members on each.
+
+Partner Account, Opportunity Impediment and Issuer String have no sharing rules; they are Master-Detail children and inherit their parents' sharing.
+
+### Hierarchy Considerations
+
+The application defines no role hierarchy. Both public groups grant access using hierarchies, so a manager above a group member inherits that member's access.
+
+### Team Roles
+
+N/A.
+
+### Workflows & Processes
+
+Nine record-triggered Flows (section 4.1). No workflow rules, Process Builder processes or approval processes.
+
+### Approvals
+
+N/A.
+
+### Reports & Dashboards
+
+Report folder: Login.gov Reports (LDGCRM_Reports). Dashboard folder: Login.gov Dashboards (LDGCRM_Login_Gov_Dashboards).
+
+Eleven custom report types: Login.gov Applications with Activities; with Application Contacts; with Partner Portal Issuer Strings; Login.gov Market Segments; with Accounts; with Accounts with Opportunities; with Accounts with Partner Accounts; with Partner Accounts with Applications; Login.gov Opportunities with Activity; with Impediments; Login.gov Partner Accounts.
+
+Login.gov Applications with Partner Portal Issuer Strings joins only Application and reported the deprecated issuer string field. It does not join the Issuer String object and is to be rebuilt or deleted.
+
+Fourteen list views ship with the application.
+
+### Validation Rules
+
+One packaged rule, Level1_and_Level2_account_restrictions on Account. Inactive, and its condition is FALSE. The twenty-two other rules on Account and Opportunity belong to TTS OTCRM.
+
+### Organization-Wide Email Addresses
+
+N/A. The application sends no email.
+
+### Custom Settings, Metadata Types, and Labels
+
+N/A. The migration used FCIC's TriggerControls__c custom setting to pause FCIC's Contact trigger during the Contact load, and restored it.
+
+## 4.3 Data Sharing Model
+
+A user needs both object permission (from a permission set group) and record access (from org-wide defaults, public groups and sharing rules). A user with the permission set group but in neither group sees an empty application.
+
+IMG: data-sharing-model.png | Figure 5. Data sharing model.
+
+- Opportunity, Account, Contact: Private. Owner plus sharing rules.
+- Partner Account, Opportunity Impediment, Issuer String: Controlled by Parent.
+- Application, Application Contact, Impediment, Market Segment: Public Read/Write. Anyone with object access.
+
+The six criteria-based rules on Account, Contact and Opportunity carry the record-level restriction. The eight owner-based rules sit on Public Read/Write objects and grant nothing extra. Org-wide defaults for the standard objects do not travel in a change set; verify them in every org.
+
+The integration user sees records through its own permission set: View All Records on Account and Contact, and ordinary sharing elsewhere. Its reads of Application Contact are unrestricted because that object is Public Read/Write.
+
+## 4.4 Custom Development Details
+
+No custom code: no Apex, Lightning Web Components, Aura, Visualforce, triggers or callouts. Deployments use test level NoTestRun.
+
+### Force.com objects (Custom or Standard)
+
+#### LDGCRM_Market_Segment__c - Market Segment
+
+Name: Text. Public Read/Write. Feed tracking and field history on. One custom field, LDGCRM_External_ID__c, which holds the segment name (the one exception to the Airtable-ID convention).
+
+#### LDGCRM_Partner_Account__c - Partner Account
+
+Name: Text. Controlled by Parent. Master-Detail to Account through LDGCRM_Account__c, filtered to record type Federal. Fourteen custom fields: agreement short name, initial agreement date, status, service type, health, priority, complexity, owner, two URLs and a status summary. LDGCRM_Market_Segment__c is set by Flow.
+
+#### LDGCRM_application__c - Application
+
+Name: Text. Public Read/Write. One record type, LDGCRM_Application. Path on LDGCRM_Status__c. LDGCRM_Partner_Account__c is a required Lookup; LDGCRM_Opportunity__c an optional Lookup filtered to Login_gov; LDGCRM_Broker_App_Parent__c a self-lookup. Most fields are the launch checklist. LDGCRM_P3_Team_UUID__c and LDGCRM_P3_Partner_Portal_Team_Name__c link it to its P3 team.
+
+Formula fields, not writable: LDGCRM_Level_1_Complete_Pct__c, LDGCRM_Level_3_Complete_Pct__c, LDGCRM_Level_4_Complete_Pct__c, LDGCRM_Launch_Checklist_Completion__c, LDGCRM_Annual_Revenue_Amount__c, LDGCRM_Opportunity_Lead__c, LDGCRM_Opportunity_Stage__c. A blank Launch Level makes the checklist report 100% complete, so a missing Launch Level defaults to 1 - Very Low Impact.
+
+Removed in Release 2: LDGCRM_PP_Issuer_Strings__c (Text(40), replaced by the Issuer String object) and LDGCRM_Est_Monthly_Active_Users__c (Number, never populated, on no layout). Both are deleted by destructive change after their values are exported.
+
+LDGCRM_Market_Segment__c is set by Flow. Layout: Application Layout, which with the LDGCRM_Application_Record_Page carries the Issuer Strings related list.
+
+#### LDGCRM_Impediment__c - Impediment
+
+Name: Text. Public Read/Write. LDGCRM_Category__c is a restricted picklist of three values. LDGCRM_Blocked_Revenue__c is a roll-up summary.
+
+#### LDGCRM_Opportunity_Impediment__c - Opportunity Impediment
+
+Junction. Name: Auto Number OIID-{00000}. Controlled by Parent. Master-Detail to Impediment and to Opportunity. LDGCRM_Severity__c required (Impediment or Blocker). LDGCRM_Blocked_Revenue__c set by Flow.
+
+#### LDGCRM_Application_Contact__c - Application Contact
+
+Junction. Name: Auto Number LDGAC-{0000}. Public Read/Write. Lookups to Contact (LDGCRM_contact__c, required) and Application, with a duplicate-check Flow. LGDCRM_P3_Partner_Portal_Admin__c is the Partner Portal Admin flag. Formula fields expose LDGCRM_Email__c (from the Contact) and LDGCRM_P3_Team_UUID__c and LDGCRM_P3_Partner_Portal_Team_Name__c (from the Application). These are the fields P3 reads.
+
+#### LDGCRM_Issuer_String__c - Issuer String (Release 2)
+
+Name: Auto Number ISID-{00000}, label Issuer String ID. Controlled by Parent. Field history on. Bulk API enabled. No record type, no trigger, no external ID.
+
+- LDGCRM_Application__c: Master-Detail to LDGCRM_application__c, reparentable. A string moves with a reparent rather than being duplicated.
+- LDGCRM_Issuer_String__c: Text(200), required, unique, case-insensitive. The longest value is 104 characters.
+
+One record per distinct issuer string: a SAML entity ID or OIDC client ID identifies one integration. The string is not stored in Name because a Text Name is limited to 80 characters and 14 values are longer. No permission set can grant field-level security on the required field; object read makes it readable.
+
+#### Account
+
+Record type Federal. Custom fields LDGCRM_External_ID__c and LDGCRM_Market_Segment__c. The application reconciles onto existing Accounts.
+
+#### Contact
+
+Record types Federal and GSA. Custom fields LDGCRM_External_ID__c, LDGCRM_Partner_Account__c, LDGCRM_Pronunciation__c and LDGCRM_Subscription_Type__c. GSA for @gsa.gov addresses, Federal for everyone else.
+
+#### Opportunity
+
+Record type Login_gov with a seven-stage sales process. Thirty-one custom fields. Revenue is three input fields feeding two formulas. The org also carries un-prefixed fields from other applications with matching labels (for example Level_of_Priority__c, Opportunity_Type__c, Status__c). This application's fields carry the LDGCRM_ prefix.
+
+#### OpportunityContactRole
+
+Custom fields LDGCRM_Date_Added__c, LDGCRM_Date_Archived__c and LDGCRM_External_ID__c. Salesforce does not allow an External ID field on this object, so it is loaded by insert and read-then-diff. The Role values Day-to-Day POC and Senior POC must be active in every org; they sit in the standard value set ContactRole, which a change set cannot carry.
+
+#### Activity (Task and Event)
+
+Custom fields LDGCRM_External_ID__c and LDGCRM_Meeting_Type__c. Meeting history was not migrated.
+
+### Lightning Components
+
+N/A.
+
+### Custom Report Types
+
+Eleven, listed in section 4.2.
+
+### Chatter Enabled Objects
+
+Feed tracking on Market Segment only.
+
+### Visualforce Pages
+
+N/A.
+
+### Triggers
+
+N/A for this application. GSA_FCIC_ContactTrigger (FCIC) and purecloud.ContactWebHookv1 (Genesys managed package) fire on Contact insert in this org.
+
+### Apex Code
+
+N/A.
+
+### Web Service/API Code
+
+No custom web service code. Release 2 exposes six ApiNamedQuery components through the standard Salesforce Named Query REST API. They are declarative metadata: each holds a fixed SOQL statement and its declared parameters. See section 4.5.
+
+### Force.com sites
+
+N/A.
+
+### Customer Portals
+
+N/A.
+
+### Communities
+
+N/A. No Experience Cloud site and no external user with a Salesforce login. P3 is a separate system that reads data over the API as one integration user.
+
+### Site.com
+
+N/A.
+
+### Third Party Applications
+
+None used by this application. The org contains the Genesys purecloud managed package.
+
+### Other
+
+#### Paths
+
+- Login.gov Opportunity Path: Opportunity, StageName, record type Login_gov.
+- Login.gov Application Path: Application, LDGCRM_Status__c.
+
+#### Lightning Record Pages
+
+LDGCRM_Home_Page, LDGCRM_Federal_Account_Record_Page, LDGCRM_Federal_Contact_Record_Page, LDGCRM_Opportunity_Page, LDGCRM_Partner_Account_Record_Page, LDGCRM_Application_Record_Page, LDGCRM_Impediment_Record_Page, LDGCRM_Market_Segment_Record_Page.
+
+#### Sales Processes
+
+Login.gov, seven stages.
+
+#### Global Value Sets
+
+Demographic_Served, 25 values, shared by Opportunity and Application.
+
+#### Page Layouts and Compact Layouts
+
+Nine page layouts, including Issuer String Layout (Release 2), and five compact layouts. Layout assignment for Account, Contact and Opportunity is per profile and record type and does not travel with a permission set; check it in each org.
+
+#### Content Assets
+
+login2, the application logo.
+
+## 4.5 System Integration/Interface
+
+### Will the proposed solution provide source information to other systems?
+
+Yes, from Release 2. The Login.gov Partner Portal (P3) reads Application Contact records over the Salesforce REST API to verify Partner Admins. The integration is read only and one way: P3 pulls, Salesforce pushes nothing. There is no outbound message, platform event, Apex callout, MuleSoft flow or middleware.
+
+IMG: p3-system-connectivity.png | Figure 6. System and network connectivity between P3 and Salesforce.
+
+### What information is needed as an input, and from what system?
+
+None on an ongoing basis. The initial data came once from the Airtable base, which is now shut down.
+
+### What information will be provided to what systems as an output?
+
+To P3, per request: Application Contact rows (name, email, Team UUID, team name, Partner Portal Admin flag, contact name, Application name, record Id, external Id, last modified date). MuleSoft is GSA's preferred integration tool; it is not used because the requirement is a low-volume, read-only, point-to-point query that the standard REST API serves directly.
+
+### The Partner Portal (P3) integration
+
+Authentication. OAuth 2.0 client credentials against an External Client App. The app's Run As user is ldgcrm_p3_integration, an API-only user on the Minimum Access - API Only Integrations profile holding one permission set, LDGCRM_Partner_Portal_API_R. That permission set is the complete statement of what P3 can read.
+
+IMG: p3-auth-sequence.png | Figure 7. Token request and named query call.
+
+Named queries. Six ApiNamedQuery components, all over LDGCRM_Application_Contact__c and all returning the same ten columns:
+
+- ldgcrmApplicationContactsPartnerAdminByTeamUuid (teamuuid): the main lookup, Partner Admins for one team. The admin flag is hardcoded TRUE.
+- ldgcrmApplicationContactsByTeamUuid (teamuuid): a team's whole roster.
+- ldgcrmApplicationContactsPartnerAdminOnly: every Partner Admin.
+- ldgcrmApplicationContactsAll: every Application Contact.
+- ldgcrmApplicationContactsByEmail (email): one person across Applications.
+- ldgcrmApplicationContactsModifiedSince (modifiedsince): rows changed since a timestamp.
+
+Every filter uses = rather than LIKE, because LIKE never matches null and would drop the 248 Partner Admins with no team. A declared parameter is mandatory; an undeclared one is silently ignored and returns more rows.
+
+Environments. Each portal environment has its own External Client App in its paired org. Integration (portal.int.identitysandbox.gov) and Production (portal.login.gov) both read the production org.
+
+IMG: p3-environment-pairing.png | Figure 8. Portal environments and Salesforce orgs.
+
+Security. Transport is HTTPS with TLS 1.2 or higher. The credential is read only and API only. Residual risks: calling a named query requires View Setup and Configuration, which lets the integration user read Setup metadata; View All on Account and Contact is org wide; and the api scope allows any SOQL the permission set permits. The Release 2 P3 Integration Design covers setup, controls and open questions in full.
+
+IMG: p3-security-controls.png | Figure 9. Security controls and residual risk.
+
+## 4.6 Data Management
+
+Release 1 migrated the Airtable base once, by an orchestrated PowerShell pipeline: thirteen dependency-ordered steps, upserts keyed on LDGCRM_External_ID__c (Airtable record ID), a typed confirmation on every write, and a run report separating rejected rows from withheld rows. Exceptions: Market Segment keys on the segment name; Application Contact uses a composite <contact>|<application> key; Opportunity Contact Role is loaded by insert plus read-then-diff. Production went live on 8 September 2026.
+
+Final QA rehearsal (16 August 2026): 9,221 records submitted, 9,221 loaded, 0 failures, 72 withheld by the transforms.
+
+The load changed four org settings: every active Contact duplicate rule and matching rule set inactive (permanent; the TTS OTCRM rule rejected 167 Contacts on one load and TTS OTCRM is defunct), the nine Flows confirmed active, and FCIC's TriggerControls__c Contact switch turned off for the Contact step and restored.
+
+Release 2 loads Issuer Strings once: 918 records, one per distinct string, by insert with the Salesforce Data Loader or CLI. The Release 2 Data Migration Plan has the procedure.
+
+Airtable is shut down. The export of 2 September 2026 is the last copy of the source, including twelve tables that were never migrated (for example Meetings).
+
+Ongoing data operations: none. The partnership team maintains records in the Salesforce UI. There is no recurring load or synchronisation.
+
+## 4.7 Self-Assessment
+
+The application has no custom code, so the platform's controls mitigate most rows. Release 2 adds one machine reader, P3, and the rows it affects are answered for it.
+
+### Client Application Security
+
+- Buffer Overflow: not applicable. No native code.
+- ActiveX Control Security: not applicable.
+- Flash Security: not applicable.
+- Integer Overflows: not applicable. Calculations are formula fields and Flows evaluated by the platform.
+- Format String Vulnerability: not applicable.
+
+### Composite Application Security
+
+- Cross Site Request Forgery: mitigated by the platform. No custom page or endpoint.
+- SQL Injection: not applicable. Named queries hold fixed SOQL in the org; P3's values are bound as declared parameters, not concatenated into the query.
+- Cross Site Scripting: mitigated by the platform. All rendering is by standard Lightning components.
+- Validating Single Sign on Servers: not applicable. Users authenticate through GSA's enterprise SSO, unchanged.
+- Secure Communications and Cookies: all access over HTTPS. The P3 connection uses TLS 1.2 or higher. The application sets no cookie.
+- OS Command Injection: not applicable.
+- HTTP Response Splitting: not applicable.
+- Insecure Direct Object Reference: mitigated by the platform's sharing model, enforced on every record access, including API calls by the integration user.
+- Session Handling: handled by the platform. P3's access token is issued by Salesforce for the integration user and expires under the org's session settings.
+- Injection Flaws: not applicable, as above.
+- Failure to Restrict URL Access: mitigated by the platform. The named query endpoint requires a valid token, and results are limited by the caller's permission set and sharing.
+- Storing Secrets: the application stores no secret. P3 holds the External Client App's consumer key and secret in its own secret storage, entered by a Login Admin; each is issued per app and per org and can be revoked independently. Repository credentials sit in a .env file excluded from source control.
+- Denial of Service: mitigated by platform limits. P3's volume is a few calls a week.
+- Directory Traversal: not applicable.
+- External Includes: not applicable.
+- File Upload Vulnerabilities: the only upload path is Salesforce Files, used by migrated Enhanced Notes.
+- Malicious File Execution: not applicable.
+- Arbitrary Redirects: not applicable. The External Client App's callback URL is unused by the client credentials flow.
+- Abuse Of Functionality: automation is server-side Flow. Ordinary users can delete only junction rows. The integration user can create, edit and delete nothing.
+- Information Leakage: mitigated by field-level security and sharing. The integration returns only the ten columns of the named queries, but its permission set also allows reading other granted fields through the general query API; View Setup and Configuration exposes Setup metadata. Both are recorded as residual risks.
+- Authentication: users authenticate through GSA enterprise SSO. The one non-human identity, ldgcrm_p3_integration, is API only and cannot open a UI session, and authenticates only through its External Client App with client credentials.
+
+### Native Application Security
+
+- Force.com CRUD, FLS and Sharing: enforced by the platform on every access; there is no code to bypass it. Section 4.3 sets out the model. The integration's access is exactly its permission set.
+- Cross Site Scripting: as above.
+- SOQL Injection: named queries bind parameters; there is no dynamic SOQL in the application.
+- Storing Secrets: as above.
+- Arbitrary Redirects: not applicable.
+- Cross Site Request Forgery: mitigated by the platform.
+- Abuse Of Functionality: as above.
+
+# 5 - Considerations
+
+- Custom objects only where no standard object fits: agreement, application, impediment, market segment and issuer string. Everywhere else standard objects are extended with LDGCRM_ fields.
+- Partner Account is Master-Detail to Account, so an agreement cannot outlive its agency and shares its visibility.
+- Issuer String is Master-Detail to Application, so a string cannot exist without an Application, inherits its visibility, and can be reparented when a string moves.
+- The two junctions differ on purpose. Opportunity Impediment uses two Master-Details and is unique by structure. Application Contact uses two Lookups, so uniqueness is enforced by a create-only Flow and, in the migration, by a composite external ID.
+- Market Segment is derived by Flow. It cannot drift, but Flow activation order matters: a record created while the Flows are off keeps a blank segment.
+- Four objects are Public Read/Write internally, so their owner-based sharing rules are inert. Restriction is carried by the six criteria rules on Account, Contact and Opportunity.
+- Other applications' automation fires on Contact insert: FCIC's GSA_FCIC_ContactTrigger and the Genesys purecloud webhook. Neither is in this application's metadata.
+- The TTS OTCRM Contact duplicate rule is switched off permanently in every org. TTS OTCRM is defunct.
+- Deployments use NoTestRun because the application has no Apex, and because a pre-existing compile error in FCIC's GSA_FCIC_AC_Manual_InitialBatch fails any deployment that runs tests.
+- The P3 integration uses named queries rather than MuleSoft because the requirement is a low-volume, read-only lookup that the standard REST API serves directly. The permission set, not the named queries, is the security boundary.
+- Meetings were not migrated: Airtable has dates without times, and inventing times would create false calendar history.
+- Three API names are permanently misspelt and are documented rather than renamed (section 3.2).
+- Volume is small: about ten thousand records, growing at the pace agencies sign agreements. No large-data-volume design is needed.
+- A sandbox refresh restores anything deleted from a sandbox but not from production, and removes the integration user and its setup. Both are part of the post-refresh checklist in the Technical Deployment Plan.
+
+# 6 - Appendix
+
+### Related documents
+
+- Release 2 P3 Integration Design: setup, security and open questions for the Partner Portal integration.
+- Technical Deployment Plan: pre-deployment, package, post-deployment, verification and rollback steps.
+- Data Migration Plan: the Release 1 migration and the Release 2 Issuer String load.
+- Production change set inventory: component listing of LDGCRM_Sprint_1_24.
+- Source repository: https://github.com/davidlarrimore/LDGCRM-Salesforce-App. Metadata reaches an org by change set, except the named queries, which are deployed by CLI.
+
+### How the facts in this document were obtained
+
+- Object, field, Flow, permission set, sharing rule, report type and named query detail was read from the application's retrieved metadata.
+- Org-wide defaults were queried from the Dev and QA orgs.
+- Migration volumes are from the QA rehearsal of 16 August 2026. Issuer String counts are from the frozen Airtable export of 2 September 2026 and the Dev sandbox.
+- Behaviour of other applications' components was established by querying the org.

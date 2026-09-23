@@ -1,0 +1,418 @@
+TITLE: Login.gov Partnerships CRM - Release 2 Technical Deployment Plan
+
+Template Version 1.05 - Date Issued: Oct 13, 2021
+
+# Revision History
+
+1.00 - 9/10/2013 - Template issued and posted to the GSA Salesforce Platform Library - David Rubens
+1.01 - 5/15/2015 - Adding instructions to update OCIO Task Tracking Application Module object records - Mark Vogelgesang
+1.02 - 1/15/2016 - Added Pre-Deployment/Post-Deployment, Rollback/Backout section - Mark Vogelgesang / Navdeep Singh / Manikanta
+1.03 - 6/26/2017 - Included section to capture test classes to run. Added info about additional access, package folder naming conventions - Mark Vogelgesang / Chris Freeman / Navdeep Singh / Brian Lal / Nik Kasala
+1.04 - 10/24/2018 - Updated section 1.3.1 to capture information related to Queues - Navdeep Singh
+1.05 - 10/13/2021 - Added sections to capture the deactivation / activation components - Sasi Gopinadam
+2.00 - 9/23/2026 - Release 2 of the Login.gov Partnerships CRM: Partner Portal (P3) integration, Issuer String object and load, removal of two deprecated fields - Dave Larrimore - QQ2A-C
+
+# Introduction
+
+This plan deploys Release 2 of the Login.gov Partnerships CRM to UAT and Production. Release 1 went live in production on 8 September 2026.
+
+Release 2 contains three things:
+
+- The Login.gov Partner Portal (P3) integration: a read-only permission set, an API-only integration user, six named queries and one External Client App per portal environment.
+- The Issuer String object (LDGCRM_Issuer_String__c), which holds each Application's issuer strings, and a one-time load of 918 records.
+- Deletion of two deprecated Application fields: LDGCRM_PP_Issuer_Strings__c and LDGCRM_Est_Monthly_Active_Users__c.
+
+The release arrives by four routes. A successful change set is one of them and does not prove that the integration works.
+
+IMG: release-deployment-routing.png | Figure 1. The eight deployment steps and the route each one takes.
+
+- Change set (GSA IT Engineering deploys the component set from its own repository): step 2.
+- CLI metadata deploy: step 3, the named queries. This is the documented exception to change-set-only promotion for ApiNamedQuery components.
+- Manual, or scripted with a repository tool: steps 1, 4, 5 and 6.
+- Destructive Metadata API change: step 7. A change set cannot delete anything.
+
+Two repository tools are referenced. Both report by default and act only when told to, and both require a typed confirmation token in production.
+
+- scripts/Set-LdgcrmIntegrationUser.ps1: creates and configures the integration user. Production token: SET UP PRODUCTION INTEGRATION USER.
+- tools/metadata/Remove-DeprecatedField.ps1: exports and deletes the two deprecated fields. Production token: DELETE FIELD IN PRODUCTION.
+
+# 1 - Deployment Checklist
+
+## 1.1 Pre-Deployment Manual Steps
+
+### Additional Access
+
+- Permission Set: Orgwide - Named Query - Admin (Orgwide_Named_Query_Admin), assigned to the deploying administrator's own user. It is needed only to view the named queries under Setup > Integrations > Named Query API. Without it that page is absent, which looks like the feature is not enabled. System Administrator alone is not enough. It is not needed to deploy.
+- Permission Set License: Salesforce API Integration, one seat, for the integration user (post-deployment step 1). The org has 5 seats shared with FCIC and TTS OTCRM.
+- Role/Public Groups: none.
+
+### Pre-Deployment Steps
+
+1. Capture the three amended permission sets.
+Description: Save the current production definitions of LDGCRM_Partnership_Team_Member_CRE, LDGCRM_Partnership_Viewer_R and LDGCRM_Production_Support_CRED. This copy is the rollback for them.
+Manual: none; the Setup UI cannot export a permission set.
+Automated (from inside sfdx/):
+
+```
+sf project retrieve start --target-org <alias> --target-metadata-dir ..\data\release2-backup --unzip `
+    -m "PermissionSet:LDGCRM_Partnership_Team_Member_CRE" `
+    -m "PermissionSet:LDGCRM_Partnership_Viewer_R" `
+    -m "PermissionSet:LDGCRM_Production_Support_CRED"
+```
+
+2. Confirm a Salesforce API Integration licence seat is free.
+Manual: Setup > Company Information > Permission Set Licenses > Salesforce API Integration. Used must be less than Total.
+Automated:
+
+```
+sf data query --target-org <alias> -q "SELECT MasterLabel, TotalLicenses, UsedLicenses FROM PermissionSetLicense WHERE DeveloperName = 'SalesforceAPIIntegrationPsl'"
+```
+
+3. Confirm the Opportunity Contact Role values Day-to-Day POC and Senior POC are ACTIVE.
+Description: They are on the standard value set ContactRole, which a change set cannot carry. In a refreshed Dev sandbox they were present but deactivated. A deactivated value is invisible to describe and to a metadata retrieve, so check in Setup.
+Manual: Setup > Object Manager > Opportunity Contact Role > Fields & Relationships > Role > Values. If either is in the inactive list, click Activate. Do not create new values.
+Automated check (15 means both active, 13 means at least one is inactive):
+
+```
+sf sobject describe --sobject OpportunityContactRole --target-org <alias> --json |
+    ConvertFrom-Json | ForEach-Object { $_.result.fields } |
+    Where-Object { $_.name -eq "Role" } | ForEach-Object { $_.picklistValues.Count }
+```
+
+4. Record which org still has each deprecated field.
+Description: Needed for post-deployment steps 5 and 6, and for rollback. Each query succeeds if the field exists and fails with "No such column" if it does not.
+Automated:
+
+```
+sf data query --target-org <alias> -q "SELECT COUNT(Id) FROM LDGCRM_application__c WHERE LDGCRM_PP_Issuer_Strings__c != null"
+sf data query --target-org <alias> -q "SELECT COUNT(Id) FROM LDGCRM_application__c WHERE LDGCRM_Est_Monthly_Active_Users__c != null"
+```
+
+Or run the delete tool in report-only mode, which changes nothing:
+
+```
+powershell tools/metadata/Remove-DeprecatedField.ps1 -OrgAlias <alias> -WhatIf
+```
+
+5. Confirm LDGCRM_Issuer_String__c does not already hold data in the target org.
+Description: The load in post-deployment step 4 is insert only and not repeatable. In production the object does not exist yet, so this applies to sandboxes.
+Automated:
+
+```
+sf data query --target-org <alias> -q "SELECT COUNT(Id) FROM LDGCRM_Issuer_String__c"
+```
+
+## 1.2 Deactivation of Components and Notifications
+
+Nothing is deactivated for this deployment.
+
+- Apex Triggers: N/A. This application has no Apex triggers.
+- Workflows: N/A. No workflow rules, Process Builder processes or approval processes.
+- Flows: N/A. No Flow changes in Release 2. The nine LDGCRM Flows stay active.
+- Validation Rules: N/A. The Issuer String load does not touch objects with active validation rules of this application.
+- Other: N/A. The application sends no notifications.
+
+## 1.3 Package Deployment
+
+Package name: outbound change set LDGCRM_Release_2, built in Dev (peodv8dvn).
+Test classes to run: none. Deploy with test level NoTestRun. This application has no Apex. NoTestRun is required, not optional: GSA_FCIC_AC_Manual_InitialBatch (FCIC application) has a pre-existing compile error, and Salesforce compiles all Apex before running any test, so any deployment that runs tests fails.
+
+### Change set components
+
+- Custom Object: LDGCRM_Issuer_String__c
+- Custom Field: LDGCRM_Issuer_String__c.LDGCRM_Issuer_String__c (Text 200, required, unique, case-insensitive)
+- Custom Field: LDGCRM_Issuer_String__c.LDGCRM_Application__c (Master-Detail to LDGCRM_application__c, reparentable)
+- Page Layout: LDGCRM_Issuer_String__c-Issuer String Layout
+- Page Layout: LDGCRM_application__c-Application Layout (adds the Issuer Strings related list)
+- Lightning Page: LDGCRM_Application_Record_Page (adds the Issuer Strings related list)
+- Permission Set: LDGCRM_Partner_Portal_API_R (new)
+- Permission Set: LDGCRM_Partnership_Team_Member_CRE (adds Issuer String create, read, edit)
+- Permission Set: LDGCRM_Partnership_Viewer_R (adds Issuer String read)
+- Permission Set: LDGCRM_Production_Support_CRED (adds Issuer String create, read, edit, delete)
+
+Both Issuer String fields must be added explicitly. The change set UI lists fields separately from the object, and without them the object arrives without its data fields. LDGCRM_Partner_Portal_API_R references the object, so it fails if the object is not in the same change set.
+
+### Manual deployment (change set)
+
+1. In Dev: Setup > Outbound Change Sets > New. Name LDGCRM_Release_2. Add the ten components above. Upload to the target org.
+2. In the target org: Setup > Inbound Change Sets > LDGCRM_Release_2 > Validate, with Test Option: Default. The change set contains no Apex, so Default runs no tests. Do not choose Run Local Tests or Run All Tests; they fail on the FCIC compile error.
+3. Deploy with the same test option. Then confirm on the Deployment Status page that every component deployed.
+
+### Automated deployment (GSA IT Engineering CLI)
+
+GSA IT Engineering deploys the component set that originates as the change set above, from its own repository, using the manifest below.
+
+```
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>LDGCRM_Issuer_String__c</members>
+        <name>CustomObject</name>
+    </types>
+    <types>
+        <members>LDGCRM_Issuer_String__c.LDGCRM_Application__c</members>
+        <members>LDGCRM_Issuer_String__c.LDGCRM_Issuer_String__c</members>
+        <name>CustomField</name>
+    </types>
+    <types>
+        <members>LDGCRM_Issuer_String__c-Issuer String Layout</members>
+        <members>LDGCRM_application__c-Application Layout</members>
+        <name>Layout</name>
+    </types>
+    <types>
+        <members>LDGCRM_Application_Record_Page</members>
+        <name>FlexiPage</name>
+    </types>
+    <types>
+        <members>LDGCRM_Partner_Portal_API_R</members>
+        <members>LDGCRM_Partnership_Team_Member_CRE</members>
+        <members>LDGCRM_Partnership_Viewer_R</members>
+        <members>LDGCRM_Production_Support_CRED</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>64.0</version>
+</Package>
+```
+
+```
+sf project deploy start --manifest release2-package.xml --target-org <alias> --test-level NoTestRun --dry-run --json
+sf project deploy start --manifest release2-package.xml --target-org <alias> --test-level NoTestRun --json
+```
+
+Check numberComponentsDeployed in the JSON result, not only the status. A per-component failure can sit inside a run that reports Succeeded.
+
+### Named queries (CLI deploy)
+
+The six ApiNamedQuery components are deployed by CLI in every org. The manifest must say version 67.0. ApiNamedQuery does not exist below API 65.0, and a deploy built from the project's default 64.0 fails inside a run that still reports Succeeded.
+
+```
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>ldgcrmApplicationContactsAll</members>
+        <members>ldgcrmApplicationContactsByEmail</members>
+        <members>ldgcrmApplicationContactsByTeamUuid</members>
+        <members>ldgcrmApplicationContactsModifiedSince</members>
+        <members>ldgcrmApplicationContactsPartnerAdminByTeamUuid</members>
+        <members>ldgcrmApplicationContactsPartnerAdminOnly</members>
+        <name>ApiNamedQuery</name>
+    </types>
+    <version>67.0</version>
+</Package>
+```
+
+```
+sf project deploy start --manifest named-queries-67.xml --target-org <alias> --test-level NoTestRun --json
+```
+
+Expect numberComponentsDeployed = 6. Do not activate the queries in the API Catalog. Activation is for Agentforce actions, is not needed for REST, and prevents the queries from being edited or deleted.
+
+## 1.4 Post-Deployment Manual Steps
+
+1. Set up the integration user.
+Description: Create ldgcrm_p3_integration, assign the Salesforce API Integration licence FIRST, then the permission set LDGCRM_Partner_Portal_API_R. In the other order the permission set assignment is rejected.
+Manual: Setup > Users > New User. Username for production: ldgcrm_p3_integration@gsa.gov.peo. User License: Salesforce Integration. Profile: Minimum Access - API Only Integrations. Then Permission Set License Assignments > Salesforce API Integration, then Permission Set Assignments > LDGCRM - Partner Portal API - R.
+Automated:
+
+```
+powershell scripts\Set-LdgcrmIntegrationUser.ps1 -Environment Prod
+powershell scripts\Set-LdgcrmIntegrationUser.ps1 -Environment Prod -Apply -Confirmation "SET UP PRODUCTION INTEGRATION USER"
+```
+
+The first line reports the org's state and changes nothing. Environments: Dev, QA, UAT, Prod.
+
+2. Create one External Client App per portal environment on this org.
+Description: Production hosts two portal environments, Integration and Production, so it gets two apps: LDGCRM_P3_Client_app_Int and LDGCRM_P3_Client_app_Prod. QA gets LDGCRM_P3_Client_app_QA. An app cannot be renamed after creation.
+Manual only: Setup > External Client App Manager > New External Client App. Full field-by-field settings are in the Release 2 P3 Integration Design, section Set up External Client Application. The essentials:
+- Distribution State: Local
+- Enable OAuth. Callback URL: https://<portal host>/api/salesforce/partner_admin_verification
+- OAuth Scope: Manage user data via APIs (api) only
+- Enable Client Credentials Flow. Run As: ldgcrm_p3_integration@gsa.gov.peo
+- Permitted Users: Admin approved users are pre-authorized, with permission set LDGCRM - Partner Portal API - R selected
+- IP Relaxation: Enforce IP restrictions
+
+3. Hand the consumer key and secret to a Login Admin.
+Description: Settings > OAuth Settings > Consumer Key and Secret (Salesforce asks for a verification code). Deliver through an approved secure channel, never by plain email or chat. The Login Admin enters them in the P3 UI. Record the recipient and date.
+
+4. Load the Issuer String records.
+Description: 918 records, inserted with the Salesforce Data Loader or the CLI. The Data Migration Plan, section 4.6, has the full procedure. Confirm the object is empty first; the load is insert only.
+
+5. Delete LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c.
+Description: The deprecated Text(40) field replaced by the Issuer String object. Export its values first; OEs maintain it by hand in production. A change set cannot carry a deletion, and every sandbox refresh restores the field until production drops it.
+Manual: export with the command below, then Setup > Object Manager > Application > Fields & Relationships > Issuer Strings (Deprecated) > Delete.
+
+```
+sf data export bulk --target-org <alias> --result-format csv --wait 10 `
+    --output-file ..\data\salesforce-backups\LDGCRM_PP_Issuer_Strings__c-<alias>.csv `
+    --query "SELECT Id, Name, LDGCRM_External_ID__c, LDGCRM_PP_Issuer_Strings__c FROM LDGCRM_application__c WHERE LDGCRM_PP_Issuer_Strings__c != null"
+```
+
+Automated (exports, dry-runs, deletes, verifies):
+
+```
+powershell tools/metadata/Remove-DeprecatedField.ps1 -OrgAlias <alias> -Field PP_Issuer_Strings -WhatIf
+powershell tools/metadata/Remove-DeprecatedField.ps1 -OrgAlias <alias> -Field PP_Issuer_Strings -Confirmation "DELETE FIELD IN PRODUCTION"
+```
+
+GSA IT Engineering CLI route: an empty package.xml plus this destructiveChanges.xml, deployed with --manifest and --post-destructive-changes. Never use --metadata-dir, which ignores a destructive manifest and reports Succeeded having deleted nothing.
+
+```
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c</members>
+        <members>LDGCRM_application__c.LDGCRM_Est_Monthly_Active_Users__c</members>
+        <name>CustomField</name>
+    </types>
+    <version>64.0</version>
+</Package>
+```
+
+```
+sf project deploy start --manifest <dir>\package.xml --post-destructive-changes <dir>\destructiveChanges.xml `
+    --target-org <alias> --test-level NoTestRun --dry-run --json
+sf project deploy start --manifest <dir>\package.xml --post-destructive-changes <dir>\destructiveChanges.xml `
+    --target-org <alias> --test-level NoTestRun --json
+```
+
+Remove from the destructive manifest any field that pre-deployment step 4 showed the org does not have. Check numberComponentsDeployed.
+
+6. Delete LDGCRM_application__c.LDGCRM_Est_Monthly_Active_Users__c, if the org has it.
+Description: Deprecated Number(18,0) field labelled Estimated Monthly Active Users. No layout shows it and no permission set grants it, so no user sees the change. Whether production has it is not known; pre-deployment step 4 establishes it. Export first if the count is not zero.
+Manual: Setup > Object Manager > Application > Fields & Relationships > Estimated Monthly Active Users > Delete.
+Automated:
+
+```
+powershell tools/metadata/Remove-DeprecatedField.ps1 -OrgAlias <alias> -Field Est_Monthly_Active_Users -Confirmation "DELETE FIELD IN PRODUCTION"
+```
+
+7. Review reports built on the report type Login.gov Applications with Partner Portal Issuer Strings.
+Description: It joins only Application and its issuer string column was the field deleted in step 5, so those reports lose the column silently. Rebuild on the Issuer String object or delete the report type (open item).
+
+8. Verify. See section 3.
+
+Data Migration: the Issuer String load is described in the Release 2 Data Migration Plan.
+
+## 1.5 Activation of Components and Notifications
+
+Nothing was deactivated, so nothing is reactivated.
+
+- Apex Triggers: N/A.
+- Workflows: N/A.
+- Flows: confirm all nine LDGCRM Flows are still Active (section 3). Release 2 does not change them.
+- Validation Rules: N/A.
+- Other: N/A. Do not activate the named queries in the API Catalog.
+
+## 1.6 Application Module Object Updates
+
+- Profiles/Permission Sets, Add: LDGCRM_Partner_Portal_API_R (label LDGCRM - Partner Portal API - R).
+- Profiles/Permission Sets, Delete: none. The permission set was named LDGCRM_Partnership_Portal_API_R in Dev only; that name never existed outside Dev.
+- Users, Add: ldgcrm_p3_integration (API-only integration user, profile Minimum Access - API Only Integrations).
+- Queues/Public Groups: none.
+- Roles: none.
+
+# 2 - Rollback
+
+## 2.1 Rollback / Backout
+
+The release is additive except for the two field deletions. Roll back only what failed.
+
+What rolls back cleanly
+
+- The integration: deactivate ldgcrm_p3_integration and disable or delete the External Client Apps. This stops P3 immediately without touching data.
+- The named queries: delete them with a destructive deploy (67.0 manifest).
+- The three amended permission sets: redeploy the copies captured in pre-deployment step 1. Because a permission set deploy merges, a grant added by this release must be revoked explicitly, by deploying the Issuer String object permission with every access set to false, before the object can be deleted.
+- The Issuer String object and its data: delete the records, then the object, by destructive deploy.
+
+What does not roll back cleanly
+
+- A deleted field can be undeleted from Setup > Object Manager > Application > Fields & Relationships > Deleted Fields for 15 days. After that, only the export taken in step 5 or 6 restores the values.
+- The Issuer String records have no external ID, so a partial load cannot be identified by key. Delete all Issuer String records and reload.
+
+### Rollback Pre-Deployment Steps
+
+1. Export the Issuer String records if they are to be kept for reload: sf data export bulk --query "SELECT Id, LDGCRM_Issuer_String__c, LDGCRM_Application__r.LDGCRM_External_ID__c FROM LDGCRM_Issuer_String__c".
+2. Deactivate ldgcrm_p3_integration and remove its permission set assignment, so that LDGCRM_Partner_Portal_API_R can be deleted.
+
+### Rollback destructiveChanges.xml
+
+```
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>ldgcrmApplicationContactsAll</members>
+        <members>ldgcrmApplicationContactsByEmail</members>
+        <members>ldgcrmApplicationContactsByTeamUuid</members>
+        <members>ldgcrmApplicationContactsModifiedSince</members>
+        <members>ldgcrmApplicationContactsPartnerAdminByTeamUuid</members>
+        <members>ldgcrmApplicationContactsPartnerAdminOnly</members>
+        <name>ApiNamedQuery</name>
+    </types>
+    <types>
+        <members>LDGCRM_Partner_Portal_API_R</members>
+        <name>PermissionSet</name>
+    </types>
+    <types>
+        <members>LDGCRM_Issuer_String__c</members>
+        <name>CustomObject</name>
+    </types>
+    <version>67.0</version>
+</Package>
+```
+
+Deploy with an empty 67.0 package.xml, --post-destructive-changes, and --test-level NoTestRun. Delete the Issuer String records first.
+
+### Rollback Post-Deployment Steps
+
+1. Redeploy the three permission sets captured in pre-deployment step 1, then retrieve them and confirm they match. A deploy's success report is not evidence; a retrieve that comes back larger than the file sent means grants were kept.
+2. Delete the External Client Apps. Tell the P3 team that the credentials are revoked.
+3. Undelete the deprecated fields within 15 days, or recreate them and reload from the exports.
+
+# 3 - Verification and Sign-off
+
+Check each item directly in the target org. A successful deployment does not prove any of them.
+
+1. Change set: every component shows as deployed, and LDGCRM_Issuer_String__c has both custom fields. Expected: 2 fields.
+2. Named queries exist. Expected: 6.
+
+```
+sf data query --use-tooling-api --target-org <alias> -q "SELECT DeveloperName FROM ApiNamedQuery ORDER BY DeveloperName"
+```
+
+3. Integration user: licence, permission set and profile. Each query returns exactly one row.
+
+```
+sf data query --target-org <alias> -q "SELECT PermissionSetLicense.MasterLabel FROM PermissionSetLicenseAssign WHERE Assignee.Username = '<integration username>'"
+sf data query --target-org <alias> -q "SELECT PermissionSet.Name FROM PermissionSetAssignment WHERE Assignee.Username = '<integration username>' AND PermissionSet.IsOwnedByProfile = false"
+sf data query --target-org <alias> -q "SELECT Username, IsActive, Profile.Name FROM User WHERE Username = '<integration username>'"
+```
+
+4. The integration can call the main lookup, and both filters work. Call ldgcrmApplicationContactsPartnerAdminByTeamUuid and then ldgcrmApplicationContactsByTeamUuid for the same known team. The first number must be smaller than the second. Equal numbers mean the admin filter is not applied. Every Partner Admin in the org means the team filter is not applied.
+5. A filter that must return nothing does. ldgcrmApplicationContactsModifiedSince with tomorrow's date returns 0 rows. If it returns everything, the parameter is being ignored.
+6. P3 obtains a token and completes one real verification in the paired portal environment.
+7. Issuer Strings: 918 records, and no duplicate strings.
+
+```
+sf data query --target-org <alias> -q "SELECT COUNT(Id) FROM LDGCRM_Issuer_String__c"
+```
+
+8. The deprecated fields are gone. Each query must FAIL with "No such column". Do not use Tooling API FieldDefinition, which keeps listing a deleted field for about 15 days.
+
+```
+sf data query --target-org <alias> -q "SELECT LDGCRM_PP_Issuer_Strings__c FROM LDGCRM_application__c LIMIT 1"
+sf data query --target-org <alias> -q "SELECT LDGCRM_Est_Monthly_Active_Users__c FROM LDGCRM_application__c LIMIT 1"
+```
+
+9. The nine LDGCRM Flows are Active. Search for both prefixes, LDGCRM_ and LGDCRM_; three Flows carry the transposed LGDCRM_ prefix.
+10. A partnership team member, signed in as themselves rather than as an administrator, opens an Application and sees the Issuer Strings related list.
+11. The three amended permission sets, retrieved from the org, match the files deployed. A retrieve that is larger than the file sent means extra grants survived.
+
+# Appendix - After a Sandbox Refresh
+
+A refresh copies production. Redo the following in the refreshed sandbox:
+
+- The integration user, its licence and its permission set assignment (post-deployment step 1).
+- The External Client App for that sandbox's portal environment, with a new key and secret for the Login Admin (steps 2 and 3).
+- The administrator's Orgwide - Named Query - Admin assignment.
+- The deprecated field deletions (steps 5 and 6), until production has dropped both fields.
+- The Opportunity Contact Role values check (pre-deployment step 3).

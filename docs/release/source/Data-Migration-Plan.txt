@@ -1,0 +1,220 @@
+TITLE: Login.gov Partnerships CRM - Release 2 Data Migration Plan
+
+Template Version 1.00 - Date Issued: Sep 14, 2026
+
+# Revision History
+
+1.00 - Jul 24, 2026 - Initial draft - Peter Marks - F2AF
+2.00 - Sep 23, 2026 - Release 2. Adds the Issuer String load: one record per distinct issuer string, 918 records, loaded by insert. Records the Release 1 migration as complete and Airtable as shut down - Dave Larrimore - QQ2A-C
+
+# 2 - Project Detail
+
+Project Title: Login.gov Partnerships CRM Data Migration Plan
+Executive Sponsor: Chanan Delivuk - F2AF
+Application Owner: Peter Marks - F2AF
+Business Project Manager: [to supply]
+OCIO Assigned Business Analyst: [to supply]
+Business Lines / Groups Impacted: Technology Transformation Services (TTS) - Login.gov
+Subject Matter Expert Resources: [to supply]
+
+## 2.1 Purpose and Scope
+
+This document describes the data migration for the Login.gov Partnerships CRM.
+
+- Release 1 migrated the partnership team's Airtable base into Salesforce. It is complete: the application went live in production on 8 September 2026.
+- Release 2 loads one further Airtable table, Issuer Strings, into the new LDGCRM_Issuer_String__c object. That load is the subject of this revision.
+
+Data source: the Login.gov Partnerships CRM in Airtable, as exported on 2 September 2026. Airtable has since been shut down. That export is the last copy of the source and cannot be refreshed.
+Data target: the Login.gov Partnerships CRM Salesforce application in the GSA PEO org.
+
+# 3 - Data Migration Overview
+
+Release 1 (complete)
+
+- Built the object model and the migration pipeline, rehearsed in the QA sandbox, and loaded production for go-live on 8 September 2026.
+
+Release 2
+
+1. Deploy the Issuer String object by change set (Technical Deployment Plan, section 1.3).
+2. Prepare the load file of 918 records.
+3. Confirm the object is empty in the target org.
+4. Insert the records with the Salesforce Data Loader or the Salesforce CLI.
+5. Validate counts and uniqueness.
+6. Delete the deprecated field LDGCRM_PP_Issuer_Strings__c after exporting its values (Technical Deployment Plan, section 1.4).
+
+# 4 - Database Schema
+
+## 4.1 Conceptual Data Model
+
+IMG: object-model.png | Figure 1. Release 1 object model. Issuer String, added in Release 2, is shown in Figure 2.
+
+IMG: issuer-string-model-and-load.png | Figure 2. The Issuer String object, the field it replaces, and how the 932 source rows become 918 records.
+
+## 4.2 Entity Relationship Diagram
+
+See Figures 1 and 2. Login.gov Partnerships CRM SF Field Definitions.xlsx holds field-level detail. The sfdx/force-app/main/default/objects folder of the source repository is the authoritative definition.
+
+## 4.3 Data Migration Requirements
+
+- All MVP fields (non-formula) are migrated.
+- Relational data is preserved. Every parent is resolved through LDGCRM_External_ID__c, which holds the Airtable record ID.
+- The production migration runs in a short window to minimise CRM downtime.
+- Release 2: each distinct issuer string is loaded exactly once. LDGCRM_Issuer_String__c.LDGCRM_Issuer_String__c is unique and case-insensitive, so Salesforce rejects a duplicate.
+- A row is migrated correctly or withheld and reported. Values are never invented to make a row fit.
+
+## 4.4 Objects / Tables
+
+- Accounts (standard object): agencies, both partners and potential partners. Record type Federal.
+- Opportunities (standard object): a prospective agreement with an agency. Record type Login_gov.
+- Contacts (standard object): people at agencies and at GSA. Record types Federal and GSA.
+- Opportunity Contact Roles (standard object): links Opportunities to Contacts with a role.
+- Market Segments (custom object): the five segments Benefits, Defense, Finance and Regulation, Infrastructure, State and Local.
+- Partner Accounts (custom object): the agreement an agency has made with Login.gov. Master-Detail child of Account.
+- Applications (custom object): an integration delivered, or being delivered, under an agreement.
+- Impediments (custom object): obstacles that impede or block an Opportunity.
+- Opportunity Impediments (custom junction object): many-to-many between Opportunity and Impediment.
+- Application Contacts (custom junction object): links a Contact to an Application and carries the Partner Portal Admin flag.
+- Issuer Strings (custom object, Release 2): the SAML entity IDs and OIDC client IDs registered for an Application. Master-Detail child of Application. Replaces the single-valued Text(40) field LDGCRM_PP_Issuer_Strings__c, which could hold neither the number nor the length of the real values.
+- Meetings: not migrated and not a custom object. Meetings in Salesforce are standard Activities (Task and Event). The Airtable meeting history records a date but no time, so it was excluded rather than loaded with invented times. It remains only in the frozen export.
+
+## 4.5 Data Migration Table Details
+
+1. Accounts: Level 1 and 2 from OTCRM (Level 3 and above deleted). Reconciled onto existing Accounts rather than created. Release 1, complete.
+2. Opportunities: all. Release 1, complete.
+3. Contacts: all, merged to one Contact per email address. Release 1, complete.
+4. Opportunity Contact Roles: all. Release 1, complete.
+5. Meetings (Activities): not migrated.
+6. Market Segments: five rows. Release 1, complete.
+7. Partner Accounts: all. Release 1, complete.
+8. Applications: all except six Decommissioned Applications with no Partner Agreement. Release 1, complete.
+9. Impediments: all except the placeholder Impediment named None. Release 1, complete.
+10. Opportunity Impediments: all. Release 1, complete.
+11. Application Contacts: all. Release 1, complete.
+12. Issuer Strings: one record per distinct string. 932 source rows; 7 excluded (no linked Application or no text); 2 exact repeats collapse; 5 excluded because their only Application was not migrated. 918 records. Release 2.
+
+## 4.6 Migration Steps
+
+### Release 1 (complete)
+
+Release 1 was loaded by an orchestrated PowerShell pipeline in thirteen dependency-ordered steps, each a transform followed by a load, with a typed confirmation before every write and a run report separating rejected rows from withheld rows. The pipeline and its runbooks are archived in the source repository (archive/sprint_1_scripts.zip). The loading tools that remain in tools/data-loading/ are restricted to the Dev and QA sandboxes and cannot target production.
+
+### Release 2 - Issuer String load
+
+Prerequisites
+
+- The Release 2 change set is deployed: the object, both of its fields, and the permission sets.
+- The load is INSERT only. The object has no external ID, so it is not repeatable: a second run is rejected by the unique constraint on every row. Confirm the object is empty before starting.
+- Coordinate with anyone else who loads with the Data Loader, so that two people do not load the same org at once.
+
+Step 1. Prepare the load file
+
+Source: the 918 records in the Dev sandbox (peodv8dvn), which already implement the uniqueness rule. Each record's parent is written as the Application's external ID (the Airtable record ID), which is the same in every org the Release 1 migration loaded.
+
+```
+sf data export bulk --target-org peodv8dvn --result-format csv --wait 10 `
+    --output-file ..\data\salesforce-loads\issuer-strings-918.csv `
+    --query "SELECT LDGCRM_Issuer_String__c, LDGCRM_Application__r.LDGCRM_External_ID__c FROM LDGCRM_Issuer_String__c ORDER BY LDGCRM_Issuer_String__c"
+```
+
+Check the file has 918 data rows by importing it (Import-Csv), not by counting lines. Keep the file under data/, which is excluded from source control.
+
+Decision needed before production: 55 source rows link to more than one Application, and each can have only one parent. In Dev, 50 of those parents were chosen arbitrarily because all candidates were Active with no go-live date to separate them. The application owner should confirm or correct those 50 before the production load (see section 4.8).
+
+Step 2. Confirm the target is empty
+
+```
+sf data query --target-org <alias> -q "SELECT COUNT(Id) FROM LDGCRM_Issuer_String__c"
+```
+
+Expected: 0. If not zero, stop and find out who loaded what before deleting anything.
+
+Step 3a. Load manually with the Salesforce Data Loader
+
+1. Log in to the target org as a user holding LDGCRM - G - Production Support - CRED.
+2. Choose Insert. Object: Issuer String (LDGCRM_Issuer_String__c).
+3. Select issuer-strings-918.csv.
+4. Mapping: LDGCRM_Issuer_String__c to Issuer String (LDGCRM_Issuer_String__c). LDGCRM_Application__r.LDGCRM_External_ID__c to Application (LDGCRM_Application__c), matched by the Application's external ID field LDGCRM_External_ID__c.
+5. Do not map Name. It is an Auto Number (ISID-00000) and cannot be written.
+6. Run. Expect 918 successes and 0 errors. Save the success and error files under data/.
+
+Step 3b. Load with the Salesforce CLI (automated)
+
+```
+sf data import bulk --target-org <alias> --sobject LDGCRM_Issuer_String__c `
+    --file ..\data\salesforce-loads\issuer-strings-918.csv --wait 10 --json
+```
+
+The CSV header LDGCRM_Application__r.LDGCRM_External_ID__c resolves the parent by external ID. Check numberRecordsProcessed and numberRecordsFailed in the result.
+
+Step 4. Validate (section 4.10).
+
+Step 5. Delete the replaced field LDGCRM_PP_Issuer_Strings__c, after exporting its values. See the Technical Deployment Plan, section 1.4, step 5.
+
+Undoing the load: there is no key that identifies one run's records. Delete every Issuer String record and reload.
+
+```
+sf data query --target-org <alias> -q "SELECT Id FROM LDGCRM_Issuer_String__c" --result-format csv > issuer-string-ids.csv
+sf data delete bulk --target-org <alias> --sobject LDGCRM_Issuer_String__c --file issuer-string-ids.csv --wait 10
+```
+
+## 4.7 File Details
+
+- Source repository (metadata, tools, documentation): https://github.com/davidlarrimore/LDGCRM-Salesforce-App
+- Release 1 pipeline and runbooks: archive/sprint_1_scripts.zip in the source repository
+- Release 2 load file: data/salesforce-loads/issuer-strings-918.csv (not in source control)
+- Pre-deletion export of LDGCRM_PP_Issuer_Strings__c: data/salesforce-backups/LDGCRM_PP_Issuer_Strings__c-<alias>.csv (not in source control)
+- Frozen Airtable export of 2 September 2026: data/airtable-exports/ (not in source control; the last copy of the source)
+
+## 4.8 Transformation Logic
+
+Release 1 rules: Login.gov Partnerships CRM Migration Transformation Rules (engineering/TRANSFORMATION-RULES.md in archive/sprint_1_docs.zip).
+Release 2 rules: docs/engineering/TRANSFORMATION-RULES.md. For Issuer Strings:
+
+- The issuer string text is unique across the object, case-insensitively. One record per distinct string.
+- A string is recorded once, not once per Application. A string linked to several Applications becomes one record under one Application. The Master-Detail is reparentable, so the string can be moved later.
+- The object has no external ID. The load is an insert.
+- Rows with no linked Application, or no text, are not loaded (7 rows).
+- Rows whose only Application was not migrated are not loaded (5 strings).
+
+Not yet decided, and not to be fixed silently by a transform:
+
+- Which Application a multi-Application string parents to (55 source rows; 50 chosen arbitrarily in Dev).
+- One cell holding two issuer strings joined by a space (Airtable record reckIt2XZDEoSWqCN).
+- One value with trailing whitespace (rec7Usadt3uDDznbD). Trimming decides whether it collides with another value.
+- One value containing an en dash (recvSpDq6lz2FqeNS), which may be a typing error.
+- Two values that appear on two Airtable rows each. Uniqueness keeps one link and drops the other.
+
+## 4.9 Detailed Source to Target Mapping
+
+Source to Target Data Mapping File: Login.gov Partnerships CRM SF Field Definitions.xlsx
+
+Issuer Strings (Release 2)
+
+- Airtable Issuer String to LDGCRM_Issuer_String__c.LDGCRM_Issuer_String__c. Copied as is. Text(200); the longest value is 104 characters, so nothing is truncated.
+- Airtable Applications (linked record ID) to LDGCRM_Issuer_String__c.LDGCRM_Application__c, resolved through LDGCRM_application__c.LDGCRM_External_ID__c. One parent per string.
+- Name: not mapped. Auto Number.
+- Team Name, Team UUID and Partner Portal Admin Email: not written to this object. They feed Application and Application Contact under the Release 1 rules.
+
+## 4.10 Validation Methods
+
+1. Spot check side by side against the frozen Airtable export, tracked in the migration test cases. Expected: values match.
+2. Compare record counts between the load files and Salesforce. Expected: match, with every difference accounted for as withheld or rejected.
+3. Issuer String count. Expected: 918.
+
+```
+sf data query --target-org <alias> -q "SELECT COUNT(Id) FROM LDGCRM_Issuer_String__c"
+```
+
+4. No duplicate issuer strings. Expected: no rows. The unique constraint should make this impossible; the query proves it.
+
+```
+sf data query --target-org <alias> -q "SELECT LDGCRM_Issuer_String__c, COUNT(Id) c FROM LDGCRM_Issuer_String__c GROUP BY LDGCRM_Issuer_String__c HAVING COUNT(Id) > 1"
+```
+
+5. Every Issuer String has a parent Application that is a migrated record. Expected: 0.
+
+```
+sf data query --target-org <alias> -q "SELECT COUNT(Id) FROM LDGCRM_Issuer_String__c WHERE LDGCRM_Application__r.LDGCRM_External_ID__c = null"
+```
+
+6. Spot check five Applications in the UI: the Issuer Strings related list shows the expected strings.

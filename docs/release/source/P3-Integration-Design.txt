@@ -1,0 +1,262 @@
+TITLE: Release 2 - Login.gov Partner Portal (P3) to Salesforce Integration Design
+
+Application: Login.gov Partnerships CRM (LDGCRM)
+Salesforce org: GSA PEO (gsa-peo)
+Release: 2
+Document status: Draft for review, 23 September 2026
+Development lead: Dave Larrimore - QQ2A-C
+Requesting team: Federation and Integration Experience (FIE), Login.gov
+Source requirement: 1-pager: Connecting Salesforce to P3 (AJ Farkas - F2AG, 8 May 2026)
+GSA IT point of contact for Salesforce: Mike Bowers - IADB
+
+# Background (the Why)
+
+- The Login.gov Partner Portal (P3) checks the Partnerships CRM before a Login Admin can grant the Partner Admin role on a partner team. This check is a User Management requirement in the P3 Authority to Operate (ATO).
+- The list of authorised Partner Admins used to live in Airtable. Airtable is not an approved GSA application and has been shut down. The Partnerships CRM moved to Salesforce and went live in production on 8 September 2026.
+- P3 therefore needs an authenticated, read-only connection to the Salesforce CRM to keep meeting the ATO requirement.
+- Primary use case: an Onboarding Engineer or Login Admin asks P3 to make a user a Partner Admin for a team. P3 reads the authorised Partner Admins for that team from Salesforce and approves or rejects the request.
+- Secondary use case (not in this release): Contact Center reports for partner users through P3. It is covered by the separate 1-pager: Contact Center Reports and would need its own security impact analysis.
+- Chosen approach: the Salesforce Named Query API. The SOQL lives in Salesforce as metadata, returns only what P3 needs, and is called over REST with an OAuth 2.0 client credentials token.
+- Expected volume is low and irregular. Recent production weeks saw 2, 6, 1, 2, 3 and 10 admin lookups.
+- Integration pattern: point to point, P3 to Salesforce. No MuleSoft, no middleware, no scheduled job. Salesforce initiates nothing.
+
+# Solution Overview
+
+IMG: p3-system-connectivity.png | Figure 1. System and network connectivity between P3 and the GSA PEO Salesforce org.
+
+- P3 holds a consumer key and secret for one External Client App in the Salesforce org paired with that portal environment.
+- P3 exchanges the key and secret for an access token at the Salesforce OAuth token endpoint using the client credentials grant. Salesforce issues the token for a designated Run As user, ldgcrm_p3_integration.
+- P3 calls a named query with the token. Salesforce runs the query's fixed SOQL as the integration user, applying that user's object, field and record access, and returns JSON rows.
+- P3 compares the requested email with the returned Partner Admins and approves or rejects the request.
+- The Partnerships team maintains the source data in the Salesforce UI. The P3 Team UUID and team name are kept on the Application. The Application Contact junction links a Contact to that Application and carries the Partner Portal Admin flag, and it exposes the email, Team UUID and team name as formula fields.
+
+# Environments
+
+IMG: p3-environment-pairing.png | Figure 2. Each portal environment and the Salesforce org it reads.
+
+- Local development: localhost:3001 reads the Dev sandbox (peodv8dvn). External Client App LDGCRM_P3_Client_app_Localdev exists and works.
+- Staging: portal.ursulapato.identitysandbox.gov reads the QA sandbox (peodv15dvn). External Client App to be created.
+- Integration: portal.int.identitysandbox.gov reads PRODUCTION (gsa-peo). External Client App to be created.
+- Production: portal.login.gov reads production (gsa-peo). External Client App to be created.
+- Integration is a public environment that partner agencies use, and it is backed by the production org. Its data is real production data under production handling rules.
+- Integration and Production each get their own External Client App, so either credential can be revoked without affecting the other. They share one integration user, because there is one integration user per org.
+- The UAT sandbox (peofl1uatp) is supported by the integration user script but has no portal environment paired with it.
+- A sandbox refresh removes the integration user, its licence and its permission set assignment, and the External Client App's key and secret stop working. Redo the Set up Integration User and Set up External Client Application sections after every refresh.
+
+# Authentication and Call Flow
+
+IMG: p3-auth-sequence.png | Figure 3. Token request and named query call for the primary use case.
+
+1. The Onboarding Engineer asks P3 to make a user a Partner Admin for a team.
+2. P3 sends POST https://<my domain>/services/oauth2/token with grant_type=client_credentials, client_id (consumer key) and client_secret (consumer secret).
+3. Salesforce checks that the app is enabled, that the secret is valid, the IP policy, and that the Run As user is active and API only. It returns access_token and instance_url.
+4. P3 sends GET <instance_url>/services/data/v67.0/named/query/ldgcrmApplicationContactsPartnerAdminByTeamUuid?teamuuid=<Team UUID> with the header Authorization: Bearer <access_token>.
+5. Salesforce runs the query as ldgcrm_p3_integration and returns the matching Application Contact rows as JSON.
+6. If the requested email is among the returned Partner Admins, P3 approves the request. Otherwise it rejects it.
+7. Fail closed: if the token request or the query fails, P3 must not approve. The engineer falls back to a manual check with the Partnerships team.
+
+# Set up Integration User
+
+Scripted in every environment by scripts/Set-LdgcrmIntegrationUser.ps1. It reports by default and writes only with -Apply, and production also needs the typed token SET UP PRODUCTION INTEGRATION USER. The manual steps it performs are below.
+
+Setup > Users > New User > Save
+
+- Last Name: LDGCRM P3 Integration
+- Username (fixed per org, not derived):
+  - Dev: ldgcrm_p3_integration@gsa.gov.peo1.peodv8dvn
+  - QA: ldgcrm_p3_integration@gsa.gov.peo.peodv15dvn
+  - UAT: ldgcrm_p3_integration@gsa.gov.peo.peofl1uatp
+  - Production: ldgcrm_p3_integration@gsa.gov.peo
+- Email: a monitored GSA team mailbox (to be confirmed for production)
+- User License: Salesforce Integration
+- Profile: Minimum Access - API Only Integrations
+- Role: none
+
+Setup > Users > ldgcrm_p3_integration > Permission Set License Assignments > Edit Assignments
+
+- Salesforce API Integration. Assign this BEFORE the permission set. The permission set grants API Only User, which Salesforce allows only on a user who already holds this licence. In the other order the assignment is rejected.
+- The org has 5 seats of this licence, shared with FCIC and TTS OTCRM. Check that one is free before starting.
+
+Setup > Users > ldgcrm_p3_integration > Permission Set Assignments > Edit Assignments
+
+- LDGCRM - Partner Portal API - R (LDGCRM_Partner_Portal_API_R)
+
+Do not use a GSA Standard profile. The Minimum Access profile grants almost nothing, so the permission set is a complete and auditable statement of what P3 can see.
+
+# Set up the Permission Set
+
+Label: LDGCRM - Partner Portal API - R
+API Name: LDGCRM_Partner_Portal_API_R
+Description: Read-only access for the Login.gov Partner Portal integration user. Assigned only to ldgcrm_p3_integration.
+License: none (the Salesforce API Integration permission set licence is assigned to the user)
+Delivered by: change set. It is not built by hand in any org.
+
+System permissions
+
+- API Enabled
+- API Only User
+- View Setup and Configuration. Salesforce requires it to execute a named query.
+- View Roles and Role Hierarchy. Salesforce adds it automatically with View Setup and Configuration.
+
+Object permissions. Read only. Create, Edit and Delete are off on every object.
+
+- Account: Read, View All Records, View All Fields
+- Contact: Read, View All Records, View All Fields
+- Opportunity: Read
+- LDGCRM_application__c: Read
+- LDGCRM_Partner_Account__c: Read
+- LDGCRM_Application_Contact__c: Read
+- LDGCRM_Impediment__c: Read
+- LDGCRM_Opportunity_Impediment__c: Read
+- LDGCRM_Market_Segment__c: Read, View All Records
+- LDGCRM_Issuer_String__c: Read. No field grants are possible, because its fields are required, and object read already makes them readable.
+
+Field permissions: 72 read grants, limited to the fields the portal reads. A permission set deploy merges field grants rather than replacing them, so a grant is revoked only by deploying it with readable=false. Verify by retrieving the permission set from the target org after deployment.
+
+Administrator access (not for the integration user): to see Setup > Integrations > Named Query API, the administrator needs the permission set Orgwide - Named Query - Admin (Orgwide_Named_Query_Admin) on their own user. System Administrator alone is not enough.
+
+# Set up External Client Application
+
+One app per portal environment, created by hand in the paired org. A consumer key and secret are issued per app and per org and cannot be moved. An External Client App cannot be renamed, so pick the name before creating it.
+
+Setup > External Client App Manager > New External Client App > Create
+
+- Basic Information
+  - External Client App Name: Login.gov Partner Portal Client App (<Environment>)
+  - API Name: LDGCRM_P3_Client_app_<Environment> (proposed: QA, Int, Prod)
+  - Description: Release 2. Read-only Partner Portal (P3) access to Partnerships CRM named queries for Partner Admin verification.
+  - Contact Email: a monitored GSA team mailbox (to be confirmed)
+  - Distribution State: Local
+- API (Enable OAuth Settings)
+  - Check Enable OAuth
+  - Callback URL: https://<portal host>/api/salesforce/partner_admin_verification. The form requires one; the client credentials flow does not use it.
+  - OAuth Scopes: Manage user data via APIs (api). No other scope.
+  - Flow Enablement: check Enable Client Credentials Flow, then OK
+  - Security: leave Require Proof Key for Code Exchange (PKCE) and Require secret for token exchange checked, as in Dev
+
+Once created, in the Policies section > Edit > Save
+
+- OAuth Policies
+  - Permitted Users: Admin approved users are pre-authorized
+  - Select Permission Sets: LDGCRM - Partner Portal API - R
+  - OAuth Flows and External Client App Enhancements: check Enable Client Credentials Flow
+  - Run As (Username): the integration username for that org (see Set up Integration User)
+  - IP Relaxation: Enforce IP restrictions
+  - Refresh Token Policy: Expire refresh token if not used for 30 days. Client credentials issues no refresh token; this matches Dev.
+- App Policies: Start Page: None
+
+Hand-off
+
+- Settings > OAuth Settings > Consumer Key and Secret. Salesforce asks for a verification code.
+- Give the key and secret to a Login Admin through an approved secure channel, never by plain email or chat. The Login Admin enters them in the P3 UI, which stores them in P3 secret storage.
+- Record who received them and when. Rotate the secret if it is exposed, when a holder leaves, and at the interval the P3 ATO requires.
+
+Dev differs from the above in one respect: LDGCRM_P3_Client_app_Localdev uses Permitted Users: All users may self-authorize. Production uses Admin approved users are pre-authorized.
+
+# Named Queries (the API contract)
+
+Six ApiNamedQuery components, authored in sfdx/force-app/main/default/apiNamedQueries/. All six return the same ten columns so P3 gets one row shape: Id, Name, LDGCRM_Email__c, LDGCRM_External_ID__c, LDGCRM_P3_Partner_Portal_Team_Name__c, LDGCRM_P3_Team_UUID__c, LGDCRM_P3_Partner_Portal_Admin__c, LDGCRM_contact__r.Name, LDGCRM_Application__r.Name, LastModifiedDate. All select from LDGCRM_Application_Contact__c.
+
+- ldgcrmApplicationContactsPartnerAdminByTeamUuid. Parameter teamuuid. The portal's main lookup: Partner Admins for one team. The admin flag is hardcoded TRUE. Dev: 4 rows for the reference team.
+- ldgcrmApplicationContactsByTeamUuid. Parameter teamuuid. A team's whole roster. Dev: 10 rows for the same team.
+- ldgcrmApplicationContactsPartnerAdminOnly. No parameter. Every Partner Admin on every team. Dev: 1,089 rows.
+- ldgcrmApplicationContactsAll. No parameter. Every Application Contact. Dev: 2,807 rows.
+- ldgcrmApplicationContactsByEmail. Parameter email. One person, one row per Application.
+- ldgcrmApplicationContactsModifiedSince. Parameter modifiedsince. Rows changed at or after a timestamp, for incremental sync.
+
+Rules for the contract
+
+- Endpoint: GET /services/data/v67.0/named/query/<API name>?<parameter>=<value>. The endpoint is not listed in the /services/data/v67.0/ resource map, but it works.
+- Parameter names are lowercase and every declared parameter is mandatory.
+- A parameter the query does not declare is silently ignored and returns MORE rows. P3 must send exactly the declared parameters.
+- Every filter uses =. LIKE is not used, because LIKE never matches null and would silently drop the 248 Partner Admins who have no team.
+- Deployed by CLI with a manifest pinned to API 67.0. ApiNamedQuery does not exist below API 65.0. Do not activate the queries in the API Catalog: activation is for Agentforce actions, is not needed for REST, and prevents the query from being edited or deleted.
+
+# Custom Permissions and Validation Rules
+
+None. The integration only reads data, so no validation rule needs a bypass and no custom permission is created.
+
+# Security
+
+IMG: p3-security-controls.png | Figure 4. Security controls, monitoring and residual risk.
+
+## Network and connectivity
+
+- Protocol: HTTPS only, TLS 1.2 or higher, TCP 443.
+- Direction: outbound from P3 to Salesforce only. Salesforce makes no call to P3. Nothing on the P3 side listens for Salesforce.
+- Salesforce endpoints: the org's My Domain (production: gsa-peo.my.salesforce.com). Sandboxes use gsa-peo--<sandbox>.sandbox.my.salesforce.com.
+- Certificates: issued and managed by Salesforce.
+- No VPN, private link, middleware or firewall change inside GSA is required.
+- IP restriction: the External Client App is set to Enforce IP restrictions. P3's egress IP ranges are needed from Team FIE before restriction can be applied (open question 1).
+
+## Authentication and authorisation
+
+- OAuth 2.0 client credentials. One consumer key and secret per portal environment.
+- Run As user ldgcrm_p3_integration is API only and cannot sign in to the Salesforce UI, so a stolen secret cannot open a browser session.
+- One permission set, read only. The integration can create, edit or delete nothing.
+- Object access, field-level security and sharing are enforced by Salesforce on every query.
+
+## Data exchanged
+
+- Returned to P3: Application Contact name, email, Team UUID, team name, Partner Portal Admin flag, contact name, Application name, record Id, external Id and last modified date.
+- Sensitivity: business contact information (name and work email) of partner agency staff. No SSN, date of birth, identity-proofing data or credentials.
+- Sent to Salesforce: the client credentials and one query parameter (Team UUID, email or timestamp). Nothing is written to Salesforce.
+- What P3 stores from a response is governed by the P3 ATO.
+
+## Monitoring and revocation
+
+- Each token grant appears in Login History for ldgcrm_p3_integration.
+- Changes to the app, the user or the permission set appear in Setup Audit Trail.
+- Revoke one environment: disable its External Client App or rotate its secret.
+- Revoke every environment on an org: deactivate ldgcrm_p3_integration. Integration and Production share the production org, so this stops both.
+
+## Residual risks, accepted and to be reviewed
+
+- View Setup and Configuration, plus View Roles, are required to call a named query. The integration user can therefore read the org's Setup metadata, including that of FCIC and TTS OTCRM. Salesforce offers no narrower permission.
+- View All Records on Account and Contact applies org wide, so it reaches FCIC and TTS OTCRM records as well as this application's.
+- The api scope lets the token run any SOQL the permission set allows, not only the six named queries. The permission set, not the named queries, is the security boundary.
+- Secret rotation is manual.
+
+# Data Mapping
+
+Request (from the 1-pager) to Salesforce field
+
+- Team UUID: LDGCRM_Application_Contact__c.LDGCRM_P3_Team_UUID__c, a formula reading LDGCRM_application__c.LDGCRM_P3_Team_UUID__c. Consistent across portal environments; the key to trust.
+- Team Name: LDGCRM_Application_Contact__c.LDGCRM_P3_Partner_Portal_Team_Name__c, a formula reading the Application's team name. Copied from P3 and can drift; do not match on it.
+- Partner Portal Admin: LDGCRM_Application_Contact__c.LGDCRM_P3_Partner_Portal_Admin__c (checkbox stored on the junction; the LGDCRM prefix is a permanent typo).
+- Email: LDGCRM_Application_Contact__c.LDGCRM_Email__c, a formula reading the Contact's Email.
+- First Name and Last Name: returned together as LDGCRM_contact__r.Name (lower-case c in the relationship name is permanent).
+- Application: LDGCRM_Application__r.Name.
+- Issuer strings: held in LDGCRM_Issuer_String__c, one record per string under its Application. The integration user can read them, but no named query returns them in this release (open question 3).
+
+# Deployment Summary
+
+The full procedure is in the Technical Deployment Plan. The integration arrives by four routes, and a successful change set covers only one of them.
+
+- Change set: LDGCRM_Partner_Portal_API_R, together with the LDGCRM_Issuer_String__c object it references.
+- CLI deploy with a 67.0 manifest: the six named queries.
+- Scripted or manual: the integration user, its licence and its permission set assignment.
+- Manual: one External Client App per portal environment, and the key and secret hand-off.
+
+# Tech Debt Clean Up
+
+- Retire LDGCRM_P3_Client_app_Localdev's self-authorize policy, or document it as Dev only.
+- Report type LDGCRM_Login_gov_Applications_with_Partner_Portal_Issuer_Strings joins only Application and reported the deprecated field. Rebuild it on the Issuer String object or delete it.
+- Delete the deprecated field LDGCRM_application__c.LDGCRM_PP_Issuer_Strings__c in every org (post-deployment step).
+- Decide the future of the unused parameterless queries (All, PartnerAdminOnly) once P3's actual call pattern is known. Fewer queries means a smaller contract to maintain.
+
+# Risks
+
+- The Partnerships team must keep the Partner Portal Admin flag and Team UUID accurate. P3 now enforces whatever Salesforce says, so a wrong flag grants or blocks admin rights.
+- 248 Partner Admins have no Team UUID and can never be matched by the team lookup.
+- The API Integration licence has 5 seats shared with two other applications. Exhausted seats block setup in a new org.
+- A sandbox refresh silently breaks the staging and development integrations until the user and app are recreated.
+- Integration (portal.int) reads production data. Testing there touches real partner data.
+
+# Open Questions and Decisions
+
+1. P3 egress IP ranges for each environment, so that IP restriction can be enforced. Owner: Team FIE.
+2. The monitored mailbox to use as the integration user's email and the External Client App contact. Owner: Login.gov Partnerships.
+3. Does P3 need issuer strings (the 1-pager asks that issuer strings be associated with Partner Admin email addresses)? If so, a seventh named query over LDGCRM_Issuer_String__c is needed. Owner: Team FIE.
+4. Secret rotation interval and the secure hand-off channel for the key and secret. Owner: P3 ATO owner and GSA IT.
+5. Approval of the residual risks above, particularly View Setup and Configuration and org-wide View All on Account and Contact. Owner: ISSO.
